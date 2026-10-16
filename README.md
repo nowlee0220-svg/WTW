@@ -7,3 +7,15 @@
 - 단계별 프롬프트: [`docs/PROMPTS.md`](docs/PROMPTS.md)
 - 지금까지의 기록: [`docs/HISTORY.md`](docs/HISTORY.md)
 - 단계 보고서: [`docs/reports/`](docs/reports/)
+
+## 개발 (클라우드/리눅스)
+```bash
+tools/setup.sh                 # .NET 8 · Godot 4.5.1 .NET · 윈도우 내보내기 템플릿 (.tools/)
+tools/build.sh                 # 전체 빌드
+tools/test.sh                  # 빠른 테스트 (--slow 느린 테스트, --all 전부)
+dotnet run -c Release --project tools/bench -- --dots 500 --days 100 --seeds 20   # 측정 (기준: tools/bench/baseline.json)
+tools/screenshot.sh build/shot.png 5 1          # 가상 화면 스크린샷 (5초, 1배속)
+tools/screenshot.sh build/t.png 0 4 --selftest  # 게임 안 저장/불러오기 자체 시험
+tools/export-windows.sh E0     # dist/WTW-E0-windows.zip
+tools/test-windows-exe.sh E0   # 내보낸 exe 를 Wine 으로 띄워 확인
+```

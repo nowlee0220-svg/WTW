@@ -1,0 +1,195 @@
+{
+  "Dots": 500,
+  "Days": 100,
+  "Seeds": 20,
+  "Parallel": 4,
+  "MedianDaysPerSecond": 125.4,
+  "MedianMicrosPerEvent": 0.3597,
+  "MedianEventsPerDay": 22165.1,
+  "PeakWorkingSetMb": 176.4,
+  "ManagedHeapMb": 79.3,
+  "WallSeconds": 4.257,
+  "Machine": "4 cores, Ubuntu 24.04.5 LTS",
+  "PerSeed": [
+    {
+      "Seed": 1,
+      "Seconds": 1.0651,
+      "DaysPerSecond": 93.9,
+      "Events": 2205609,
+      "EventsPerDay": 22056.1,
+      "MicrosPerEvent": 0.4829,
+      "Fingerprint": 15747806005433985594
+    },
+    {
+      "Seed": 2,
+      "Seconds": 0.6486,
+      "DaysPerSecond": 154.2,
+      "Events": 2220228,
+      "EventsPerDay": 22202.3,
+      "MicrosPerEvent": 0.2921,
+      "Fingerprint": 3911152078126823851
+    },
+    {
+      "Seed": 3,
+      "Seconds": 0.7974,
+      "DaysPerSecond": 125.4,
+      "Events": 2217128,
+      "EventsPerDay": 22171.3,
+      "MicrosPerEvent": 0.3596,
+      "Fingerprint": 11700647837144487805
+    },
+    {
+      "Seed": 4,
+      "Seconds": 0.8033,
+      "DaysPerSecond": 124.5,
+      "Events": 2209857,
+      "EventsPerDay": 22098.6,
+      "MicrosPerEvent": 0.3635,
+      "Fingerprint": 13311316973665049640
+    },
+    {
+      "Seed": 5,
+      "Seconds": 0.7398,
+      "DaysPerSecond": 135.2,
+      "Events": 2203015,
+      "EventsPerDay": 22030.2,
+      "MicrosPerEvent": 0.3358,
+      "Fingerprint": 17538342499105173675
+    },
+    {
+      "Seed": 6,
+      "Seconds": 1.0327,
+      "DaysPerSecond": 96.8,
+      "Events": 2208940,
+      "EventsPerDay": 22089.4,
+      "MicrosPerEvent": 0.4675,
+      "Fingerprint": 8265813601630950547
+    },
+    {
+      "Seed": 7,
+      "Seconds": 0.6361,
+      "DaysPerSecond": 157.2,
+      "Events": 2216408,
+      "EventsPerDay": 22164.1,
+      "MicrosPerEvent": 0.287,
+      "Fingerprint": 5378734841693928670
+    },
+    {
+      "Seed": 8,
+      "Seconds": 0.864,
+      "DaysPerSecond": 115.7,
+      "Events": 2240025,
+      "EventsPerDay": 22400.2,
+      "MicrosPerEvent": 0.3857,
+      "Fingerprint": 4204411044235195379
+    },
+    {
+      "Seed": 9,
+      "Seconds": 0.8156,
+      "DaysPerSecond": 122.6,
+      "Events": 2194166,
+      "EventsPerDay": 21941.7,
+      "MicrosPerEvent": 0.3717,
+      "Fingerprint": 2793591110608304793
+    },
+    {
+      "Seed": 10,
+      "Seconds": 0.7663,
+      "DaysPerSecond": 130.5,
+      "Events": 2202213,
+      "EventsPerDay": 22022.1,
+      "MicrosPerEvent": 0.348,
+      "Fingerprint": 6999558304888337010
+    },
+    {
+      "Seed": 11,
+      "Seconds": 1.057,
+      "DaysPerSecond": 94.6,
+      "Events": 2207089,
+      "EventsPerDay": 22070.9,
+      "MicrosPerEvent": 0.4789,
+      "Fingerprint": 6028857915153704659
+    },
+    {
+      "Seed": 12,
+      "Seconds": 0.7086,
+      "DaysPerSecond": 141.1,
+      "Events": 2219775,
+      "EventsPerDay": 22197.8,
+      "MicrosPerEvent": 0.3192,
+      "Fingerprint": 5251081429642480702
+    },
+    {
+      "Seed": 13,
+      "Seconds": 0.8982,
+      "DaysPerSecond": 111.3,
+      "Events": 2206403,
+      "EventsPerDay": 22064,
+      "MicrosPerEvent": 0.4071,
+      "Fingerprint": 12381118957908679746
+    },
+    {
+      "Seed": 14,
+      "Seconds": 0.7693,
+      "DaysPerSecond": 130,
+      "Events": 2229152,
+      "EventsPerDay": 22291.5,
+      "MicrosPerEvent": 0.3451,
+      "Fingerprint": 6088479798773236045
+    },
+    {
+      "Seed": 15,
+      "Seconds": 0.7878,
+      "DaysPerSecond": 126.9,
+      "Events": 2216810,
+      "EventsPerDay": 22168.1,
+      "MicrosPerEvent": 0.3554,
+      "Fingerprint": 9926577595759638467
+    },
+    {
+      "Seed": 16,
+      "Seconds": 1.0573,
+      "DaysPerSecond": 94.6,
+      "Events": 2224953,
+      "EventsPerDay": 22249.5,
+      "MicrosPerEvent": 0.4752,
+      "Fingerprint": 5289393688956852989
+    },
+    {
+      "Seed": 17,
+      "Seconds": 0.6743,
+      "DaysPerSecond": 148.3,
+      "Events": 2221687,
+      "EventsPerDay": 22216.9,
+      "MicrosPerEvent": 0.3035,
+      "Fingerprint": 8409333652241400144
+    },
+    {
+      "Seed": 18,
+      "Seconds": 0.7976,
+      "DaysPerSecond": 125.4,
+      "Events": 2216607,
+      "EventsPerDay": 22166.1,
+      "MicrosPerEvent": 0.3598,
+      "Fingerprint": 1547638135123423294
+    },
+    {
+      "Seed": 19,
+      "Seconds": 0.765,
+      "DaysPerSecond": 130.7,
+      "Events": 2192280,
+      "EventsPerDay": 21922.8,
+      "MicrosPerEvent": 0.3489,
+      "Fingerprint": 14168461732398167718
+    },
+    {
+      "Seed": 20,
+      "Seconds": 0.8208,
+      "DaysPerSecond": 121.8,
+      "Events": 2220201,
+      "EventsPerDay": 22202,
+      "MicrosPerEvent": 0.3697,
+      "Fingerprint": 14855058933129669426
+    }
+  ]
+}

@@ -1,0 +1,122 @@
+using Godot;
+using Wtw.Sim.Runtime;
+using Wtw.Sim.Time;
+
+namespace Wtw.Game;
+
+/// <summary>위 막대(날짜 · 속도 · 측정값)와 아래 메뉴 막대(림월드식). 읽기만 하고, 누르면 Main 에 알린다.</summary>
+public partial class Hud : Control
+{
+    public event Action? SaveRequested;
+    public event Action? LoadRequested;
+    public event Action? NewRequested;
+    public event Action<int>? SpeedRequested; // 0 = 멈춤
+
+    private Label _date = null!, _speed = null!, _metrics = null!, _notice = null!;
+    private readonly Button[] _speedButtons = new Button[Speed.Max + 1];
+    private double _noticeTime;
+    private double _metricsTimer;
+
+    public override void _Ready()
+    {
+        SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        MouseFilter = MouseFilterEnum.Ignore;
+
+        // 위 막대
+        var top = new PanelContainer { MouseFilter = MouseFilterEnum.Stop };
+        top.SetAnchorsAndOffsetsPreset(LayoutPreset.TopWide);
+        top.CustomMinimumSize = new Vector2(0, UiTheme.TopBarHeight);
+        AddChild(top);
+        var topRow = new HBoxContainer();
+        top.AddChild(topRow);
+        _date = new Label { VerticalAlignment = VerticalAlignment.Center };
+        _date.AddThemeFontOverride("font", UiTheme.Bold);
+        _date.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeBig);
+        _date.AddThemeColorOverride("font_color", UiTheme.Accent);
+        topRow.AddChild(_date);
+        _speed = new Label { VerticalAlignment = VerticalAlignment.Center, CustomMinimumSize = new Vector2(120, 0) };
+        topRow.AddChild(_speed);
+        topRow.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
+        _metrics = new Label { VerticalAlignment = VerticalAlignment.Center };
+        _metrics.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeSmall);
+        _metrics.AddThemeColorOverride("font_color", UiTheme.TextDim);
+        topRow.AddChild(_metrics);
+
+        // 아래 메뉴 막대
+        var bottom = new PanelContainer { MouseFilter = MouseFilterEnum.Stop };
+        bottom.SetAnchorsAndOffsetsPreset(LayoutPreset.BottomWide, LayoutPresetMode.Minsize);
+        bottom.CustomMinimumSize = new Vector2(0, UiTheme.BottomBarHeight);
+        bottom.GrowVertical = GrowDirection.Begin;
+        AddChild(bottom);
+        var row = new HBoxContainer();
+        bottom.AddChild(row);
+        row.AddChild(MakeButton("저장", () => SaveRequested?.Invoke()));
+        row.AddChild(MakeButton("불러오기", () => LoadRequested?.Invoke()));
+        row.AddChild(MakeButton("새로 시작", () => NewRequested?.Invoke()));
+        row.AddChild(new VSeparator());
+        for (int s = 0; s <= Speed.Max; s++)
+        {
+            int level = s;
+            var b = MakeButton(s == 0 ? "멈춤" : Speed.Label(s), () => SpeedRequested?.Invoke(level));
+            b.ToggleMode = true;
+            _speedButtons[s] = b;
+            row.AddChild(b);
+        }
+        row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
+        var help = new Label { Text = "스페이스: 멈춤  ·  1~5: 속도  ·  오른쪽 클릭: 점들을 그곳으로 부르기", VerticalAlignment = VerticalAlignment.Center };
+        help.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeSmall);
+        help.AddThemeColorOverride("font_color", UiTheme.TextDim);
+        row.AddChild(help);
+
+        // 알림
+        _notice = new Label { HorizontalAlignment = HorizontalAlignment.Center, Visible = false, MouseFilter = MouseFilterEnum.Ignore };
+        _notice.SetAnchorsPreset(LayoutPreset.CenterTop);
+        _notice.Position = new Vector2(0, UiTheme.TopBarHeight + 16);
+        _notice.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeBig);
+        _notice.AddThemeStyleboxOverride("normal", UiTheme.Box(new Color(0, 0, 0, 0.7f), 8, 18, 8));
+        AddChild(_notice);
+    }
+
+    private static Button MakeButton(string text, Action onPressed)
+    {
+        var b = new Button { Text = text, FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 44) };
+        b.Pressed += onPressed;
+        return b;
+    }
+
+    public void UpdateInfo(WorldSnapshot snap, SimHost host, double delta)
+    {
+        _date.Text = GameTime.Format((long)host.RenderTick);
+        int shown = host.Paused ? 0 : host.SpeedLevel;
+        _speed.Text = host.Paused ? $"멈춤 ({Speed.Label(host.SpeedLevel)})" : Speed.Label(host.SpeedLevel);
+        for (int s = 0; s <= Speed.Max; s++) _speedButtons[s].SetPressedNoSignal(s == shown);
+
+        _metricsTimer -= delta;
+        if (_metricsTimer <= 0)
+        {
+            _metricsTimer = 0.25;
+            _metrics.Text = $"화면 {Engine.GetFramesPerSecond():0} fps  ·  시뮬 하루/초 {FormatRate(snap.SimDaysPerSecond)}  ·  시뮬 부하 {snap.SimLoad * 100:0}%  ·  점 {snap.DotCount}개  ·  시드 {snap.Seed}";
+        }
+
+        if (_notice.Visible)
+        {
+            _noticeTime -= delta;
+            var c = _notice.Modulate;
+            c.A = (float)Mathf.Clamp(_noticeTime, 0, 1);
+            _notice.Modulate = c;
+            if (_noticeTime <= 0) _notice.Visible = false;
+        }
+    }
+
+    private static string FormatRate(double v) => v >= 10 ? v.ToString("0") : v >= 0.1 ? v.ToString("0.00") : v.ToString("0.0000");
+
+    public void ShowNotice(string text)
+    {
+        _notice.Text = text;
+        _notice.Visible = true;
+        _notice.Modulate = Colors.White;
+        _noticeTime = 3.0;
+        _notice.ResetSize();
+        _notice.Position = new Vector2((GetViewportRect().Size.X - _notice.Size.X) / 2f, UiTheme.TopBarHeight + 16);
+    }
+}
