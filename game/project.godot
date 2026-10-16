@@ -1,0 +1,35 @@
+; Engine configuration file.
+config_version=5
+
+[application]
+
+config/name="WTW - Watch The World"
+config/description="빈 행성에 사람을 뿌리고 문명이 스스로 자라는 것을 지켜보는 시뮬레이션"
+config/version="E0"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.5", "C#", "GL Compatibility")
+config/use_custom_user_dir=true
+config/custom_user_dir_name="WTW"
+
+[display]
+
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/size/window_width_override=1600
+window/size/window_height_override=900
+window/size/resizable=true
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/vsync/vsync_mode=1
+
+[dotnet]
+
+project/assembly_name="WTW"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/canvas_textures/default_texture_filter=1
+anti_aliasing/quality/msaa_2d=2
+environment/defaults/default_clear_color=Color(0.06, 0.06, 0.07, 1)

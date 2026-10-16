@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: 빌드 + 빠른 테스트
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: 빌드 (시뮬 · 테스트 · 측정 도구 · 게임 C#)
+        run: |
+          dotnet build Wtw.sln -c Release -nologo
+          dotnet build game/WTW.csproj -c Release -nologo
+      - name: 빠른 테스트
+        run: CONFIG=Release tools/test.sh
+
+  windows-zip:
+    name: 윈도우 실행 파일 (zip)
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Godot · 내보내기 템플릿 캐시
+        uses: actions/cache@v4
+        with:
+          path: |
+            .tools/godot
+            ~/.local/share/godot/export_templates
+          key: godot-4.5.1-mono-win-templates-v1
+      - name: 환경 준비
+        run: tools/setup.sh
+      - name: 내보내기
+        run: tools/export-windows.sh E0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WTW-windows
+          path: dist/*.zip
+          retention-days: 30

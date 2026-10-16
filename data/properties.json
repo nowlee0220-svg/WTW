@@ -1,0 +1,13 @@
+{
+  "_설명": "재료 속성 목록(견본). 기획서 8-1 의 일부. 값은 0~max 세기. 진짜 목록은 E4 에서.",
+  "properties": [
+    { "id": "burns",      "name": "탄다",          "group": "열" },
+    { "id": "fires_hard", "name": "구우면 굳는다", "group": "열" },
+    { "id": "hardness",   "name": "단단함",        "group": "힘" },
+    { "id": "toughness",  "name": "질김",          "group": "힘" },
+    { "id": "splits",     "name": "쪼개진다",      "group": "힘" },
+    { "id": "sharpens",   "name": "날이 선다",     "group": "힘" },
+    { "id": "weight",     "name": "무게",          "group": "힘" },
+    { "id": "moldable",   "name": "물에 무른다",   "group": "물·시간" }
+  ]
+}
