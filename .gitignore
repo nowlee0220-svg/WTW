@@ -1,0 +1,24 @@
+# Godot
+.godot/
+*.import.bak
+export_presets.local.cfg
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+TestResults/
+
+# Build outputs
+/build/
+/dist/
+*.zip
+
+# Tools / downloads
+/.tools/
+
+# OS
+.DS_Store
+Thumbs.db
