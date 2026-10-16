@@ -11,4 +11,9 @@
     <Deterministic>true</Deterministic>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
+  <!-- 콘텐츠 데이터를 시뮬 안에 넣는다: 게임(윈도우 실행 파일) · 측정 도구 · 테스트가 같은 data/*.json 을 본다. -->
+  <ItemGroup>
+    <EmbeddedResource Include="../data/objects.json" LogicalName="data/objects.json" />
+    <EmbeddedResource Include="../data/items.json" LogicalName="data/items.json" />
+  </ItemGroup>
 </Project>

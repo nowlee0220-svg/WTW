@@ -14,12 +14,18 @@ public partial class Hud : Control
     public event Action<int>? SpeedRequested; // 0 = 멈춤
     public event Action<MapMode>? ModeRequested;
     public event Action<string>? PlaceholderPressed;
+    public event Action<bool>? ScopeRequested;     // 지방 화면: false = 이 지방만, true = 이웃까지
+    public event Action? ExitProvinceRequested;    // 지방 화면 → 지구본
 
     private Label _date = null!, _speed = null!, _metrics = null!, _notice = null!;
     private readonly Button[] _speedButtons = new Button[Speed.Max + 1];
     private readonly Dictionary<MapMode, Button> _modeButtons = new();
     private double _noticeTime;
     private double _metricsTimer;
+    private PanelContainer _provBar = null!;
+    private Label _provName = null!;
+    private Button _scopeOne = null!, _scopeNb = null!;
+    private readonly List<Control> _globeOnly = new();
 
     public override void _Ready()
     {
@@ -74,13 +80,35 @@ public partial class Hud : Control
             b.ToggleMode = true;
             _modeButtons[m] = b;
             row.AddChild(b);
+            _globeOnly.Add(b);
         }
         foreach (var (name, why) in MapModes.Placeholders)
         {
             var b = MakeButton(name, () => PlaceholderPressed?.Invoke(why), "아직 없음");
             b.Modulate = new Color(1, 1, 1, 0.45f);
             row.AddChild(b);
+            _globeOnly.Add(b);
         }
+
+        // 지방 화면의 위쪽 단추: [이 지방만] / [이웃까지] · [지구본으로]
+        _provBar = new PanelContainer { MouseFilter = MouseFilterEnum.Stop, Visible = false };
+        _provBar.AddThemeStyleboxOverride("panel", UiTheme.Box(UiTheme.Panel, 8, 12, 6));
+        _provBar.SetAnchorsPreset(LayoutPreset.CenterTop);
+        AddChild(_provBar);
+        var prow = new HBoxContainer();
+        _provBar.AddChild(prow);
+        _provName = new Label { VerticalAlignment = VerticalAlignment.Center };
+        _provName.AddThemeFontOverride("font", UiTheme.Bold);
+        _provName.AddThemeColorOverride("font_color", UiTheme.Accent);
+        prow.AddChild(_provName);
+        prow.AddChild(new VSeparator());
+        _scopeOne = MakeButton("이 지방만", () => ScopeRequested?.Invoke(false), "들어간 지방 하나만 밝게");
+        _scopeNb = MakeButton("이웃까지", () => ScopeRequested?.Invoke(true), "둘레 이웃 지방(바다가 아닌 칸)까지 이어 붙여 밝게");
+        _scopeOne.ToggleMode = _scopeNb.ToggleMode = true;
+        prow.AddChild(_scopeOne);
+        prow.AddChild(_scopeNb);
+        prow.AddChild(new VSeparator());
+        prow.AddChild(MakeButton("지구본으로", () => ExitProvinceRequested?.Invoke(), "Esc"));
 
         // 알림
         _notice = new Label { HorizontalAlignment = HorizontalAlignment.Center, Visible = false, MouseFilter = MouseFilterEnum.Ignore };
@@ -96,6 +124,18 @@ public partial class Hud : Control
         var b = new Button { Text = text, FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 44), TooltipText = tooltip };
         b.Pressed += onPressed;
         return b;
+    }
+
+    /// <summary>지방 화면이면 위쪽 단추를 보이고 지도 모드 단추는 감춘다.</summary>
+    public void SetProvinceMode(bool on, string name, bool neighbors)
+    {
+        _provBar.Visible = on;
+        foreach (var b in _globeOnly) b.Visible = !on;
+        _provName.Text = name;
+        _scopeOne.SetPressedNoSignal(!neighbors);
+        _scopeNb.SetPressedNoSignal(neighbors);
+        _provBar.ResetSize();
+        _provBar.Position = new Vector2((GetViewportRect().Size.X - _provBar.Size.X) / 2f, UiTheme.TopBarHeight + 10);
     }
 
     public void SetMode(MapMode mode)
@@ -137,6 +177,6 @@ public partial class Hud : Control
         _notice.Modulate = Colors.White;
         _noticeTime = 3.0;
         _notice.ResetSize();
-        _notice.Position = new Vector2((GetViewportRect().Size.X - _notice.Size.X) / 2f, UiTheme.TopBarHeight + 16);
+        _notice.Position = new Vector2((GetViewportRect().Size.X - _notice.Size.X) / 2f, UiTheme.TopBarHeight + (_provBar.Visible ? 80 : 16));
     }
 }

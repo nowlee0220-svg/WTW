@@ -7,6 +7,7 @@ using Wtw.Sim.Time;
 using Wtw.Sim.World;
 
 // WTW 측정 도구: 헤드리스로 "점 N 개 × D 일" 을 돌려 게임 하루/초 · 메모리 · 예약 한 번당 평균 시간을 잰다.
+// 지방: --province 면 지방 하나 · 이웃까지 7 지방 만들기 시간 · 메모리 · 종류별 땅/오브젝트 분포. --province-dump 그림.ppm --cell forest|칸번호 (개발용 그림)
 // 행성: --planet 이면 행성 만들기 시간 · 땅 칸 수 · 대륙 비율 · 섬 수 · 오각형 · 호수 · 강을 잰다(--land N 으로 땅 하나만).
 // 사용: dotnet run -c Release --project tools/bench -- [--dots 500] [--days 100] [--seeds 1] [--seed 1]
 //        [--planet] [--land 16000] [--parallel N] [--out result.json] [--baseline tools/bench/baseline.json] [--save-baseline]
@@ -18,7 +19,9 @@ Console.WriteLine($"컴퓨터: {machine}");
 var summary = new BenchResult { Machine = machine.ToString(), Cpu = machine.Cpu, Cores = machine.Cores };
 
 if (opt.Dump is not null) { DumpPlanet(opt); return; }
-if (opt.Planet) summary.Planet = RunPlanets(opt);
+if (opt.ProvinceDump is not null) { ProvinceBench.Dump(opt.FirstSeed, opt.Land > 0 ? opt.Land : 16_000, opt.ProvinceWhere, opt.ProvinceDump, opt.Px); return; }
+if (opt.Province) summary.Province = ProvinceBench.Run(opt.Seeds, opt.FirstSeed, opt.Land > 0 ? opt.Land : 16_000);
+else if (opt.Planet) summary.Planet = RunPlanets(opt);
 else RunDots(opt, summary);
 
 var json = JsonSerializer.Serialize(summary, BenchJson.Default.BenchResult);
@@ -31,6 +34,7 @@ if (opt.SaveBaseline)
     if (b.Cpu != summary.Cpu || b.Cores != summary.Cores) b = new BenchResult(); // 다른 컴퓨터의 값은 섞지 않는다
     b.Machine = summary.Machine; b.Cpu = summary.Cpu; b.Cores = summary.Cores;
     if (opt.Planet) b.Planet = summary.Planet;
+    else if (opt.Province) b.Province = summary.Province;
     else
     {
         b.Dots = summary.Dots; b.Days = summary.Days; b.Seeds = summary.Seeds; b.Parallel = summary.Parallel;
@@ -46,6 +50,11 @@ else if (File.Exists(opt.Baseline))
     var b = JsonSerializer.Deserialize(File.ReadAllText(opt.Baseline), BenchJson.Default.BenchResult)!;
     if (string.IsNullOrEmpty(b.Cpu) || b.Cpu != summary.Cpu || b.Cores != summary.Cores)
         Console.WriteLine($"기준 비교: 다른 컴퓨터 — 비교 안 함 (기준: {(string.IsNullOrEmpty(b.Machine) ? "모름" : b.Machine)}). 이 컴퓨터의 기준을 만들려면 --save-baseline");
+    else if (opt.Province)
+    {
+        if (b.Province is null) Console.WriteLine("기준 비교: 기준 파일에 지방 측정이 없음");
+        else Compare("지방 하나 만들기 시간(초, 작을수록 좋음)", b.Province.MedianSeconds, summary.Province!.MedianSeconds, lowerIsBetter: true);
+    }
     else if (opt.Planet)
     {
         if (b.Planet is null) Console.WriteLine("기준 비교: 기준 파일에 행성 측정이 없음");
@@ -261,6 +270,10 @@ sealed class Options
     public int Land;
     public string? Dump;
     public ClimateBias Climate = ClimateBias.Normal;
+    public bool Province;
+    public string? ProvinceDump;
+    public string ProvinceWhere = "forest";
+    public int Px = 2;
 
     public static Options Parse(string[] a)
     {
@@ -281,6 +294,10 @@ sealed class Options
                 case "--planet": o.Planet = true; break;
                 case "--land": o.Land = int.Parse(Next()); break;
                 case "--dump": o.Dump = Next(); break;
+                case "--province": o.Province = true; break;
+                case "--province-dump": o.ProvinceDump = Next(); break;
+                case "--cell": o.ProvinceWhere = Next(); break;
+                case "--px": o.Px = int.Parse(Next()); break;
                 case "--climate": o.Climate = Enum.Parse<ClimateBias>(Next(), true); break;
                 default: throw new ArgumentException($"모르는 옵션: {a[i]}");
             }
@@ -317,6 +334,7 @@ public sealed class BenchResult
     public int Cores { get; set; }
     public SeedResult[] PerSeed { get; set; } = Array.Empty<SeedResult>();
     public PlanetBench? Planet { get; set; }
+    public ProvinceBenchResult? Province { get; set; }
 }
 
 public sealed class PlanetBench

@@ -1,0 +1,43 @@
+using Wtw.Sim.Planet;
+
+namespace Wtw.Sim.Provinces;
+
+/// <summary>
+/// 만든 지방 지도를 기억해 둔다(가장 최근 Capacity 개). 지도는 읽기 전용이고 행성 + 칸으로 똑같이 다시 만들어지므로
+/// 나눠 써도 결과가 같다. 오래 안 본 지도는 잊는다 → 여러 지방을 드나들어도 메모리가 계속 늘지 않는다.
+/// 여러 스레드에서 불러도 된다(같은 지도를 동시에 두 번 만들 수는 있지만 결과는 같다).
+/// </summary>
+public static class ProvinceCache
+{
+    public const int Capacity = 40;
+    private static readonly object Lock = new();
+    private static readonly LinkedList<ProvinceMap> Recent = new();
+    private static Planet.Planet? _planet;
+
+    public static int Count { get { lock (Lock) return Recent.Count; } }
+
+    public static ProvinceMap Get(Planet.Planet p, int cell)
+    {
+        lock (Lock)
+        {
+            if (!ReferenceEquals(_planet, p)) { Recent.Clear(); _planet = p; }
+            for (var n = Recent.First; n is not null; n = n.Next)
+                if (n.Value.Cell == cell)
+                {
+                    Recent.Remove(n); Recent.AddFirst(n);
+                    return n.Value;
+                }
+        }
+        var made = ProvinceGenerator.Generate(p, cell);
+        lock (Lock)
+        {
+            if (!ReferenceEquals(_planet, p)) return made;
+            for (var n = Recent.First; n is not null; n = n.Next) if (n.Value.Cell == cell) return n.Value;
+            Recent.AddFirst(made);
+            while (Recent.Count > Capacity) Recent.RemoveLast();
+        }
+        return made;
+    }
+
+    public static void Clear() { lock (Lock) { Recent.Clear(); _planet = null; } }
+}

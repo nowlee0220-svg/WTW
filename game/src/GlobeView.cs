@@ -17,6 +17,7 @@ public partial class GlobeView : Node3D
     private const float HeightScale = 0.028f; // 높이 6,500m = 반지름의 2.8%
 
     public event Action<int>? CellSelected; // −1 = 선택 해제
+    public event Action<int>? CellActivated; // 칸을 두 번 누름 → 지방으로 들어가기
 
     private Planet? _planet;
     private MeshInstance3D _globe = null!, _rivers = null!, _halo = null!;
@@ -318,7 +319,7 @@ public partial class GlobeView : Node3D
         _dist = Mathf.Lerp(_dist, _targetDist, 1f - Mathf.Exp(-9f * dt));
         UpdateCamera();
 
-        if (_mouseMoved && !_dragging && _planet is not null)
+        if (_mouseMoved && !_dragging && _planet is not null && Visible)
         {
             _mouseMoved = false;
             int h = Pick(_lastMouse);
@@ -328,9 +329,17 @@ public partial class GlobeView : Node3D
 
     public override void _UnhandledInput(InputEvent e)
     {
-        if (_planet is null) return;
+        if (_planet is null || !Visible) return;
         switch (e)
         {
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true, DoubleClick: true } dc:
+            {
+                int c = Pick(dc.Position);
+                if (c >= 0) { Select(c); CellActivated?.Invoke(c); }
+                _dragging = false;
+                GetViewport().SetInputAsHandled();
+                break;
+            }
             case InputEventMouseButton { ButtonIndex: MouseButton.Left } mb:
                 if (mb.Pressed) { _dragging = true; _pressPos = mb.Position; _dragMoved = 0; _yawVel = _pitchVel = 0; _recent.Clear(); }
                 else if (_dragging)

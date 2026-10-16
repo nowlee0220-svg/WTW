@@ -11,11 +11,13 @@ namespace Wtw.Sim.Persistence;
 /// 저장 파일. 맨 앞 "WTWS" + 버전 번호. 순서가 정해진 것만 쓰므로 같은 상태 = 같은 바이트.
 /// 행성은 칸 하나하나를 저장하지 않는다: 시드 + 설정(땅 칸 수 · 기후 경향)으로 다시 만든다.
 /// 나중에 칸이 바뀌게 되면(운석 등) "바뀐 칸 목록"만 덧붙인다 — 자리는 버전 2 에 이미 있다(지금은 늘 0개).
-/// 버전 1(E0) 파일도 읽는다(행성 설정은 기본값).
+/// 지방 지도도 행성 + 칸으로 다시 만들므로 저장하지 않는다. 버전 3 부터 "바뀐 지방 목록" 자리가 있다(지금은 늘 0개 —
+/// 나무를 베는 것 같은 변화는 E3~ 에서 여기에 "바뀐 타일"만 넣는다).
+/// 버전 1(E0) · 2(E1) 파일도 읽는다(행성 설정은 기본값).
 /// </summary>
 public static class SaveGame
 {
-    public const int Version = 2;
+    public const int Version = 3;
     private static readonly byte[] Magic = "WTWS"u8.ToArray();
 
     public static byte[] ToBytes(GameWorld w)
@@ -59,6 +61,7 @@ public static class SaveGame
         bw.Write(w.Config.LandCells);
         bw.Write((int)w.Config.Climate);
         bw.Write(0); // 바뀐 행성 칸 수 (아직 없음)
+        bw.Write(w.ProvinceChanges.Count); // 바뀐 지방 수 (아직 늘 0 — E3~)
         bw.Write(w.Now);
         bw.Write(w.NextDayBoundary);
         bw.Write(w.DaysElapsed);
@@ -117,6 +120,7 @@ public static class SaveGame
                 throw new InvalidDataException("저장 파일이 손상되었습니다(행성 설정).");
             if (br.ReadInt32() != 0) throw new InvalidDataException("저장 파일이 손상되었습니다(바뀐 행성 칸).");
         }
+        if (version >= 3 && br.ReadInt32() != 0) throw new InvalidDataException("저장 파일이 손상되었습니다(바뀐 지방).");
         long now = br.ReadInt64(), nextDay = br.ReadInt64(), days = br.ReadInt64(), events = br.ReadInt64();
         var w = GameWorld.CreateEmpty(seed, config, now, nextDay, days, events);
         w.Entities.NextId = br.ReadInt32();

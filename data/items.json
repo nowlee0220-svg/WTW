@@ -1,0 +1,28 @@
+{
+  "_설명": "자원 아이템 (E2: 아이디와 이름만). 지방 지도의 오브젝트를 다루면 나오는 것. 아이디는 행성 자원(resources.json)과 같은 이름 체계 — 같은 물건이면 같은 아이디(stone · flint · clay · salt · wood). 성질(기획서 8-1)은 E4 에서 채운다.",
+  "items": [
+    { "id": "wood",          "name": "나무" },
+    { "id": "twigs",         "name": "잔가지" },
+    { "id": "resin",         "name": "송진" },
+    { "id": "birch_bark",    "name": "자작나무 껍질" },
+    { "id": "big_leaf",      "name": "큰 잎" },
+    { "id": "apple",         "name": "사과" },
+    { "id": "acorn",         "name": "도토리" },
+    { "id": "berries",       "name": "열매" },
+    { "id": "coconut",       "name": "야자 열매" },
+    { "id": "banana",        "name": "바나나" },
+    { "id": "baobab_fruit",  "name": "바오밥 열매" },
+    { "id": "cactus_fruit",  "name": "선인장 열매" },
+    { "id": "mushroom",      "name": "버섯" },
+    { "id": "grass",         "name": "풀" },
+    { "id": "reed",          "name": "갈대" },
+    { "id": "lichen",        "name": "이끼" },
+    { "id": "stone",         "name": "돌" },
+    { "id": "flint",         "name": "부싯돌" },
+    { "id": "clay",          "name": "진흙" },
+    { "id": "copper_ore",    "name": "구리 광석" },
+    { "id": "tin_ore",       "name": "주석 광석" },
+    { "id": "iron_ore",      "name": "철광석" },
+    { "id": "salt",          "name": "소금" }
+  ]
+}
