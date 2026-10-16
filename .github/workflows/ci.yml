@@ -42,8 +42,8 @@ jobs:
           key: godot-4.5.1-mono-win-templates-v1
       - name: 환경 준비
         run: tools/setup.sh
-      - name: 내보내기
-        run: tools/export-windows.sh E0
+      - name: 내보내기 (zip 이름의 단계는 game/project.godot 의 config/version 에서)
+        run: tools/export-windows.sh
       - uses: actions/upload-artifact@v4
         with:
           name: WTW-windows

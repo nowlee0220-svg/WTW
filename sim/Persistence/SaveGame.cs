@@ -1,6 +1,7 @@
 using System.Text;
 using Wtw.Sim.Core;
 using Wtw.Sim.Movers;
+using Wtw.Sim.Planet;
 using Wtw.Sim.Scheduling;
 using Wtw.Sim.World;
 
@@ -8,10 +9,13 @@ namespace Wtw.Sim.Persistence;
 
 /// <summary>
 /// 저장 파일. 맨 앞 "WTWS" + 버전 번호. 순서가 정해진 것만 쓰므로 같은 상태 = 같은 바이트.
+/// 행성은 칸 하나하나를 저장하지 않는다: 시드 + 설정(땅 칸 수 · 기후 경향)으로 다시 만든다.
+/// 나중에 칸이 바뀌게 되면(운석 등) "바뀐 칸 목록"만 덧붙인다 — 자리는 버전 2 에 이미 있다(지금은 늘 0개).
+/// 버전 1(E0) 파일도 읽는다(행성 설정은 기본값).
 /// </summary>
 public static class SaveGame
 {
-    public const int Version = 1;
+    public const int Version = 2;
     private static readonly byte[] Magic = "WTWS"u8.ToArray();
 
     public static byte[] ToBytes(GameWorld w)
@@ -52,6 +56,9 @@ public static class SaveGame
         bw.Write(w.Seed);
         bw.Write(w.Config.DotCount);
         bw.Write(w.Config.MapTiles);
+        bw.Write(w.Config.LandCells);
+        bw.Write((int)w.Config.Climate);
+        bw.Write(0); // 바뀐 행성 칸 수 (아직 없음)
         bw.Write(w.Now);
         bw.Write(w.NextDayBoundary);
         bw.Write(w.DaysElapsed);
@@ -99,10 +106,17 @@ public static class SaveGame
         var magic = br.ReadBytes(4);
         if (!magic.AsSpan().SequenceEqual(Magic)) throw new InvalidDataException("WTW 저장 파일이 아닙니다.");
         int version = br.ReadInt32();
-        if (version != Version) throw new InvalidDataException($"저장 파일 버전({version})을 이 게임 버전({Version})에서 읽을 수 없습니다.");
+        if (version < 1 || version > Version) throw new InvalidDataException($"저장 파일 버전({version})을 이 게임 버전({Version})에서 읽을 수 없습니다.");
 
         ulong seed = br.ReadUInt64();
         var config = new WorldConfig { DotCount = br.ReadInt32(), MapTiles = br.ReadInt32() };
+        if (version >= 2)
+        {
+            config = config with { LandCells = br.ReadInt32(), Climate = (ClimateBias)br.ReadInt32() };
+            if (Array.IndexOf(PlanetSettings.LandChoices, config.LandCells) < 0 || !Enum.IsDefined(config.Climate))
+                throw new InvalidDataException("저장 파일이 손상되었습니다(행성 설정).");
+            if (br.ReadInt32() != 0) throw new InvalidDataException("저장 파일이 손상되었습니다(바뀐 행성 칸).");
+        }
         long now = br.ReadInt64(), nextDay = br.ReadInt64(), days = br.ReadInt64(), events = br.ReadInt64();
         var w = GameWorld.CreateEmpty(seed, config, now, nextDay, days, events);
         w.Entities.NextId = br.ReadInt32();

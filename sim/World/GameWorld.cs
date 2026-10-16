@@ -1,5 +1,6 @@
 using Wtw.Sim.Core;
 using Wtw.Sim.Movers;
+using Wtw.Sim.Planet;
 using Wtw.Sim.Scheduling;
 using Wtw.Sim.Time;
 
@@ -22,6 +23,16 @@ public sealed class GameWorld
     public RngStreams Rng { get; }
     public Scheduler Scheduler { get; } = new();
     public DotField Dots { get; }
+
+    private Planet.Planet? _planet;
+
+    /// <summary>
+    /// 행성. 시드 + 설정으로 다시 만들 수 있어서 저장하지 않는다. 처음 부를 때 만든다(약 0.5초) —
+    /// 화면은 EnsurePlanet 으로 미리 만들어 둔다. 같은 시드 + 설정의 행성은 한 벌을 나눠 쓴다(읽기 전용).
+    /// </summary>
+    public Planet.Planet Planet => _planet ??= PlanetCache.Get(Seed, Config.PlanetSettings, null);
+    public bool HasPlanet => _planet is not null;
+    public Planet.Planet EnsurePlanet(Action<double, string>? progress) => _planet ??= PlanetCache.Get(Seed, Config.PlanetSettings, progress);
 
     private readonly List<Intervention> _interventions = new();
     public IReadOnlyList<Intervention> Interventions => _interventions;

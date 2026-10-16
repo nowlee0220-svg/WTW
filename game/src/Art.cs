@@ -25,6 +25,12 @@ public static class Art
     public static readonly Color GroundEdge = new(0.45f, 0.42f, 0.30f);
     public static readonly Color Outside = new(0.06f, 0.06f, 0.07f);
 
+    // 지구본
+    public static readonly Color River = new(0.30f, 0.55f, 0.92f);
+    public static readonly Color Space = new(0.035f, 0.04f, 0.06f);
+    public static readonly Color Atmosphere = new(0.45f, 0.65f, 1.0f);
+    public static readonly Color Selection = new(1.0f, 0.85f, 0.30f);
+
     private static Texture2D? _dot;
 
     /// <summary>점 그림: 가장자리를 부드럽게 한 원 + 아래쪽 그늘 + 얇은 테두리.</summary>

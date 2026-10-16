@@ -15,6 +15,8 @@ public static class UiTheme
     public static readonly Color TextDim = new(0.66f, 0.64f, 0.58f);
     public static readonly Color Accent = new(0.95f, 0.78f, 0.38f);
     public static readonly Color Bar = new(0.11f, 0.11f, 0.12f, 0.96f);
+    public static readonly Color Panel = new(0.10f, 0.10f, 0.12f, 0.93f);
+    public static readonly Color Dim = new(0.02f, 0.02f, 0.03f, 0.72f);
     public static readonly Color Button = new(0.20f, 0.20f, 0.22f);
     public static readonly Color ButtonHover = new(0.28f, 0.28f, 0.30f);
     public static readonly Color ButtonPressed = new(0.42f, 0.34f, 0.18f);

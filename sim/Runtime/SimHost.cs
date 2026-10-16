@@ -78,7 +78,7 @@ public sealed class SimHost : IDisposable
         if (!_paused)
         {
             double wanted = _renderTick + dtSeconds * tps;
-            long target = (long)Math.Ceiling(wanted + tps * LeadSeconds) + 1;
+            long target = (long)Math.Ceiling(wanted + tps * Math.Max(LeadSeconds, dtSeconds * 2)) + 1; // 화면이 느리면(프레임이 길면) 그만큼 더 앞서 계산
             lock (_targetLock)
             {
                 if (_targetEpoch == _renderEpoch && target > _target) _target = target;
@@ -97,32 +97,51 @@ public sealed class SimHost : IDisposable
 
     public bool TryGetNotice(out string notice) => _notices.TryDequeue(out notice!);
 
-    public void Save(string path) => Post(() =>
+    /// <summary>
+    /// 멈춘 다음 저장한다. 시뮬은 이미 정한 목표(화면보다 조금 앞)까지만 마저 계산하고 서며, 화면도 그 시각까지 와서 선다.
+    /// 그 상태를 저장하므로 "멈춘 화면에 보이는 것 = 저장된 것".
+    /// </summary>
+    public void Save(string path)
+    {
+        _paused = true;
+        Post(() => _pendingSave = path);
+    }
+
+    /// <summary>마지막으로 저장한 세계 시각(확인용).</summary>
+    public long LastSavedTick => Interlocked.Read(ref _lastSavedTick);
+    private long _lastSavedTick = -1;
+
+    private void DoSave(string path)
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
             SaveGame.SaveFile(_world, path);
-            _notices.Enqueue($"저장했습니다 ({GameTime.Format(_world.Now)})");
+            Interlocked.Exchange(ref _lastSavedTick, _world.Now);
+            _notices.Enqueue($"멈추고 저장했습니다 ({GameTime.Format(_world.Now)})");
         }
         catch (Exception e) { _notices.Enqueue("저장하지 못했습니다: " + e.Message); }
-    });
+    }
 
     public void Load(string path) => Post(() =>
     {
         try
         {
             if (!File.Exists(path)) { _notices.Enqueue("저장 파일이 없습니다. 먼저 저장하세요."); return; }
-            ReplaceWorld(SaveGame.LoadFile(path));
+            var w = SaveGame.LoadFile(path);
+            w.EnsurePlanet(null); // 행성은 시드 + 설정으로 다시 만든다(같은 행성이 기억에 있으면 그것)
+            ReplaceWorld(w);
             _notices.Enqueue($"불러왔습니다 ({GameTime.Format(_world.Now)})");
         }
         catch (Exception e) { _notices.Enqueue("불러오지 못했습니다: " + e.Message); }
     });
 
-    public void NewWorld(ulong seed, WorldConfig config) => Post(() =>
+    /// <summary>다른 스레드에서 다 만든 세계(행성 포함)로 바꾼다.</summary>
+    public void Adopt(GameWorld world, string notice) => Post(() =>
     {
-        ReplaceWorld(GameWorld.Create(seed, config));
-        _notices.Enqueue($"새 세계를 시작했습니다 (시드 {seed})");
+        _pendingSave = null;
+        ReplaceWorld(world);
+        _notices.Enqueue(notice);
     });
 
     public void Intervene(string kind, params long[] values) => Post(() =>
@@ -136,6 +155,7 @@ public sealed class SimHost : IDisposable
     // ───────── 시뮬 스레드 쪽 ─────────
 
     private double _lastDaysPerSecond, _lastLoad;
+    private string? _pendingSave;
 
     private void ReplaceWorld(GameWorld w)
     {
@@ -177,6 +197,11 @@ public sealed class SimHost : IDisposable
                 windowStart = nowSec; windowStartTick = _world.Now; busy = 0;
             }
 
+            if (_pendingSave is not null && _world.Now >= target)
+            {
+                DoSave(_pendingSave);
+                _pendingSave = null;
+            }
             if (_world.Now < target)
             {
                 double t0 = wall.Elapsed.TotalSeconds;
