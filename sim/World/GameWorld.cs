@@ -1,5 +1,6 @@
 using Wtw.Sim.Core;
 using Wtw.Sim.Movers;
+using Wtw.Sim.People;
 using Wtw.Sim.Planet;
 using Wtw.Sim.Provinces;
 using Wtw.Sim.Scheduling;
@@ -37,12 +38,12 @@ public sealed class GameWorld
 
     /// <summary>
     /// 지방 지도. 행성 + 칸 번호로 언제나 똑같이 다시 만들어지므로(결정론) 저장하지 않고, 최근 것만 기억해 둔다.
-    /// 지도가 바뀌는 일(나무 베기 등)은 E3~ 에서 ProvinceChanges 에 "바뀐 타일"로 쌓는다.
+    /// 지도가 바뀌는 것(딴 열매 · 주운 돌 · 걷힌 동굴)은 People.Provinces 의 "바뀐 것"으로 따로 쌓아 저장한다.
     /// </summary>
     public ProvinceMap Province(int cell) => ProvinceCache.Get(Planet, cell);
 
-    /// <summary>바뀐 지방 목록(칸 번호 → 바뀐 타일들). 지금은 늘 비어 있다 — 저장 파일의 자리만 있다.</summary>
-    public SortedDictionary<int, int> ProvinceChanges { get; } = new();
+    /// <summary>사람들(E3)과 사람이 사는 지방의 바뀐 것.</summary>
+    public PeopleSim People { get; }
 
     private readonly List<Intervention> _interventions = new();
     public IReadOnlyList<Intervention> Interventions => _interventions;
@@ -56,6 +57,7 @@ public sealed class GameWorld
         Config = config;
         Rng = new RngStreams(seed);
         Dots = new DotField(config.MapTiles);
+        People = new PeopleSim(this, PeopleData.Default);
     }
 
     public static GameWorld Create(ulong seed, WorldConfig config)
@@ -106,6 +108,7 @@ public sealed class GameWorld
                 Now = NextDayBoundary;
                 NextDayBoundary += GameTime.TicksPerDay;
                 DaysElapsed++;
+                People.OnDay();
                 DayBoundary?.Invoke(this, GameTime.DayIndex(Now));
                 continue;
             }
@@ -140,6 +143,9 @@ public sealed class GameWorld
                 Dots.OnArrive(d, Now, Rng.Get(DotField.StreamName, d.Province), Scheduler);
                 break;
             }
+            case EventKinds.Person:
+                People.OnEvent(ev.Target);
+                break;
             default:
                 throw new InvalidOperationException($"모르는 예약 종류: {ev.Kind}");
         }
@@ -162,6 +168,12 @@ public sealed class GameWorld
                 foreach (var d in Dots.Dots) Dots.Interrupt(d, Now, x, y, rng, Scheduler);
                 break;
             }
+            case Intervention.Kinds.SpawnPerson:
+                if (iv.Values.Length >= 3) People.SpawnOne((int)iv.Values[0], (int)iv.Values[1], (int)iv.Values[2]);
+                break;
+            case Intervention.Kinds.SpawnFamily:
+                if (iv.Values.Length >= 3) People.SpawnFamily((int)iv.Values[0], (int)iv.Values[1], (int)iv.Values[2]);
+                break;
             default:
                 throw new InvalidOperationException($"모르는 개입 종류: {iv.Kind}");
         }
