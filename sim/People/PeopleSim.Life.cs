@@ -61,7 +61,7 @@ public sealed partial class PeopleSim
     }
 
     /// <summary>사람 한 명을 만든다. mother/father 가 있으면 닮게(몸 · 능력 · 특성 조금).</summary>
-    private Person Make(int cell, int tile, int ageYears, Sex sex, Person? mother, Person? father, Pcg32 rng, bool newborn = false)
+    internal Person Make(int cell, int tile, int ageYears, Sex sex, Person? mother, Person? father, Pcg32 rng, bool newborn = false)
     {
         var life = Life(cell);
         var p = new Person

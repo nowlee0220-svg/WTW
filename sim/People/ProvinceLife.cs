@@ -218,8 +218,8 @@ public sealed class ProvinceLife
         if (h is null) return 0;
         if (!Stocks.TryGetValue(tile, out var s)) return h.Stock;
         if (h.RegrowTicks <= 0) return s.Stock;
-        long grown = (now - s.Stamp) / h.RegrowTicks;
-        return (int)Math.Min(h.Stock, s.Stock + grown);
+        long grown = Math.Max(0, (now - s.Stamp) / h.RegrowTicks);
+        return (int)Math.Clamp(s.Stock + grown, 0, h.Stock);
     }
 
     /// <summary>묶음에서 가장 먼저 다시 열리는 시각(모두 비어 있을 때).</summary>

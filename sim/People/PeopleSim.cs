@@ -98,7 +98,7 @@ public sealed partial class PeopleSim
         return _lastLife = life;
     }
 
-    private Pcg32 Rng(int cell) => _w.Rng.Get(Stream, cell);
+    internal Pcg32 Rng(int cell) => _w.Rng.Get(Stream, cell);
 
     internal void AddLoaded(Person p)
     {
