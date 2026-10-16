@@ -113,7 +113,7 @@ public static class SaveGame
         if (version >= 2)
         {
             config = config with { LandCells = br.ReadInt32(), Climate = (ClimateBias)br.ReadInt32() };
-            if (Array.IndexOf(PlanetSettings.LandChoices, config.LandCells) < 0 || !Enum.IsDefined(config.Climate))
+            if (config.LandCells < PlanetSettings.MinLand || config.LandCells > PlanetSettings.MaxLand || !Enum.IsDefined(config.Climate))
                 throw new InvalidDataException("저장 파일이 손상되었습니다(행성 설정).");
             if (br.ReadInt32() != 0) throw new InvalidDataException("저장 파일이 손상되었습니다(바뀐 행성 칸).");
         }

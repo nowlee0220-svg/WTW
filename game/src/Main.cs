@@ -77,7 +77,7 @@ public partial class Main : Node
             StartMaking(s0, cfg);
         }
         _devDots = _auto.DevDots;
-        SetMode(_auto.Mode ?? MapMode.Terrain, _auto.Resource);
+        SetMode(_auto.Mode ?? MapMode.Natural, _auto.Resource);
     }
 
     // ───────── 세계 만들기 · 불러오기 (다른 스레드) ─────────
@@ -228,12 +228,11 @@ public partial class Main : Node
             case Key.F5: Save(); break;
             case Key.F9: Load(); break;
             case Key.F12: _devDots = !_devDots; break; // 개발용: E0 점 시험 화면
-            case Key.Q: SetMode(MapMode.Terrain); break;
-            case Key.W: SetMode(MapMode.Biome); break;
-            case Key.E: SetMode(MapMode.Temperature); break;
-            case Key.R: SetMode(MapMode.Rain); break;
-            case Key.T: SetMode(MapMode.Resource); break;
-            default: return;
+            default:
+                var mode = MapModes.All.FirstOrDefault(m => MapModes.Hotkey(m) == k.Keycode, (MapMode)(-1));
+                if ((int)mode < 0) return;
+                SetMode(mode);
+                break;
         }
         GetViewport().SetInputAsHandled();
     }
@@ -243,6 +242,7 @@ public partial class Main : Node
     // AutoPilot 이 쓰는 문
     internal SimHost? Host => _host;
     internal GlobeView Globe => _globe;
+    internal CellPanel Panel => _panel;
     internal void SaveForTest() => Save();
     internal void LoadForTest() => Load();
 }

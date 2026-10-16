@@ -6,7 +6,8 @@ namespace Wtw.Game;
 /// <summary>
 /// 3D 지구본. 행성 전체를 메시 하나로 그린다(칸마다 노드를 만들지 않는다).
 /// 칸 색은 작은 텍스처(칸 하나 = 화소 하나)에 담고, 지도 모드를 바꾸면 그 텍스처만 다시 칠한다.
-/// 조작: 왼쪽 끌기 = 돌리기(관성), 휠 = 확대/축소(부드럽게), 누르기 = 칸 고르기. 화살표 키로도 돌린다.
+/// 조작: 왼쪽 끌기 = 돌리기(놓기 직전에 움직이고 있었으면 관성), 휠 = 확대/축소(부드럽게), 누르기 = 칸 고르기. 화살표 키로도 돌린다.
+/// 칸 사이 선은 그리지 않고, 마우스가 올라간 칸과 고른 칸에만 테두리.
 /// 좌표: 행성(x, y, z; +z = 북극) → Godot(x, z, −y).
 /// </summary>
 public partial class GlobeView : Node3D
@@ -26,13 +27,17 @@ public partial class GlobeView : Node3D
     private int _texHeight;
     private Camera3D _cam = null!;
 
-    private MapMode _mode = MapMode.Terrain;
+    private MapMode _mode = MapMode.Natural;
+    private float[] _shade = Array.Empty<float>();
     private int _resource = ResourceKinds.Copper;
 
     // 카메라 (행성 기준 경도·위도 방향에서 바라봄)
     private float _yaw, _pitch = 0.35f, _dist = 3.7f, _targetDist = 3.7f;
     private float _yawVel, _pitchVel;
     private bool _dragging;
+    // 끌기 관성: 최근 움직임(시각, 돌린 양)만 기억해, 놓을 때 "바로 직전에" 움직이고 있었을 때만 빠르기를 남긴다
+    private readonly Queue<(double T, float Yaw, float Pitch)> _recent = new();
+    private const double InertiaWindow = 0.08; // 놓기 직전 이 시간(초) 안의 움직임만 관성으로
     private Vector2 _pressPos;
     private float _dragMoved;
     private int _hover = -1, _selected = -1, _walkStart;
@@ -96,6 +101,8 @@ public partial class GlobeView : Node3D
         _walkStart = 0;
         BuildMesh(p);
         BuildRivers(p);
+        _shade = MapModes.HillShade(p);
+        FaceLand(p);
         Recolor();
         _mat.SetShaderParameter("selected", -1f);
         _mat.SetShaderParameter("hovered", -1f);
@@ -233,7 +240,7 @@ public partial class GlobeView : Node3D
         if (p is null) return;
         for (int c = 0; c < p.CellCount; c++)
         {
-            var col = MapModes.CellColor(p, c, _mode, _resource);
+            var col = MapModes.CellColor(p, c, _mode, _resource, _shade);
             int o = c * 4;
             _pixels[o] = (byte)(col.R * 255 + 0.5f);
             _pixels[o + 1] = (byte)(col.G * 255 + 0.5f);
@@ -242,7 +249,7 @@ public partial class GlobeView : Node3D
         }
         _img.SetData(TexWidth, _texHeight, false, Image.Format.Rgba8, _pixels);
         _tex.Update(_img);
-        _rivers.Visible = _mode is MapMode.Terrain or MapMode.Biome or MapMode.Rain;
+        _rivers.Visible = _mode is MapMode.Natural or MapMode.Elevation or MapMode.Biome or MapMode.Rain;
     }
 
     // ───────── 카메라 · 입력 ─────────
@@ -259,6 +266,20 @@ public partial class GlobeView : Node3D
         UpdateCamera();
     }
 
+    /// <summary>새 행성이면 땅의 한가운데(무게중심)가 화면 가운데 오게 돌린다 — 땅이 적으면 이 한 면에 땅 전체가 보인다.</summary>
+    private void FaceLand(Planet p)
+    {
+        double mx = 0, my = 0, mz = 0;
+        for (int c = 0; c < p.CellCount; c++) if (!p.IsOcean(c)) { mx += p.X[c]; my += p.Y[c]; mz += p.Z[c]; }
+        var v = ToGodot(mx, my, mz);
+        if (v.LengthSquared() < 1e-9) return;
+        v = v.Normalized();
+        _pitch = Mathf.Clamp(Mathf.Asin(v.Y), -1.2f, 1.2f);
+        _yaw = Mathf.Atan2(v.X, v.Z);
+        _yawVel = _pitchVel = 0;
+        UpdateCamera();
+    }
+
     public void Select(int c)
     {
         _selected = c;
@@ -272,7 +293,6 @@ public partial class GlobeView : Node3D
         _cam.Position = dir * _dist;
         _cam.LookAt(Vector3.Zero, Vector3.Up);
         // 가까이 갈수록 칸 경계선이 보인다
-        _mat.SetShaderParameter("border", Mathf.Clamp((2.25f - _dist) / 0.8f, 0f, 1f));
     }
 
     public override void _Process(double delta)
@@ -312,10 +332,11 @@ public partial class GlobeView : Node3D
         switch (e)
         {
             case InputEventMouseButton { ButtonIndex: MouseButton.Left } mb:
-                if (mb.Pressed) { _dragging = true; _pressPos = mb.Position; _dragMoved = 0; _yawVel = _pitchVel = 0; }
+                if (mb.Pressed) { _dragging = true; _pressPos = mb.Position; _dragMoved = 0; _yawVel = _pitchVel = 0; _recent.Clear(); }
                 else if (_dragging)
                 {
                     _dragging = false;
+                    ReleaseInertia();
                     if (_dragMoved < 6)
                     {
                         int c = Pick(mb.Position);
@@ -343,13 +364,28 @@ public partial class GlobeView : Node3D
                     float k = 2.0f * (_dist - 1f) / h; // 가까이 갈수록 천천히
                     float dyaw = -mm.Relative.X * k, dpitch = mm.Relative.Y * k;
                     _yaw += dyaw; _pitch += dpitch;
-                    // 관성: 최근 움직임의 빠르기를 기억(초당)
-                    float dt = Mathf.Max((float)GetProcessDeltaTime(), 1f / 240f);
-                    _yawVel = Mathf.Lerp(_yawVel, dyaw / dt, 0.5f);
-                    _pitchVel = Mathf.Lerp(_pitchVel, dpitch / dt, 0.5f);
+                    double now = Now();
+                    _recent.Enqueue((now, dyaw, dpitch));
+                    while (_recent.Count > 0 && now - _recent.Peek().T > InertiaWindow) _recent.Dequeue();
                 }
                 break;
         }
+    }
+
+    private static double Now() => Time.GetTicksUsec() / 1e6;
+
+    /// <summary>
+    /// 놓을 때의 관성: 놓기 직전 InertiaWindow 초 안에 움직인 양 ÷ 그 시간. 마우스를 멈춘 채로 놓으면 그 안에 움직임이 없으므로 0.
+    /// </summary>
+    private void ReleaseInertia()
+    {
+        double now = Now();
+        float yaw = 0, pitch = 0;
+        foreach (var (t, y, p) in _recent)
+            if (now - t <= InertiaWindow) { yaw += y; pitch += p; }
+        _recent.Clear();
+        _yawVel = (float)(yaw / InertiaWindow);
+        _pitchVel = (float)(pitch / InertiaWindow);
     }
 
     /// <summary>화면 위치의 칸 (지구본 밖이면 −1). 구와 광선의 교점에서 가장 가까운 칸까지 이웃을 따라 걷는다.</summary>
@@ -386,7 +422,6 @@ public partial class GlobeView : Node3D
 shader_type spatial;
 render_mode blend_mix, cull_back, diffuse_lambert, specular_schlick_ggx;
 uniform sampler2D cell_tex : source_color, filter_nearest;
-uniform float border = 0.0;
 uniform float selected = -1.0;
 uniform float hovered = -1.0;
 varying float v_cell;
@@ -395,15 +430,15 @@ void vertex() { v_cell = UV2.x; v_edge = UV2.y; }
 void fragment() {
     vec4 c = texture(cell_tex, UV);
     vec3 col = c.rgb;
+    // 칸 사이 선은 그리지 않는다. 마우스가 올라간 칸(흰 테두리)과 고른 칸(금색 테두리)만.
     float w = max(fwidth(v_edge), 1e-4);
-    float line = smoothstep(1.0 - 1.8 * w, 1.0 - 0.3 * w, v_edge);
-    col = mix(col, col * 0.5, line * border);
     if (abs(v_cell - hovered) < 0.5) {
-        col = mix(col, vec3(1.0), 0.15 + 0.45 * line);
+        float l1 = smoothstep(1.0 - 3.0 * w, 1.0 - 1.0 * w, v_edge);
+        col = mix(col, vec3(1.0), 0.85 * l1);
     }
     if (abs(v_cell - selected) < 0.5) {
-        float l2 = smoothstep(1.0 - 4.5 * w, 1.0 - 1.5 * w, v_edge);
-        col = mix(col, vec3(1.0, 0.85, 0.3), max(l2, 0.18));
+        float l2 = smoothstep(1.0 - 5.0 * w, 1.0 - 1.5 * w, v_edge);
+        col = mix(col, vec3(1.0, 0.85, 0.3), l2);
     }
     ALBEDO = col;
     ROUGHNESS = c.a;

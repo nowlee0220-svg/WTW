@@ -15,6 +15,8 @@ public partial class CellPanel : PanelContainer
     private Label _title = null!, _subtitle = null!;
     private GridContainer _facts = null!;
     private VBoxContainer _why = null!;
+    private Button _whyToggle = null!;
+    private bool _whyOpen; // 처음엔 접어 둔다. 한 번 펼치면 다른 칸을 눌러도 펼친 채로(이번 실행 동안)
 
     public override void _Ready()
     {
@@ -52,13 +54,25 @@ public partial class CellPanel : PanelContainer
         box.AddChild(_facts);
 
         box.AddChild(new HSeparator());
-        var whyTitle = new Label { Text = "왜?" };
-        whyTitle.AddThemeFontOverride("font", UiTheme.Bold);
-        whyTitle.AddThemeColorOverride("font_color", UiTheme.Accent);
-        box.AddChild(whyTitle);
+        // "왜?" — 누르면 같은 창 안에서 펼치고 접는다
+        _whyToggle = new Button { FocusMode = FocusModeEnum.None, Alignment = HorizontalAlignment.Left, Flat = true };
+        _whyToggle.AddThemeFontOverride("font", UiTheme.Bold);
+        _whyToggle.AddThemeColorOverride("font_color", UiTheme.Accent);
+        _whyToggle.AddThemeColorOverride("font_hover_color", UiTheme.Accent.Lightened(0.3f));
+        _whyToggle.Pressed += () => { _whyOpen = !_whyOpen; UpdateWhy(); };
+        box.AddChild(_whyToggle);
         _why = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _why.AddThemeConstantOverride("separation", 6);
         box.AddChild(_why);
+        UpdateWhy();
+    }
+
+    public void SetWhyOpen(bool open) { _whyOpen = open; UpdateWhy(); }
+
+    private void UpdateWhy()
+    {
+        _why.Visible = _whyOpen;
+        _whyToggle.Text = _whyOpen ? "왜? ▲ 접기" : "왜? ▼ 펼치기";
     }
 
     public void ShowCell(Planet p, int c)

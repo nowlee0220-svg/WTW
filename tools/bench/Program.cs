@@ -125,8 +125,43 @@ static void DumpPlanet(Options opt)
             ids[py * W + px] = cur;
         }
     using (var f = File.Create(opt.Dump + ".ids")) f.Write(System.Runtime.InteropServices.MemoryMarshal.AsBytes(ids.AsSpan()));
+    // 땅의 무게중심 쪽에서 본 지구본(정사영, 북쪽이 위) 512×512 — 바깥은 −1
+    double mx = 0, my = 0, mz = 0;
+    for (int c = 0; c < p.CellCount; c++) if (!p.IsOcean(c)) { mx += p.X[c]; my += p.Y[c]; mz += p.Z[c]; }
+    double ml = Math.Sqrt(mx * mx + my * my + mz * mz);
+    var f0 = (mx / ml, my / ml, mz / ml);
+    var east = Norm(-f0.Item2, f0.Item1, 0);
+    var up = (f0.Item2 * east.Item3 - f0.Item3 * east.Item2, f0.Item3 * east.Item1 - f0.Item1 * east.Item3, f0.Item1 * east.Item2 - f0.Item2 * east.Item1);
+    if (up.Item3 < 0) up = (-up.Item1, -up.Item2, -up.Item3);
+    const int O = 512;
+    var oids = new int[O * O];
+    for (int py = 0; py < O; py++)
+        for (int px = 0; px < O; px++)
+        {
+            double u = (px + 0.5) / O * 2 - 1, v = 1 - (py + 0.5) / O * 2;
+            double w2 = 1 - u * u - v * v;
+            if (w2 < 0) { oids[py * O + px] = -1; continue; }
+            double w = Math.Sqrt(w2);
+            double x = f0.Item1 * w + east.Item1 * u + up.Item1 * v, y = f0.Item2 * w + east.Item2 * u + up.Item2 * v, z = f0.Item3 * w + east.Item3 * u + up.Item3 * v;
+            while (true)
+            {
+                double best = x * p.X[cur] + y * p.Y[cur] + z * p.Z[cur];
+                int next = -1;
+                foreach (int nb in grid.Neighbors(cur))
+                {
+                    double d = x * p.X[nb] + y * p.Y[nb] + z * p.Z[nb];
+                    if (d > best) { best = d; next = nb; }
+                }
+                if (next < 0) break;
+                cur = next;
+            }
+            oids[py * O + px] = cur;
+        }
+    using (var f = File.Create(opt.Dump + ".ortho")) f.Write(System.Runtime.InteropServices.MemoryMarshal.AsBytes(oids.AsSpan()));
     Console.WriteLine($"{opt.Dump}.csv / .ids — 땅 {p.LandCount} · 호수 {p.LakeCount} · 대륙 {p.ContinentCells} · 섬 {p.IslandCount} · 오각형-땅 {p.PentagonsOnLand}");
 }
+
+static (double, double, double) Norm(double x, double y, double z) { double l = Math.Sqrt(x * x + y * y + z * z); return (x / l, y / l, z / l); }
 
 static PlanetBench RunPlanets(Options opt)
 {
@@ -148,6 +183,12 @@ static PlanetBench RunPlanets(Options opt)
         var terr = new int[8];
         var bio = new int[11];
         for (int c = 0; c < p.CellCount; c++) { terr[(int)p.Terrain[c]]++; bio[(int)p.Biome[c]]++; }
+        // 땅이 얼마나 한쪽에 모였나: 땅의 무게중심에서 가장 먼 땅 칸까지의 각도(도)
+        double mx = 0, my = 0, mz = 0;
+        for (int c = 0; c < p.CellCount; c++) if (!p.IsOcean(c)) { mx += p.X[c]; my += p.Y[c]; mz += p.Z[c]; }
+        double ml = Math.Sqrt(mx * mx + my * my + mz * mz), minDot = 1;
+        for (int c = 0; c < p.CellCount; c++) if (!p.IsOcean(c)) minDot = Math.Min(minDot, (p.X[c] * mx + p.Y[c] * my + p.Z[c] * mz) / ml);
+        double spread = Math.Acos(Math.Clamp(minDot, -1, 1)) * 180 / Math.PI;
         results[k] = new PlanetSeedResult
         {
             Seed = seed, Land = land, Seconds = Math.Round(p.GenerationSeconds, 3),
@@ -155,12 +196,12 @@ static PlanetBench RunPlanets(Options opt)
             Lakes = p.LakeCount, ContinentPct = Math.Round(p.ContinentCells * 100.0 / Math.Max(1, p.LandCount), 1),
             Islands = p.IslandCount, IslandSizes = p.IslandSizes, PentagonsOnLand = p.PentagonsOnLand,
             RiverCells = p.RiverCells, RemovedIslets = p.RemovedIslets, OrientationTries = p.OrientationTries,
-            Terrain = terr, Biomes = bio, Fingerprint = p.Fingerprint,
+            Terrain = terr, Biomes = bio, Fingerprint = p.Fingerprint, SpreadDeg = Math.Round(spread, 1),
         };
     });
 
     foreach (var r in results)
-        Console.WriteLine($"  시드 {r.Seed} 땅 {r.Land}: {r.Seconds:0.00}초 · 땅 {r.LandCells} ({r.LandErrorPct:+0.0;-0.0}%) · 호수 {r.Lakes} · 대륙 {r.ContinentPct}% · 섬 {r.Islands} [{string.Join(",", r.IslandSizes.Take(10))}] · 오각형-땅 {r.PentagonsOnLand} · 강 {r.RiverCells} · 지운 조각 {r.RemovedIslets} · 방향 {r.OrientationTries}번\n" +
+        Console.WriteLine($"  시드 {r.Seed} 땅 {r.Land}: {r.Seconds:0.00}초 · 땅 {r.LandCells} ({r.LandErrorPct:+0.0;-0.0}%) · 호수 {r.Lakes} · 대륙 {r.ContinentPct}% · 섬 {r.Islands} [{string.Join(",", r.IslandSizes.Take(10))}] · 오각형-땅 {r.PentagonsOnLand} · 강 {r.RiverCells} · 지운 조각 {r.RemovedIslets} · 방향 {r.OrientationTries}번 · 퍼짐 {r.SpreadDeg}°\n" +
                           $"      지형[깊은바다 얕은바다 호수 평야 언덕 고원 산 높은산] {string.Join(" ", r.Terrain)} · 생물군계[물 얼음 툰드라 침엽 온대 초원 사막 사바나 열대 습지 고산] {string.Join(" ", r.Biomes)}");
 
     var pb = new PlanetBench
@@ -175,11 +216,12 @@ static PlanetBench RunPlanets(Options opt)
         SeedsWithPentagonOnLand = results.Count(r => r.PentagonsOnLand > 0),
         MedianLakes = Median(results.Select(r => (double)r.Lakes)),
         MedianRiverCells = Median(results.Select(r => (double)r.RiverCells)),
+        MaxSpreadDeg = results.Max(r => r.SpreadDeg),
         Runs = results.Length, PerSeed = results,
     };
     Console.WriteLine($"요약({pb.Runs}번): 만드는 시간 중앙값 {pb.MedianSeconds:0.00}초(최대 {pb.MaxSeconds:0.00}) · 땅 오차 최대 {pb.MaxAbsLandErrorPct:0.0}% · " +
                       $"대륙 중앙값 {pb.MedianContinentPct}% (70~85% 안: {pb.ContinentInRange}/{pb.Runs}) · 섬 중앙값 {pb.MedianIslands} (3~8개: {pb.IslandsInRange}/{pb.Runs}) · " +
-                      $"오각형이 땅에 걸린 경우 {pb.SeedsWithPentagonOnLand}/{pb.Runs} · 호수 중앙값 {pb.MedianLakes} · 강 칸 중앙값 {pb.MedianRiverCells}");
+                      $"오각형이 땅에 걸린 경우 {pb.SeedsWithPentagonOnLand}/{pb.Runs} · 호수 중앙값 {pb.MedianLakes} · 강 칸 중앙값 {pb.MedianRiverCells} · 땅의 퍼짐 최대 {pb.MaxSpreadDeg}°(무게중심에서 가장 먼 땅까지)");
     return pb;
 }
 
@@ -293,6 +335,7 @@ public sealed class PlanetBench
     public int SeedsWithPentagonOnLand { get; set; }
     public double MedianLakes { get; set; }
     public double MedianRiverCells { get; set; }
+    public double MaxSpreadDeg { get; set; }
     public PlanetSeedResult[] PerSeed { get; set; } = Array.Empty<PlanetSeedResult>();
 }
 
@@ -314,6 +357,7 @@ public sealed class PlanetSeedResult
     public int[] Terrain { get; set; } = Array.Empty<int>();
     public int[] Biomes { get; set; } = Array.Empty<int>();
     public ulong Fingerprint { get; set; }
+    public double SpreadDeg { get; set; }
 }
 
 /// <summary>이 컴퓨터: 코어 수 + CPU 이름. 기준 파일은 같은 컴퓨터에서 잰 것과만 비교한다.</summary>

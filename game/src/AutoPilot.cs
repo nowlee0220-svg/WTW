@@ -9,8 +9,8 @@ namespace Wtw.Game;
 /// 자동 확인용(클라우드의 가상 화면에서 쓴다). 사람이 게임할 때는 아무 일도 하지 않는다.
 ///   --seed=N             새 세계 화면을 건너뛰고 바로 이 시드로 만든다 (--land=16000|20000|24000 --climate=cold|normal|warm)
 ///   --newworld           새 세계 화면에 머문다(스크린샷용)
-///   --mode=terrain|biome|temp|rain|res  --res=copper   지도 모드
-///   --select=auto|칸번호  칸을 골라 정보 창을 연다(auto = 비그늘이 있는 산 근처 땅)    --zoom=거리   --spin  지구본을 계속 돌린다
+///   --mode=natural|elev|biome|temp|rain|res  --res=copper   지도 모드
+///   --select=auto|칸번호  칸을 골라 정보 창을 연다(auto = 비그늘이 있는 산 근처 땅)  --why  "왜?" 를 펼친다    --zoom=거리   --spin  지구본을 계속 돌린다
 ///   --screenshot=경로 --shot-after=초 : 세계가 생기고 그 시간 뒤 화면을 찍고 끝낸다.
 ///   --selftest : 달리는 중에 [저장] → 멈춘 화면 = 저장된 시각인지 → 더 돌림 → 불러오기 → 저장한 시각·점 위치로 돌아왔는지.
 ///   --dots=N --devdots : E0 점 시험(개발용 화면)
@@ -26,7 +26,7 @@ public sealed class AutoPilot
     public bool StayOnNewWorld, DevDots;
     private string? _select;
     private float? _zoom;
-    private bool _spin;
+    private bool _spin, _whyOpen;
     private string? _shotPath;
     private double _shotAfter = 4;
     private bool _selftest;
@@ -64,13 +64,14 @@ public sealed class AutoPilot
                 case "--land": Land = int.Parse(v); break;
                 case "--climate": Climate = v switch { "cold" => ClimateBias.Cold, "warm" => ClimateBias.Warm, _ => ClimateBias.Normal }; break;
                 case "--mode":
-                    Mode = v switch { "biome" => MapMode.Biome, "temp" => MapMode.Temperature, "rain" => MapMode.Rain, "res" => MapMode.Resource, _ => MapMode.Terrain };
+                    Mode = v switch { "elev" => MapMode.Elevation, "biome" => MapMode.Biome, "temp" => MapMode.Temperature, "rain" => MapMode.Rain, "res" => MapMode.Resource, _ => MapMode.Natural };
                     break;
                 case "--res": Resource = Array.IndexOf(ResourceKinds.Ids, v) is int r && r >= 0 ? r : null; break;
                 case "--newworld": StayOnNewWorld = true; break;
                 case "--select": _select = v; break;
                 case "--zoom": _zoom = float.Parse(v, inv); break;
                 case "--spin": _spin = true; break;
+                case "--why": _whyOpen = true; break;
                 case "--screenshot": _shotPath = v; break;
                 case "--shot-after": _shotAfter = double.Parse(v, inv); break;
                 case "--selftest": _selftest = true; break;
@@ -120,6 +121,7 @@ public sealed class AutoPilot
         else cell = int.Parse(_select!);
         g.LookAtCell(cell, _zoom ?? 1.7f);
         g.Select(cell);
+        if (_whyOpen) _main.Panel.SetWhyOpen(true);
     }
 
     public void Tick(double delta, WorldSnapshot? snap)

@@ -14,7 +14,8 @@ public partial class NewWorldScreen : Control
     public event Action? CloseRequested;
 
     private LineEdit _seed = null!;
-    private readonly Button[] _land = new Button[3];
+    private readonly Button[] _land = new Button[PlanetSettings.LandChoices.Length];
+    private LineEdit _landInput = null!;
     private readonly Button[] _climate = new Button[3];
     private Button _create = null!, _load = null!, _close = null!;
     private ProgressBar _bar = null!;
@@ -33,7 +34,7 @@ public partial class NewWorldScreen : Control
         var center = new CenterContainer { MouseFilter = MouseFilterEnum.Ignore };
         center.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(center);
-        var panel = new PanelContainer { CustomMinimumSize = new Vector2(700, 0) };
+        var panel = new PanelContainer { CustomMinimumSize = new Vector2(780, 0) };
         panel.AddThemeStyleboxOverride("panel", UiTheme.Box(UiTheme.Panel, 10, 36, 28));
         center.AddChild(panel);
         var box = new VBoxContainer();
@@ -60,18 +61,35 @@ public partial class NewWorldScreen : Control
         box.AddChild(seedRow);
 
         // 땅의 양
-        box.AddChild(Caption("땅의 양 (행성 크기는 같고, 땅 비율만 바뀝니다)"));
+        box.AddChild(Caption("땅의 양 (행성 크기는 같고, 땅만 넓어집니다. 땅은 행성의 한쪽에 모입니다)"));
         var landRow = new HBoxContainer();
-        var landGroup = new ButtonGroup();
-        for (int i = 0; i < 3; i++)
+        var landGroup = new ButtonGroup { AllowUnpress = true };
+        for (int i = 0; i < _land.Length; i++)
         {
             int cells = PlanetSettings.LandChoices[i];
-            _land[i] = MakeButton($"{cells:N0} 칸{(i == 0 ? " (기본)" : "")}", null);
+            _land[i] = MakeButton(cells == PlanetSettings.Default.LandCells ? $"{cells:N0} (기본)" : $"{cells:N0}", null);
             _land[i].ToggleMode = true; _land[i].ButtonGroup = landGroup; _land[i].SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            _land[i].Pressed += () => { _landInput.Text = cells.ToString(); _error.Text = ""; };
             landRow.AddChild(_land[i]);
         }
-        _land[0].ButtonPressed = true;
         box.AddChild(landRow);
+        var inputRow = new HBoxContainer();
+        var inputLabel = new Label { Text = "직접 입력 (칸)" };
+        inputLabel.AddThemeColorOverride("font_color", UiTheme.TextDim);
+        inputRow.AddChild(inputLabel);
+        _landInput = new LineEdit { CustomMinimumSize = new Vector2(160, 0), MaxLength = 6, PlaceholderText = "예: 3000" };
+        _landInput.TextChanged += t =>
+        {
+            _error.Text = "";
+            int.TryParse(t.Trim().Replace(",", ""), out int v);
+            for (int i = 0; i < _land.Length; i++) _land[i].SetPressedNoSignal(PlanetSettings.LandChoices[i] == v);
+        };
+        inputRow.AddChild(_landInput);
+        var range = new Label { Text = $"{PlanetSettings.MinLand:N0} ~ {PlanetSettings.MaxLand:N0} 칸 (행성 전체 51,842칸)" };
+        range.AddThemeColorOverride("font_color", UiTheme.TextDim);
+        range.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeSmall);
+        inputRow.AddChild(range);
+        box.AddChild(inputRow);
 
         // 기후 경향
         box.AddChild(Caption("기후 경향"));
@@ -113,6 +131,13 @@ public partial class NewWorldScreen : Control
         box.AddChild(bottom);
 
         _seed.Text = RandomSeed().ToString();
+        SetLand(PlanetSettings.Default.LandCells);
+    }
+
+    private void SetLand(int land)
+    {
+        _landInput.Text = land.ToString();
+        for (int i = 0; i < _land.Length; i++) _land[i].SetPressedNoSignal(PlanetSettings.LandChoices[i] == land);
     }
 
     private static Label Caption(string text)
@@ -143,7 +168,7 @@ public partial class NewWorldScreen : Control
     public void SetValues(ulong seed, int land, ClimateBias climate)
     {
         _seed.Text = seed.ToString();
-        for (int i = 0; i < 3; i++) _land[i].ButtonPressed = PlanetSettings.LandChoices[i] == land;
+        SetLand(land);
         for (int i = 0; i < 3; i++) _climate[i].ButtonPressed = i == (int)climate + 1;
     }
 
@@ -165,8 +190,11 @@ public partial class NewWorldScreen : Control
             _error.Text = "시드는 숫자(0 이상)로 넣어 주세요.";
             return;
         }
-        int land = PlanetSettings.LandChoices[0];
-        for (int i = 0; i < 3; i++) if (_land[i].ButtonPressed) land = PlanetSettings.LandChoices[i];
+        if (!int.TryParse(_landInput.Text.Trim().Replace(",", ""), out int land) || land < PlanetSettings.MinLand || land > PlanetSettings.MaxLand)
+        {
+            _error.Text = $"땅의 양은 {PlanetSettings.MinLand:N0} ~ {PlanetSettings.MaxLand:N0} 칸 사이의 숫자로 넣어 주세요. (이보다 적으면 대륙이 조각나 버립니다)";
+            return;
+        }
         var climate = ClimateBias.Normal;
         for (int i = 0; i < 3; i++) if (_climate[i].ButtonPressed) climate = (ClimateBias)(i - 1);
         CreateRequested?.Invoke(seed, land, climate);

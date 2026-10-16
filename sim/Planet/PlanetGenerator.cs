@@ -5,8 +5,8 @@ namespace Wtw.Sim.Planet;
 
 /// <summary>
 /// 행성 만들기. 순서:
-///  1) 모양 — 큰 대륙(둥근 덩어리 4~6개를 사슬처럼 이음) + 섬 4~7개를 행성 기준 좌표에 놓고, 잡음으로 해안선을 들쭉날쭉하게.
-///  2) 방향 — 격자를 여러 방향으로 돌려 보며 오각형 12개가 모두 바다에 오는 첫 방향을 고른다(땅 24,000 기준 → 모든 설정에서 바다).
+///  1) 모양 — 땅은 한쪽 면에 모인다: 남북으로 길쭉한 대륙 + 해안 앞의 섬 (PlaceShapes 설명).
+///  2) 방향 — 격자를 여러 방향으로 돌려 보며 오각형이 땅에 가장 적게 걸리는 방향을 고른다(땅의 양과 무관한 기준).
 ///  3) 땅 — 값이 높은 칸부터 정한 땅 칸 수만큼(같은 행성에서 땅 비율만 바뀜). 아주 작은 땅 조각은 바다로, 대양과 떨어진 작은 물은 호수로.
 ///  4) 높이 — 내륙일수록 높게 + 산맥(능선 잡음) + 고원 + 언덕. 바다는 해안에서 멀수록 깊게.
 ///  5) 물길 — 낮은 곳부터 채워 가며(우선순위 채우기) 웅덩이는 호수로, 나머지는 바다로 흘러가는 길을 정한다.
@@ -19,16 +19,18 @@ namespace Wtw.Sim.Planet;
 public static class PlanetGenerator
 {
     // ── 모양 ──
-    private const double WarpFreq = 1.7, WarpAmp = 0.75;     // 큰 굴곡(만 · 반도)
-    private const double CoastFreq = 3.0, CoastAmp = 0.35;   // 들쭉날쭉한 해안선
-    private const int MinIsletCells = 30;                    // 이보다 작은 땅 조각은 바다로
+    private const double WarpFreq = 1.9, WarpAmp = 0.55;     // 큰 굴곡(만 · 반도) — 중심에서의 거리에 비례
+    private const double CoastFreq = 3.0, CoastAmp = 0.30;   // 들쭉날쭉한 해안선 — 거리에 곱한다
+    /// <summary>이보다 작은 땅 조각은 바다로. 땅이 적으면 섬도 작으므로 땅 칸 수에 맞춰(4~25칸).</summary>
+    private static int MinIsletCells(int land) => Math.Clamp(land / 300, 3, 40);
     private const int MaxLakeFromSeaCells = 80;              // 대양과 떨어진 이보다 작은 물은 호수
     private const int OrientationCandidates = 3000;
+    private static readonly int[] OrientationLands = { 2_000, 8_000, 16_000, 24_000 };
 
     public static Planet Generate(ulong seed, PlanetSettings settings, Action<double, string>? progress = null)
     {
-        if (Array.IndexOf(PlanetSettings.LandChoices, settings.LandCells) < 0 && (settings.LandCells < 1000 || settings.LandCells > 40_000))
-            throw new ArgumentOutOfRangeException(nameof(settings), "땅 칸 수는 1,000 ~ 40,000");
+        if (settings.LandCells < PlanetSettings.MinLand || settings.LandCells > PlanetSettings.MaxLand)
+            throw new ArgumentOutOfRangeException(nameof(settings), $"땅 칸 수는 {PlanetSettings.MinLand:N0} ~ {PlanetSettings.MaxLand:N0}");
         var sw = Stopwatch.StartNew();
         progress?.Invoke(0.02, "격자 준비");
         var grid = GeoGrid.Shared;
@@ -37,6 +39,21 @@ public static class PlanetGenerator
         p.GenerationSeconds = sw.Elapsed.TotalSeconds;
         progress?.Invoke(1.0, "끝");
         return p;
+    }
+
+    /// <summary>
+    /// 자연로그 — 사칙연산만(Math.Log 는 기계마다 끝자리가 다를 수 있다). x = m·2^e 로 나눈 뒤(비트 그대로라 정확)
+    /// ln m = 2·atanh((m−1)/(m+1)) 급수.
+    /// </summary>
+    public static double DetLog(double x)
+    {
+        long bits = BitConverter.DoubleToInt64Bits(x);
+        int e = (int)((bits >> 52) & 0x7FF) - 1023;
+        double m = BitConverter.Int64BitsToDouble((bits & 0x000FFFFFFFFFFFFFL) | 0x3FF0000000000000L); // [1, 2)
+        if (m > 1.4142135623730951) { m *= 0.5; e++; }
+        double t = (m - 1) / (m + 1), t2 = t * t, term = t, sum = 0;
+        for (int k = 1; k < 40; k += 2) { sum += term / k; term *= t2; }
+        return 2 * sum + e * 0.6931471805599453;
     }
 
     private sealed class Gen
@@ -49,7 +66,6 @@ public static class PlanetGenerator
         private readonly Planet _p;
 
         // 모양
-        private readonly List<(double X, double Y, double Z, double R)> _blobs = new();
         private Noise3 _warpX = null!, _warpY = null!, _warpZ = null!, _coast = null!;
         private double[] _field = null!;
         private bool[] _ocean = null!, _lake = null!, _land = null!;
@@ -116,6 +132,19 @@ public static class PlanetGenerator
             return GeoGrid.Normalize(v.X - d * p.X, v.Y - d * p.Y, v.Z - d * p.Z);
         }
 
+        // 땅의 중심(행성의 "앞면")과 대륙 모양
+        private (double X, double Y, double Z) _center, _major, _minor;
+        private double _aspect;
+        private Noise3 _isle = null!;
+
+        /// <summary>
+        /// 땅은 행성의 한쪽 면(중심 L)에 모인다. 땅 값 = −(L 에서의 거리), 그래서 땅이 적으면 L 둘레의 작은 대륙,
+        /// 많으면 같은 대륙이 둘레로 넓어진다(같은 값을 더 낮은 경계에서 자르는 것뿐이라 작은 땅은 늘 큰 땅 안에 들어간다).
+        ///  - 대륙은 남북으로 길쭉한 타원(가로세로 1.8~2.4배) → 가장 작은 땅에서도 더운 곳(남쪽 끝)부터 추운 곳(북쪽 끝)까지 걸친다.
+        ///  - 거리에 비례하는 굴곡·잡음 → 대륙이 크든 작든 해안선의 들쭉날쭉함이 비슷하다.
+        ///  - 섬: "방향 × 거리의 로그" 위의 드문 혹(잡음). 거리의 로그를 쓰므로 무늬가 크기와 무관하게 되풀이된다 →
+        ///    땅이 적든 많든 해안 앞(대륙 크기의 1~1.6배 거리)에 비슷한 비율의 섬이 몇 개 있다. 대륙이 커지면 섬은 대륙에 붙고 더 바깥의 섬이 떠오른다.
+        /// </summary>
         private void PlaceShapes()
         {
             var r = Stream("shape");
@@ -124,86 +153,87 @@ public static class PlanetGenerator
             _warpZ = new Noise3(Stream("noise.warp.z"));
             _coast = new Noise3(Stream("noise.coast"));
 
-            // 큰 대륙: 덩어리 4~6개를 한 방향으로 이어 길쭉하게
-            int k = 4 + r.NextInt(3);
-            (double X, double Y, double Z) c;
-            do c = RandomUnit(r); while (Math.Abs(c.Z) > 0.40);
-            var heading = Tangent(c, RandomUnit(r));
-            double rad = 0.50 + 0.12 * r.NextDouble();
-            _blobs.Add((c.X, c.Y, c.Z, rad));
-            for (int i = 1; i < k; i++)
-            {
-                (double X, double Y, double Z) next = c;
-                double nr = 0.36 + 0.18 * r.NextDouble();
-                for (int attempt = 0; attempt < 20; attempt++)
-                {
-                    var turn = Tangent(c, RandomUnit(r));
-                    var h = Tangent(c, (heading.X + 0.8 * turn.X, heading.Y + 0.8 * turn.Y, heading.Z + 0.8 * turn.Z));
-                    double step = (0.55 + 0.25 * r.NextDouble()) * (rad + nr) * 0.75;
-                    next = GeoGrid.Normalize(c.X + h.X * step, c.Y + h.Y * step, c.Z + h.Z * step);
-                    if (Math.Abs(next.Z) <= 0.50) { heading = h; break; }
-                }
-                c = next; rad = nr;
-                _blobs.Add((c.X, c.Y, c.Z, rad));
-            }
+            // 중심: 위도 33~46°(북·남반구 중 하나), 경도는 아무 데나
+            double z0 = 0.55 + 0.17 * r.NextDouble();
+            if (r.NextInt(2) == 1) z0 = -z0;
+            double ux, uy, u2;
+            do { ux = r.NextDouble() * 2 - 1; uy = r.NextDouble() * 2 - 1; u2 = ux * ux + uy * uy; } while (u2 < 1e-6 || u2 > 1);
+            double rr = Math.Sqrt((1 - z0 * z0) / u2);
+            _center = (ux * rr, uy * rr, z0);
+            // 남북 방향(조금 기울여서)과 동서 방향
+            var north = Tangent(_center, (0, 0, 1));
+            var east = Cross(north, _center);
+            double tilt = (r.NextDouble() * 2 - 1) * 0.35;
+            _major = GeoGrid.Normalize(north.X + tilt * east.X, north.Y + tilt * east.Y, north.Z + tilt * east.Z);
+            _minor = Cross(_major, _center);
+            _aspect = 1.8 + 0.6 * r.NextDouble();
 
-            // 대륙만 있을 때(경계값 0) 칸 수 → 섬 전체 크기를 대륙의 16~24% 몫이 되게
-            int contCells = 0;
-            for (int i = 0; i < _n; i++) if (BlobField(_g.Cx[i], _g.Cy[i], _g.Cz[i]) >= 0) contCells++;
-            double share = 0.17 + 0.07 * r.NextDouble();
-            double islandCells = share / (1 - share) * contCells;
-            int m = 3 + r.NextInt(4);
-            var w = new double[m];
-            double wsum = 0;
-            for (int i = 0; i < m; i++) { w[i] = 0.4 + r.NextDouble(); wsum += w[i]; }
-            // 땅 24,000 일 때 덩어리가 커지는 비율(선형) — 그때도 섬이 대륙·서로와 붙지 않게 띄운다
-            double grow = Math.Sqrt(Math.Max(1.0, 24_000.0 * 1.05 / (contCells + islandCells)));
-            int continentBlobs = _blobs.Count;
-            for (int i = 0; i < m; i++)
-            {
-                double ir = 2 * Math.Sqrt(islandCells * w[i] / wsum / _n); // 구 위 덮개 넓이 = π·현² → 칸 비율 = 현²/4
-                for (int attempt = 0; attempt < 400; attempt++)
-                {
-                    var q = RandomUnit(r);
-                    if (Math.Abs(q.Z) > 0.80) continue;
-                    bool ok = true;
-                    for (int b = 0; b < _blobs.Count && ok; b++)
-                    {
-                        var o = _blobs[b];
-                        double d = Math.Sqrt((q.X - o.X) * (q.X - o.X) + (q.Y - o.Y) * (q.Y - o.Y) + (q.Z - o.Z) * (q.Z - o.Z));
-                        double need = grow * (o.R + ir) + (b < continentBlobs ? 0.22 : 0.16);
-                        if (d < need) ok = false;
-                    }
-                    if (ok) { _blobs.Add((q.X, q.Y, q.Z, ir)); break; }
-                }
-            }
+            _isle = new Noise3(Stream("noise.islands"));
         }
 
-        private double BlobField(double x, double y, double z)
+        private static (double X, double Y, double Z) Cross((double X, double Y, double Z) a, (double X, double Y, double Z) b) =>
+            GeoGrid.Normalize(a.Y * b.Z - a.Z * b.Y, a.Z * b.X - a.X * b.Z, a.X * b.Y - a.Y * b.X);
+
+        /// <summary>중심에서의 거리(현 길이)를 남북으로 길쭉하게: 동서 방향 거리는 aspect 배로 센다.</summary>
+        private double ContinentDistance(double x, double y, double z)
         {
-            double best = double.NegativeInfinity;
-            foreach (var b in _blobs)
-            {
-                double dx = x - b.X, dy = y - b.Y, dz = z - b.Z;
-                double v = 1 - Math.Sqrt(dx * dx + dy * dy + dz * dz) / b.R; // 직선으로 낮아짐 → 해안 잡음이 모양을 더 흔든다
-                if (v > best) best = v;
-            }
-            return best;
+            double dz = x * _center.X + y * _center.Y + z * _center.Z;
+            double a = x * _major.X + y * _major.Y + z * _major.Z;
+            double b = x * _minor.X + y * _minor.Y + z * _minor.Z;
+            double s2 = a * a + b * b;
+            double f = s2 < 1e-12 ? 1 : (a * a + b * b * _aspect * _aspect) / s2;
+            return Math.Sqrt(Math.Max(0, 2 - 2 * dz) * f);
         }
 
-        /// <summary>땅 값: 높을수록 땅. 행성 기준 좌표.</summary>
+        /// <summary>굴곡(만·반도): 중심에서 멀수록 크게 비튼다 → 크기와 무관하게 비슷한 모양.</summary>
+        private (double X, double Y, double Z) Warp(double x, double y, double z)
+        {
+            double dx = x - _center.X, dy = y - _center.Y, dz = z - _center.Z;
+            double dist = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+            double amp = WarpAmp * dist;
+            double wx = _warpX.Fbm(x * WarpFreq, y * WarpFreq, z * WarpFreq, 4);
+            double wy = _warpY.Fbm(x * WarpFreq, y * WarpFreq, z * WarpFreq, 4);
+            double wz = _warpZ.Fbm(x * WarpFreq, y * WarpFreq, z * WarpFreq, 4);
+            return GeoGrid.Normalize(x + amp * wx, y + amp * wy, z + amp * wz);
+        }
+
+        /// <summary>대륙만의 땅 값(잡음 포함, 늘 0 이하): −(거리) × (1 + 잡음). 거리에 곱하므로 대륙 크기와 무관하게 같은 비율로 흔든다.</summary>
+        private double ContinentField(double x, double y, double z, (double X, double Y, double Z) q)
+        {
+            double d = ContinentDistance(q.X, q.Y, q.Z);
+            double n = CoastAmp * _coast.Fbm(x * CoastFreq, y * CoastFreq, z * CoastFreq, 3)
+                     + FineNoise(x, y, z);
+            return -d * (1 + n);
+        }
+
+        /// <summary>잔 톱니(중간 + 작은 굴곡).</summary>
+        private double FineNoise(double x, double y, double z) =>
+            0.06 * _coast.Sample(x * 13 + 5.1, y * 13 + 1.7, z * 13 + 9.3) + 0.035 * _coast.Sample(x * 29 + 2.9, y * 29 + 7.7, z * 29 + 4.1);
+
+        // 섬 혹: 높이(로그 거리, 0.65 ≈ 대륙 크기의 1.9배 거리까지) · 혹이 되는 잡음 문턱 · 방향 무늬 · 거리(로그) 무늬
+        private const double IsleLift = 0.65, IsleCut = 0.20, IsleDirFreq = 4.5, IsleScaleFreq = 7.5;
+
+        /// <summary>
+        /// 땅 값: 높을수록 땅. 행성 기준 좌표. = −ln(대륙 거리 × (1+잡음)) + 섬 혹.
+        /// 로그는 단조라서 대륙만 보면 순서가 같고(같은 땅), 섬 혹은 로그 거리에서 정해진 높이만큼 땅을 바깥으로 들어 올린다.
+        /// </summary>
         private double Field(double x, double y, double z)
         {
-            double wx = _warpX.Fbm(x * WarpFreq, y * WarpFreq, z * WarpFreq, 3);
-            double wy = _warpY.Fbm(x * WarpFreq, y * WarpFreq, z * WarpFreq, 3);
-            double wz = _warpZ.Fbm(x * WarpFreq, y * WarpFreq, z * WarpFreq, 3);
-            var q = GeoGrid.Normalize(x + WarpAmp * wx, y + WarpAmp * wy, z + WarpAmp * wz);
-            // 해안선: 큰 굴곡 + 중간 + 잔 톱니 (겹마다 따로 세기를 줘서 잔 무늬가 묻히지 않게)
-            return BlobField(q.X, q.Y, q.Z)
-                + CoastAmp * _coast.Fbm(x * CoastFreq, y * CoastFreq, z * CoastFreq, 3)
-                + 0.13 * _coast.Sample(x * 13 + 5.1, y * 13 + 1.7, z * 13 + 9.3)
-                + 0.08 * _coast.Sample(x * 29 + 2.9, y * 29 + 7.7, z * 29 + 4.1);
+            var q = Warp(x, y, z);
+            double f = -DetLog(Math.Max(-ContinentField(x, y, z, q), 1e-9));
+            // 중심에서 본 방향(2차원 단위 벡터)과 거리의 로그 → 섬 무늬
+            double a = q.X * _major.X + q.Y * _major.Y + q.Z * _major.Z;
+            double b = q.X * _minor.X + q.Y * _minor.Y + q.Z * _minor.Z;
+            double s2 = Math.Sqrt(a * a + b * b);
+            if (s2 > 1e-9)
+            {
+                double u = DetLog(ContinentDistance(q.X, q.Y, q.Z));
+                double v = _isle.Fbm(a / s2 * IsleDirFreq, b / s2 * IsleDirFreq, u * IsleScaleFreq, 2) * 1.6;
+                if (v > IsleCut) f += IsleLift * (v - IsleCut) / (1 - IsleCut);
+            }
+            return f;
         }
+
 
         // ───────── 2) 방향 ─────────
 
@@ -231,15 +261,15 @@ public static class PlanetGenerator
 
         private double[] ChooseOrientation()
         {
-            // 땅 16,000 · 20,000 · 24,000 의 경계값을 회전 없이 어림한다 — 값의 분포는 회전과 거의 무관.
-            // 고르는 기준은 세 설정 모두 같으므로 땅의 양을 바꿔도 행성 방향은 같다.
+            // 땅 2,000 · 8,000 · 16,000 · 24,000 의 경계값을 회전 없이 어림한다 — 값의 분포는 회전과 거의 무관.
+            // 고르는 기준이 땅의 양과 무관하므로 땅의 양을 바꿔도 행성 방향은 같다.
             var vals = new double[_n];
             for (int i = 0; i < _n; i++) vals[i] = Field(_g.Cx[i], _g.Cy[i], _g.Cz[i]);
             Array.Sort(vals);
-            var lands = PlanetSettings.LandChoices;
+            var lands = OrientationLands;
             var th = new double[lands.Length];
             for (int k = 0; k < lands.Length; k++) th[k] = vals[_n - lands[k]];
-            const double margin = 0.04;
+            const double margin = 0.02;
 
             // 점수: 작은 땅 설정부터 오각형이 땅에 걸린 수 (사전식으로 작을수록 좋음)
             var r = Stream("orient");
@@ -303,7 +333,7 @@ public static class PlanetGenerator
             var comp = Components(_land, out var sizes);
             int removed = 0;
             var removedComp = new bool[sizes.Count];
-            for (int c = 0; c < sizes.Count; c++) if (sizes[c] < MinIsletCells) { removedComp[c] = true; removed++; }
+            for (int c = 0; c < sizes.Count; c++) if (sizes[c] < MinIsletCells(_s.LandCells)) { removedComp[c] = true; removed++; }
             for (int i = 0; i < _n; i++) if (_land[i] && removedComp[comp[i]]) _land[i] = false;
             _p.RemovedIslets = removed;
 
@@ -377,8 +407,9 @@ public static class PlanetGenerator
                     continue;
                 }
                 // 내륙일수록 높다: 바다까지 거리 + 땅 값의 여유
-                double inland = Math.Min(1.0, seaDist[i] / 14.0);
-                double q = Math.Clamp((_field[i] - _threshold) / 1.2, 0, 1);
+                // 대륙이 작으면 "내륙" 도 짧다
+                double inland = Math.Min(1.0, seaDist[i] / Math.Max(4.0, Math.Sqrt(_s.LandCells) / 9));
+                double q = Math.Clamp((_field[i] - _threshold) / 0.9, 0, 1); // 땅 값은 로그 거리: 0.9 ≈ 해안에서 중심까지의 60%
                 double h = 15 + 260 * inland + 420 * q;
 
                 // 산맥: 능선 잡음(0 근처 = 능선)을 덩어리 가면으로 끊어 줄기로
@@ -387,7 +418,7 @@ public static class PlanetGenerator
                 rv = rv * rv; rv = rv * rv * rv; // ^6: 가는 줄기
                 double mk = Smooth(-0.05, 0.30, ridgeMask.Fbm(x * 1.4, y * 1.4, z * 1.4, 2));
                 double coastFade = Smooth(0, 4, seaDist[i]);
-                h += 4800 * rv * mk * (0.35 + 0.65 * coastFade);
+                h += 3900 * rv * mk * (0.35 + 0.65 * coastFade);
 
                 // 고원: 넓고 평평하게 솟은 땅 (해안에서 떨어진 곳)
                 double pl = plateau.Fbm(x * 1.7, y * 1.7, z * 1.7, 2);
@@ -572,12 +603,18 @@ public static class PlanetGenerator
             }
 
             // 기후 띠의 경계를 구불구불하게: 위도를 잡음으로 조금 밀어서 읽는다(띠가 자로 그은 듯한 직선이 되지 않게)
+            // 큰 물결 + 중간 + 작은 물결 세 겹으로 밀고(작은 대륙 안에서도 경계가 구불구불하게), 강수의 띠 자체도 ±35% 안팎 출렁이게 한다.
             var bandNoise = new Noise3(Stream("noise.climate.band"));
+            var rainNoise = new Noise3(Stream("noise.climate.rain"));
             for (int i = 0; i < _n; i++)
             {
-                double az = Math.Clamp(Math.Abs(_p.Z[i]) + 0.07 * bandNoise.Fbm(_p.X[i] * 2.5, _p.Y[i] * 2.5, _p.Z[i] * 2.5, 3), 0, 1);
+                double x = _p.X[i], y = _p.Y[i], z = _p.Z[i];
+                double shift = 0.10 * bandNoise.Fbm(x * 2.2, y * 2.2, z * 2.2, 2)
+                             + 0.07 * bandNoise.Sample(x * 6 + 3.3, y * 6 + 8.1, z * 6 + 1.9)
+                             + 0.04 * bandNoise.Sample(x * 13 + 7.7, y * 13 + 2.2, z * 13 + 5.5);
+                double az = Math.Clamp(Math.Abs(z) + shift, 0, 1);
                 double tLat = Table(TempZ, TempV, az);
-                double belt = Table(RainZ, RainV, az);
+                double belt = Table(RainZ, RainV, az) * (1 + 0.35 * rainNoise.Fbm(x * 5, y * 5, z * 5, 3) * 1.6);
                 int e = _p.Elevation[i];
                 bool water = _ocean[i] || _lake[i];
                 double tAlt = !_ocean[i] && e > 0 ? -6.5 * e / 1000.0 : 0;

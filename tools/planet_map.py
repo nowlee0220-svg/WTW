@@ -27,4 +27,14 @@ def col_rain():
 panels = [col_terrain(), col_biome(), col_temp(), col_rain()]
 img = np.concatenate([np.concatenate([panels[0][ids], panels[1][ids]], 1), np.concatenate([panels[2][ids], panels[3][ids]], 1)], 0)
 Image.fromarray(img.clip(0,255).astype(np.uint8)).save(out)
+# 땅 쪽에서 본 지구본(지형 · 생물군계 · 기온)
+import os
+if os.path.exists(pre + ".ortho"):
+    o = np.fromfile(pre + ".ortho", dtype=np.int32).reshape(512, 512)
+    parts = []
+    for c in panels[:3]:
+        a = c[np.maximum(o, 0)]
+        a[o < 0] = (10, 10, 14)
+        parts.append(a)
+    Image.fromarray(np.concatenate(parts, 1).clip(0,255).astype(np.uint8)).save(out.replace(".png", "-globe.png"))
 print(out)

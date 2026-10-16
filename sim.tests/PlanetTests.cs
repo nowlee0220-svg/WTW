@@ -106,6 +106,7 @@ public class GridTests
 /// <summary>행성 몇 벌을 한 번만 만들어 여러 테스트가 나눠 쓴다(캐시를 거치지 않고 직접 만든다).</summary>
 public sealed class PlanetFixture
 {
+    public readonly Planet.Planet A2 = PlanetGenerator.Generate(1, new PlanetSettings(2_000, ClimateBias.Normal));
     public readonly Planet.Planet A16 = PlanetGenerator.Generate(1, new PlanetSettings(16_000, ClimateBias.Normal));
     public readonly Planet.Planet A24 = PlanetGenerator.Generate(1, new PlanetSettings(24_000, ClimateBias.Normal));
     public readonly Planet.Planet B16 = PlanetGenerator.Generate(2, new PlanetSettings(16_000, ClimateBias.Normal));
@@ -136,24 +137,66 @@ public class PlanetTests : IClassFixture<PlanetFixture>
         Assert.Equal(PlanetPin, _f.A16.Fingerprint);
     }
 
-    internal const ulong PlanetPin = 16886073291844412963UL; // 생성 규칙을 바꾸면 이 값도 바뀐다(일부러 바꾼 것인지 확인)
+    internal const ulong PlanetPin = 2355632144192972422UL; // 생성 규칙을 바꾸면 이 값도 바뀐다(일부러 바꾼 것인지 확인)
 
     [Fact]
     public void LandCountWithin3Percent()
     {
-        foreach (var p in new[] { _f.A16, _f.A24, _f.B16 })
+        foreach (var p in new[] { _f.A2, _f.A16, _f.A24, _f.B16 })
             Assert.InRange(p.LandCount, p.Settings.LandCells * 0.97, p.Settings.LandCells * 1.03);
+    }
+
+    /// <summary>땅이 가장 적을 때(그리고 2,000칸에서도) 땅 전체가 한쪽 면에: 땅의 무게중심에서 70° 안.</summary>
+    [Fact]
+    public void SmallLandFitsOneSide()
+    {
+        foreach (var p in new[] { _f.A2, PlanetGenerator.Generate(5, new PlanetSettings(PlanetSettings.MinLand, ClimateBias.Normal)) })
+        {
+            double mx = 0, my = 0, mz = 0;
+            for (int c = 0; c < p.CellCount; c++) if (!p.IsOcean(c)) { mx += p.X[c]; my += p.Y[c]; mz += p.Z[c]; }
+            double ml = Math.Sqrt(mx * mx + my * my + mz * mz);
+            const double cos70 = 0.3420201433256687;
+            for (int c = 0; c < p.CellCount; c++)
+                if (!p.IsOcean(c)) Assert.True((p.X[c] * mx + p.Y[c] * my + p.Z[c] * mz) / ml > cos70, $"땅 {p.Settings.LandCells}: 칸 {c} 가 땅 한가운데서 70° 넘게 떨어짐");
+        }
+    }
+
+    /// <summary>작은 땅도 더운 곳부터 추운 곳(툰드라·얼음)까지 걸친다.</summary>
+    [Fact]
+    public void SmallLandSpansHotToCold()
+    {
+        var p = _f.A2;
+        int cold = 0, hot = 0;
+        for (int c = 0; c < p.CellCount; c++)
+        {
+            if (!p.IsLand(c)) continue;
+            if (p.Biome[c] is Biome.Tundra or Biome.Ice) cold++;
+            if (p.Temp10[c] >= 200) hot++;
+        }
+        Assert.True(cold >= 20, $"추운 땅 {cold}칸");
+        Assert.True(hot >= 20, $"더운 땅(20°C 이상) {hot}칸");
+    }
+
+    [Fact]
+    public void DetLogMatchesMathLog()
+    {
+        foreach (double x in new[] { 1e-6, 0.1, 0.5, 0.7071, 1, 1.5, 2, 3.14159, 10, 1234.5 })
+            Assert.Equal(Math.Log(x), PlanetGenerator.DetLog(x), 12);
     }
 
     [Fact]
     public void MoreLandIsSamePlanetTurned_TheSameWay()
     {
-        // 같은 시드면 땅의 양과 무관하게 같은 방향 · 같은 땅 값 → 24,000 의 땅은 16,000 의 땅을 거의 다 품는다
+        // 같은 시드면 땅의 양과 무관하게 같은 방향 · 같은 땅 값 → 큰 땅은 작은 땅을 거의 다 품는다
         Assert.Equal(_f.A16.X, _f.A24.X);
-        int inside = 0, land16 = 0;
-        for (int c = 0; c < _f.A16.CellCount; c++)
-            if (!_f.A16.IsOcean(c)) { land16++; if (!_f.A24.IsOcean(c)) inside++; }
-        Assert.True(inside >= land16 * 0.99, $"{inside}/{land16}");
+        Assert.Equal(_f.A2.X, _f.A16.X);
+        foreach (var (small, big) in new[] { (_f.A2, _f.A16), (_f.A16, _f.A24) })
+        {
+            int inside = 0, land = 0;
+            for (int c = 0; c < small.CellCount; c++)
+                if (!small.IsOcean(c)) { land++; if (!big.IsOcean(c)) inside++; }
+            Assert.True(inside >= land * 0.99, $"{small.Settings.LandCells} → {big.Settings.LandCells}: {inside}/{land}");
+        }
     }
 
     [Fact]

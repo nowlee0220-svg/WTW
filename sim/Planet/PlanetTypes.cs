@@ -3,10 +3,12 @@ namespace Wtw.Sim.Planet;
 /// <summary>기후 경향(새 세계 설정). 값은 저장 파일에 숫자로 남으므로 바꾸지 말 것.</summary>
 public enum ClimateBias { Cold = -1, Normal = 0, Warm = 1 }
 
-/// <summary>행성 설정: 땅 칸 수(16,000 / 20,000 / 24,000) · 기후 경향. 같은 시드면 땅 비율만 바뀐 같은 행성.</summary>
+/// <summary>행성 설정: 땅 칸 수 · 기후 경향. 같은 시드면 땅만 넓어지거나 좁아진 같은 행성.</summary>
 public readonly record struct PlanetSettings(int LandCells, ClimateBias Climate)
 {
-    public static readonly int[] LandChoices = { 16_000, 20_000, 24_000 };
+    /// <summary>새 세계 화면의 단추. 칸 수를 직접 넣을 수도 있다(MinLand ~ MaxLand).</summary>
+    public static readonly int[] LandChoices = { 2_000, 4_000, 8_000, 16_000, 24_000 };
+    public const int MinLand = 1_000, MaxLand = 30_000;
     public static PlanetSettings Default => new(16_000, ClimateBias.Normal);
 }
 
