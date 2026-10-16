@@ -17,6 +17,9 @@ public sealed class WorldSnapshot
     public long EventsProcessed;
     public double SimDaysPerSecond; // 최근 1초 동안 실제로 흐른 게임 하루 수
     public double SimLoad;          // 시뮬 스레드가 계산에 쓴 시간 비율 (0~1)
+    public WorldConfig Config = new();
+    /// <summary>행성(읽기 전용 — 시뮬이 만든 뒤 바꾸지 않으므로 복사하지 않고 같이 본다). 아직 없으면 null.</summary>
+    public Planet.Planet? Planet;
 
     // 점마다 Dot.History 칸
     public int[] ColorIndex = Array.Empty<int>();
@@ -32,6 +35,8 @@ public sealed class WorldSnapshot
         EventsProcessed = w.EventsProcessed;
         SimDaysPerSecond = daysPerSecond;
         SimLoad = load;
+        Config = w.Config;
+        Planet = w.HasPlanet ? w.Planet : null;
         var dots = w.Dots.Dots;
         DotCount = dots.Count;
         if (ColorIndex.Length < DotCount)

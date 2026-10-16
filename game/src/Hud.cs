@@ -1,4 +1,5 @@
 using Godot;
+using Wtw.Sim.Planet;
 using Wtw.Sim.Runtime;
 using Wtw.Sim.Time;
 
@@ -11,9 +12,12 @@ public partial class Hud : Control
     public event Action? LoadRequested;
     public event Action? NewRequested;
     public event Action<int>? SpeedRequested; // 0 = 멈춤
+    public event Action<MapMode>? ModeRequested;
+    public event Action<string>? PlaceholderPressed;
 
     private Label _date = null!, _speed = null!, _metrics = null!, _notice = null!;
     private readonly Button[] _speedButtons = new Button[Speed.Max + 1];
+    private readonly Dictionary<MapMode, Button> _modeButtons = new();
     private double _noticeTime;
     private double _metricsTimer;
 
@@ -50,23 +54,33 @@ public partial class Hud : Control
         AddChild(bottom);
         var row = new HBoxContainer();
         bottom.AddChild(row);
-        row.AddChild(MakeButton("저장", () => SaveRequested?.Invoke()));
-        row.AddChild(MakeButton("불러오기", () => LoadRequested?.Invoke()));
-        row.AddChild(MakeButton("새로 시작", () => NewRequested?.Invoke()));
+        row.AddChild(MakeButton("새 세계", () => NewRequested?.Invoke(), "새 행성을 만든다"));
+        row.AddChild(MakeButton("저장", () => SaveRequested?.Invoke(), "멈춘 다음 저장한다 (F5)"));
+        row.AddChild(MakeButton("불러오기", () => LoadRequested?.Invoke(), "F9"));
         row.AddChild(new VSeparator());
         for (int s = 0; s <= Speed.Max; s++)
         {
             int level = s;
-            var b = MakeButton(s == 0 ? "멈춤" : Speed.Label(s), () => SpeedRequested?.Invoke(level));
+            var b = MakeButton(s == 0 ? "멈춤" : Speed.Label(s), () => SpeedRequested?.Invoke(level), s == 0 ? "스페이스" : $"키 {s}");
             b.ToggleMode = true;
             _speedButtons[s] = b;
             row.AddChild(b);
         }
         row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
-        var help = new Label { Text = "스페이스: 멈춤  ·  1~5: 속도  ·  오른쪽 클릭: 점들을 그곳으로 부르기", VerticalAlignment = VerticalAlignment.Center };
-        help.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeSmall);
-        help.AddThemeColorOverride("font_color", UiTheme.TextDim);
-        row.AddChild(help);
+        foreach (var m in MapModes.All)
+        {
+            var mode = m;
+            var b = MakeButton(MapModes.Name(m), () => ModeRequested?.Invoke(mode), $"지도 모드 (키 {MapModes.Hotkey(m)})");
+            b.ToggleMode = true;
+            _modeButtons[m] = b;
+            row.AddChild(b);
+        }
+        foreach (var (name, why) in MapModes.Placeholders)
+        {
+            var b = MakeButton(name, () => PlaceholderPressed?.Invoke(why), "아직 없음");
+            b.Modulate = new Color(1, 1, 1, 0.45f);
+            row.AddChild(b);
+        }
 
         // 알림
         _notice = new Label { HorizontalAlignment = HorizontalAlignment.Center, Visible = false, MouseFilter = MouseFilterEnum.Ignore };
@@ -77,11 +91,16 @@ public partial class Hud : Control
         AddChild(_notice);
     }
 
-    private static Button MakeButton(string text, Action onPressed)
+    private static Button MakeButton(string text, Action onPressed, string tooltip = "")
     {
-        var b = new Button { Text = text, FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 44) };
+        var b = new Button { Text = text, FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 44), TooltipText = tooltip };
         b.Pressed += onPressed;
         return b;
+    }
+
+    public void SetMode(MapMode mode)
+    {
+        foreach (var (m, b) in _modeButtons) b.SetPressedNoSignal(m == mode);
     }
 
     public void UpdateInfo(WorldSnapshot snap, SimHost host, double delta)
@@ -95,7 +114,8 @@ public partial class Hud : Control
         if (_metricsTimer <= 0)
         {
             _metricsTimer = 0.25;
-            _metrics.Text = $"화면 {Engine.GetFramesPerSecond():0} fps  ·  시뮬 하루/초 {FormatRate(snap.SimDaysPerSecond)}  ·  시뮬 부하 {snap.SimLoad * 100:0}%  ·  점 {snap.DotCount}개  ·  시드 {snap.Seed}";
+            string dots = snap.DotCount > 0 ? $"  ·  점 {snap.DotCount}개" : "";
+            _metrics.Text = $"화면 {Engine.GetFramesPerSecond():0} fps  ·  시뮬 하루/초 {FormatRate(snap.SimDaysPerSecond)}  ·  시뮬 부하 {snap.SimLoad * 100:0}%{dots}  ·  시드 {snap.Seed} · 땅 {snap.Config.LandCells:N0} · 기후 {PlanetNames.Of(snap.Config.Climate)}";
         }
 
         if (_notice.Visible)
