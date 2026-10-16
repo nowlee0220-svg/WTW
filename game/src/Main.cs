@@ -24,6 +24,8 @@ public partial class Main : Node
     private NewWorldScreen _newWorld = null!;
     private ProvinceView _province = null!;
     private TileCard _card = null!;
+    private ProvinceInfoPanel _info = null!;
+    private double _infoTimer;
     private bool _neighborsPref;
     private readonly AutoPilot _auto = new();
 
@@ -79,8 +81,11 @@ public partial class Main : Node
         _panel.CloseRequested += () => { if (_province.IsOpen) _panel.Visible = false; else _globe.Select(-1); };
         _panel.EnterRequested += () => EnterProvince(_globe.Selected);
 
+        _info = new ProvinceInfoPanel { Theme = theme, Visible = false };
+        ui.AddChild(_info);
         _card = new TileCard { Theme = theme };
         ui.AddChild(_card);
+        _province.LabelBlockers = LabelBlockers;
 
         _newWorld = new NewWorldScreen { Theme = theme };
         ui.AddChild(_newWorld);
@@ -218,6 +223,32 @@ public partial class Main : Node
         _auto.OnProvinceOpened();
     }
 
+    /// <summary>가장자리 이름이 피할 곳: 막대 · 단추 줄 · 지방 정보 칸 · 칸 정보 창 · 범례 · 카드.</summary>
+    private IEnumerable<Rect2> LabelBlockers()
+    {
+        foreach (var r in _hud.Blockers()) yield return r;
+        if (_info.Visible) yield return _info.GetGlobalRect();
+        if (_panel.Visible) yield return _panel.GetGlobalRect();
+        if (_legend.Visible) yield return _legend.GetGlobalRect();
+    }
+
+    /// <summary>지방 정보 칸: 그 지방의 시각 · 기온 등. 0.5초마다 다시 채운다(시각이 흐르므로).</summary>
+    private void UpdateProvinceInfo(double delta)
+    {
+        _info.Visible = _province.IsOpen && _province.ShownCount > 0;
+        if (!_info.Visible || _host is null || _globe.Planet is not { } p) return;
+        // 아래 끝: 범례(자원 보기)가 있으면 그 위까지
+        var vp = GetViewport().GetVisibleRect().Size;
+        float bottom = _legend.Visible ? _legend.GetGlobalRect().Position.Y - 12 : vp.Y - UiTheme.BottomBarHeight - 12;
+        _info.SetBottom(bottom, vp.Y);
+        _infoTimer -= delta;
+        if (_infoTimer > 0) return;
+        _infoTimer = 0.5;
+        var m = _province.MapOf(_province.Center);
+        if (m is null) return;
+        _info.Show($"지방 정보 — {TileDescriber.ProvinceName(p, m.Cell)}", ProvinceReport.Describe(p, m, _host.RenderTick + ShowTickOffset));
+    }
+
     /// <summary>지방 화면의 자원 보기: 바위 · 광맥 · 돌만 밝게 + 범례(이 화면에 있는 것만).</summary>
     private void SetResourceView(bool on)
     {
@@ -254,6 +285,7 @@ public partial class Main : Node
         SetMode(_globe.Mode, null); // 지구본 범례로 되돌림
         _province.Close();
         _card.Visible = false;
+        _info.Visible = false;
         _globe.Visible = true;
         _legend.Visible = _host is not null;
         _hud.SetProvinceMode(false, "", _neighborsPref);
@@ -301,6 +333,8 @@ public partial class Main : Node
         if (snap.Planet is not null && !ReferenceEquals(snap.Planet, _globe.Planet) && _province.IsOpen) ExitProvince();
         if (snap.Planet is not null) _globe.SetPlanet(snap.Planet);
         if (_card.Visible) _card.Follow(GetViewport().GetMousePosition());
+        _province.SetTime(_host.RenderTick + ShowTickOffset);
+        UpdateProvinceInfo(delta);
         _map.Visible = _devDots;
         if (_devDots) _map.Render(snap, _host.RenderTick);
         _hud.UpdateInfo(snap, _host, delta);
@@ -354,6 +388,8 @@ public partial class Main : Node
     internal GlobeView Globe => _globe;
     internal CellPanel Panel => _panel;
     internal ProvinceView Province => _province;
+    /// <summary>개발용(자동 확인): 지방 화면의 시각만 앞당겨 보여 준다(시뮬 시간은 그대로).</summary>
+    internal double ShowTickOffset;
     internal TileCard Card => _card;
     internal void EnterForTest(int c) => EnterProvince(c);
     internal void ExitForTest() => ExitProvince();

@@ -10,7 +10,7 @@ public static class ProvinceSamples
     public static string Name(string kind) => kind switch
     {
         "plain" => "평야", "forest" => "숲", "mountain" => "산", "coast" => "해안", "river" => "강",
-        "desert" => "사막", "tundra" => "툰드라", "pentagon" => "오각형", "ore" => "광맥 언덕", "riverbank" => "자갈 강가", "wetland" => "습지", "savanna" => "사바나", "rainforest" => "열대우림",
+        "desert" => "사막", "tundra" => "툰드라", "pentagon" => "오각형", "ore" => "광맥 언덕", "riverbank" => "자갈 강가", "volcano" => "화산", "wetland" => "습지", "savanna" => "사바나", "rainforest" => "열대우림",
         _ => kind,
     };
 
@@ -48,6 +48,7 @@ public static class ProvinceSamples
             case "wetland": return b == Biome.Wetland ? 100 + landNbs * 5 : No;
             case "savanna": return b == Biome.Savanna ? 100 + landNbs * 5 + (river ? 10 : 0) : No;
             case "rainforest": return b == Biome.Rainforest ? 100 + landNbs * 5 : No;
+            case "volcano": return Volcanoes.IsVolcano(p, c) ? 100 + landNbs * 5 + (p.Temp10[c] > 0 ? 20 : 0) : No;
             case "riverbank": // 자갈 강가(습지 · 사막이 아닌 강)
                 return river && !coast && b is Biome.Temperate or Biome.Grassland or Biome.Boreal or Biome.Savanna ? 100 + p.RiverSize[c] * 20 + landNbs * 5 : No;
             case "ore": // 구리 · 철이 많은 언덕(광맥이 드러난 바위 덩어리를 보기 좋게)

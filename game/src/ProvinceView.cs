@@ -15,6 +15,8 @@ namespace Wtw.Game;
 public partial class ProvinceView : Node2D
 {
     public const float TilePx = 32f;
+    /// <summary>왼쪽에 지방 정보 칸이 차지하는 너비(화면 화소).</summary>
+    public const float LeftReserve = ProvinceInfoPanel.Width + 12;
     public const float MaxZoom = 2.3f; // 가장 가까이: 타일 하나가 약 74px (손가락만 하게)
 
     public event Action<int, int, int>? TileClicked;   // 칸, x, y
@@ -173,12 +175,13 @@ public partial class ProvinceView : Node2D
         var vp = GetViewportRect().Size;
         float usableH = vp.Y - UiTheme.TopBarHeight - UiTheme.BottomBarHeight - 60; // 위 · 아래 막대와 가장자리 이름 자리
         float fitH = usableH / (float)((_neighbors && _shown.Count > 1 ? HexFrame.A * 6 : HexFrame.A * 2) * TilePx * 1.08f);
-        float fitW = vp.X / (float)((_neighbors && _shown.Count > 1 ? HexFrame.A * 6 : HexFrame.R * 2) * TilePx * 1.25f);
+        float usableW = vp.X - LeftReserve - 24;  // 왼쪽 지방 정보 칸 자리를 빼고
+        float fitW = usableW / (float)((_neighbors && _shown.Count > 1 ? HexFrame.A * 6 : HexFrame.R * 2) * TilePx * 1.15f);
         _minZoom = Math.Min(fitH, fitW);
         if (!_loadingKeepCamera)
         {
             _zoom = _targetZoom = _minZoom * (_neighbors ? 3 : 1);
-            _cam.Position = Vector2.Zero;
+            _cam.Position = new Vector2(-(LeftReserve + 24) / 2f / _zoom, 0); // 지방이 정보 칸 오른쪽 빈 곳 가운데에 오게
         }
         _targetZoom = Math.Max(_targetZoom, _minZoom);
         _zoom = Math.Max(_zoom, _minZoom);
@@ -442,21 +445,80 @@ public partial class ProvinceView : Node2D
             var pos = new Vector2((float)(HexFrame.NX[s] * d), (float)(HexFrame.NY[s] * d)) * TilePx;
             var l = new Label { Text = text, MouseFilter = Control.MouseFilterEnum.Ignore, HorizontalAlignment = HorizontalAlignment.Center };
             l.AddThemeColorOverride("font_color", new Color(0.8f, 0.78f, 0.7f, 0.55f));
+            l.AddThemeFontOverride("font", UiTheme.Regular); // 테마 밖(CanvasLayer)이라 한글 글꼴을 직접 — 윈도우에서 □ 로 나오던 것
             l.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeSmall + 2);
             l.SetMeta("world", pos);
             _labels.AddChild(l);
         }
     }
 
+    /// <summary>화면에서 가장자리 이름이 피해야 할 곳(위 · 아래 막대, 창들). Main 이 정한다.</summary>
+    public Func<IEnumerable<Rect2>>? LabelBlockers { get; set; }
+
+    /// <summary>
+    /// 가장자리 이름: 세상 좌표의 자리를 화면으로 옮긴 뒤, 막대 · 창을 피한 빈 곳 안으로 당기고(화면 밖이면 가장자리에),
+    /// 그래도 막대 · 창이나 앞서 놓은 이름과 겹치면 감춘다 → 어떤 화면에서도 글자 · 단추와 겹치지 않는다.
+    /// </summary>
     private void UpdateLabels()
     {
         var xf = GetViewport().GetCanvasTransform();
+        var vp = GetViewportRect().Size;
+        var blockers = LabelBlockers?.Invoke().ToList() ?? new List<Rect2>();
+        float left = 8, top = UiTheme.TopBarHeight + 8, right = vp.X - 8, bottom = vp.Y - UiTheme.BottomBarHeight - 8;
+        // 왼쪽 · 오른쪽 세로 창이 있으면 그만큼 비켜서 빈 곳을 잡는다
+        foreach (var b in blockers)
+        {
+            if (b.Size.Y < vp.Y * 0.4f) continue;
+            if (b.GetCenter().X < vp.X / 2) left = Math.Max(left, b.End.X + 8);
+            else right = Math.Min(right, b.Position.X - 8);
+        }
+        var placed = new List<Rect2>();
         foreach (var n in _labels.GetChildren())
         {
             if (n is not Label l) continue;
             var w = (Vector2)l.GetMeta("world");
             l.ResetSize();
-            l.Position = xf * w - l.Size / 2;
+            var pos = xf * w - l.Size / 2;
+            pos.X = Math.Clamp(pos.X, left, Math.Max(left, right - l.Size.X));
+            pos.Y = Math.Clamp(pos.Y, top, Math.Max(top, bottom - l.Size.Y));
+            var rect = new Rect2(pos, l.Size).Grow(2);
+            bool hit = blockers.Any(b => b.Intersects(rect)) || placed.Any(q => q.Intersects(rect));
+            l.Visible = !hit;
+            l.Position = pos;
+            if (!hit) placed.Add(rect);
+        }
+    }
+
+    // ───────── 낮 · 밤 ─────────
+
+    private double _tick;
+
+    /// <summary>세계 시각(틱). 지방마다 그 지방의 시각(경도)으로 밝기를 바꾼다.</summary>
+    public void SetTime(double tick) { _tick = tick; }
+
+    /// <summary>그 지방의 해 높이로 정한 빛: 낮 = 그대로, 해 뜰 · 질 무렵 = 노을빛, 밤 = 푸르게 어둡게(그래도 지도는 읽을 수 있게).</summary>
+    public static Color DaylightTint(double sunAltitude)
+    {
+        var day = new Color(1, 1, 1);
+        var dusk = new Color(1.0f, 0.8f, 0.64f);
+        var night = new Color(0.52f, 0.58f, 0.78f);
+        if (sunAltitude >= 12) return day;
+        if (sunAltitude >= 0) return dusk.Lerp(day, (float)(sunAltitude / 12));
+        if (sunAltitude >= -10) return night.Lerp(dusk, (float)((sunAltitude + 10) / 10));
+        return night;
+    }
+
+    private void UpdateDaylight()
+    {
+        if (_planet is null) return;
+        foreach (var sh in _shown)
+        {
+            var (lat, _) = _planet.LatLon(sh.Map.Cell);
+            double h = ProvinceReport.LocalHour(_planet, sh.Map.Cell, _tick);
+            var tint = DaylightTint(ProvinceReport.SunAltitude(lat, h));
+            var v = new Vector3(tint.R, tint.G, tint.B);
+            sh.Ground.SetShaderParameter("daylight", v);
+            (sh.Objects.Material as ShaderMaterial)?.SetShaderParameter("daylight", v);
         }
     }
 
@@ -504,6 +566,7 @@ public partial class ProvinceView : Node2D
         _hoverBox.Width = Math.Max(2f, 2.5f / _zoom);
         if (_mouseMoved && !_dragging) { _mouseMoved = false; UpdateHover(GetViewport().GetMousePosition()); }
         UpdateLabels();
+        UpdateDaylight();
     }
 
     private Vector2 ScreenToWorld(Vector2 screen) => GetViewport().GetCanvasTransform().AffineInverse() * screen;
@@ -645,6 +708,7 @@ uniform sampler2D data2_tex : filter_nearest;
 uniform sampler2D height_tex : filter_nearest;
 uniform vec3 ore_colors[4];
 uniform float res_view = 0.0;
+uniform vec3 daylight = vec3(1.0);   // 그 지방 시각의 빛(낮 · 노을 · 밤)
 uniform sampler2D palette_tex : filter_nearest;
 uniform sampler2D noise_tex : filter_linear_mipmap, repeat_enable;
 uniform vec2 light_dir = vec2(-0.6, -0.8);
@@ -666,14 +730,21 @@ vec3 tile_color(vec4 d, vec4 d2, vec4 n, vec4 m, vec2 wv) {
     float row = stony ? 16.0 + rock : b;
     vec3 c = texture(palette_tex, vec2((g + 0.5) / 16.0, (row + 0.5) / 32.0)).rgb;
     if (d2.a > 0.5) return vec3(0.025, 0.022, 0.02);                      // 아직 아무도 안 들어가 본 동굴: 검게
-    if (g == 12.0) {                                                        // 바위(벽): 덩어리 무늬 · 금, 숨은 안쪽은 어둡게(위가 바위)
-        c *= (0.8 + 0.3 * n.z) * (1.0 - 0.4 * m.z) * (0.92 + 0.12 * n.y);
+    if (g == 14.0) {                                                        // 분화구: 검붉은 바닥, 가운데가 달아오름
+        float glow = smoothstep(0.35, 0.75, texture(noise_tex, world * 0.25 + vec2(TIME * 0.01, 0.0)).g);
+        return mix(vec3(0.16, 0.06, 0.04), vec3(0.85, 0.28, 0.06), glow * 0.8) * (0.85 + 0.3 * n.z);
+    }
+    if (g == 12.0) {                                                        // 바위(벽)
+        if (d2.b > 0.5)                                                     // 숨은 바위 속(위가 바위): 바위 종류와 상관없이 고른 짙은 색 + 옅은 빗금
+            return vec3(0.15, 0.15, 0.17) * (0.9 + 0.15 * n.z) + 0.018 * step(0.5, fract((world.x + world.y) * 1.4));
+        // 드러난 바위: 회색빛 돌 + 덩어리 무늬 · 금, 윗면은 밝게(가장자리 테두리 · 그림자는 아래에서)
+        c = mix(c, vec3(dot(c, vec3(0.3, 0.59, 0.11))), 0.3) * 1.12;
+        c *= (0.82 + 0.28 * n.z) * (1.0 - 0.35 * m.z) * (0.93 + 0.1 * n.y);
         if (ore > 0.5) {                                                    // 바깥 면에 드러난 광맥: 얼룩 · 알갱이
             float spot = smoothstep(0.52, 0.62, texture(noise_tex, world * 0.8 + vec2(3.1, 7.7)).g);
             float grain2 = smoothstep(0.6, 0.7, n.w);
             c = mix(c, ore_colors[int(ore) - 1] * 1.15, clamp(spot * 0.9 + grain2 * 0.6 + 0.3, 0.0, 0.92));
         }
-        if (d2.b > 0.5) c *= 0.5;
         return c;
     }
     if (g == 13.0) return c * (0.8 + 0.35 * n.w) * (0.9 + 0.2 * smoothstep(0.45, 0.6, texture(noise_tex, world * 1.7).r)); // 자갈: 굵은 알갱이
@@ -681,7 +752,8 @@ vec3 tile_color(vec4 d, vec4 d2, vec4 n, vec4 m, vec2 wv) {
     if (g == 2.0) c *= 0.86 + 0.22 * m.x + 0.08 * n.z;                       // 풀밭
     else if (g == 1.0 || g == 4.0) c *= 0.9 + 0.16 * n.w + 0.06 * n.z;     // 흙 · 진흙
     else if (g == 3.0) c *= 0.94 + 0.08 * n.w + 0.06 * m.y;                // 모래
-    else if (g == 5.0 || g == 11.0) c *= (0.84 + 0.26 * n.z) * (1.0 - 0.35 * m.z); // 바위 바닥 · 절벽
+    else if (g == 5.0) c = mix(c, vec3(0.46, 0.4, 0.33), 0.35) * (0.86 + 0.2 * n.w) * (1.0 - 0.2 * m.z); // 바위 바닥(걸을 수 있음): 흙빛이 섞인 자갈 무늬
+    else if (g == 11.0) c *= (0.84 + 0.26 * n.z) * (1.0 - 0.35 * m.z);    // 절벽
     else if (g == 6.0) c = mix(c, vec3(0.82, 0.88, 0.98), 0.25 * (1.0 - n.y)) * (0.97 + 0.05 * n.z); // 눈
     else if (g == 7.0) c *= 0.95 + 0.1 * n.z;                              // 얼음
     else if (g == 8.0) c = mix(c * (0.9 + 0.2 * n.z), vec3(0.24, 0.36, 0.38), m.w * 0.6); // 습지
@@ -771,7 +843,18 @@ void fragment() {
 
     // 바위 덩어리 가장자리: 어두운 테두리(림월드처럼 덩어리가 땅 위에 솟은 느낌)
     float stoneShare = stoneW / max(total, 1e-6);
-    col *= 1.0 - 0.45 * smoothstep(0.22, 0.42, stoneShare) * (1.0 - smoothstep(0.5, 0.68, stoneShare));
+    col *= 1.0 - 0.5 * smoothstep(0.22, 0.42, stoneShare) * (1.0 - smoothstep(0.5, 0.68, stoneShare));
+    // 바위 그림자: 해 쪽으로 조금 떨어진 자리에 바위가 있으면 땅에 그림자(바위가 솟아 보이게)
+    {
+        vec2 sq = p + light_dir * 0.85 - 0.5;
+        vec2 s0 = floor(sq), sf = sq - s0;
+        float a00 = step(11.5, texture(data_tex, (s0 + 0.5) / N).r * 255.0) * step(texture(data_tex, (s0 + 0.5) / N).r * 255.0, 12.5);
+        float a10 = step(11.5, texture(data_tex, (s0 + vec2(1.0, 0.0) + 0.5) / N).r * 255.0) * step(texture(data_tex, (s0 + vec2(1.0, 0.0) + 0.5) / N).r * 255.0, 12.5);
+        float a01 = step(11.5, texture(data_tex, (s0 + vec2(0.0, 1.0) + 0.5) / N).r * 255.0) * step(texture(data_tex, (s0 + vec2(0.0, 1.0) + 0.5) / N).r * 255.0, 12.5);
+        float a11 = step(11.5, texture(data_tex, (s0 + vec2(1.0, 1.0) + 0.5) / N).r * 255.0) * step(texture(data_tex, (s0 + vec2(1.0, 1.0) + 0.5) / N).r * 255.0, 12.5);
+        float shadowStone = mix(mix(a00, a10, sf.x), mix(a01, a11, sf.x), sf.y);
+        col *= 1.0 - 0.38 * smoothstep(0.25, 0.7, shadowStone) * (1.0 - smoothstep(0.3, 0.6, stoneShare));
+    }
 
     // 물가: 물과 땅이 섞이는 곳에 옅은 거품
     float foam = smoothstep(0.15, 0.5, water) * (1.0 - smoothstep(0.5, 0.9, water));
@@ -796,7 +879,7 @@ void fragment() {
     }
     float slope = dot(vec2(hx, hy), -light_dir);
     col *= mix(1.0, 1.0 + 0.38 * tanh(slope * 0.03), 1.0 - water);
-    COLOR = vec4(col, 1.0);
+    COLOR = vec4(col * daylight, 1.0);
 }
 ";
 
@@ -805,6 +888,7 @@ shader_type canvas_item;
 render_mode blend_premul_alpha;
 uniform sampler2D atlas : filter_linear_mipmap;
 uniform vec2 grid = vec2(16.0, 8.0);
+uniform vec3 daylight = vec3(1.0);
 void vertex() {
     vec2 cell = INSTANCE_CUSTOM.xy;
     float sway = INSTANCE_CUSTOM.z;
@@ -814,7 +898,7 @@ void vertex() {
 }
 void fragment() {
     vec4 c = texture(atlas, UV);
-    COLOR = vec4(c.rgb * COLOR.rgb, c.a) * COLOR.a;
+    COLOR = vec4(c.rgb * COLOR.rgb * daylight, c.a) * COLOR.a;
 }
 ";
 }

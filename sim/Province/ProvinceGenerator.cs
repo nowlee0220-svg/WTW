@@ -107,6 +107,8 @@ public static class ProvinceGenerator
         private readonly double[] _px = new double[N], _py = new double[N], _pz = new double[N]; // 행성 위의 점 ÷ TileAngle (타일 단위 좌표)
         private readonly float[] _elev = new float[N], _temp = new float[N], _precip = new float[N], _rough = new float[N];
         private readonly float[] _res; // [r * N + i] 자원 단계(0~2)를 섞은 값
+        private readonly float[] _volc = new float[N]; // 화산 칸의 무게(0~1): 화산 지방 가운데 1, 맞닿은 이웃의 변 근처 약 1/3
+        private readonly bool _isVolcano;
         private readonly float[] _h = new float[N];
         private readonly float[] _riverD = new float[N]; // 강 가장자리까지 부호 거리(음수 = 강물 안)
         private readonly byte[] _riverSize = new byte[N];
@@ -118,6 +120,7 @@ public static class ProvinceGenerator
             _p = p; _c = c; _m = m; _n = n; _cat = cat; _rocks = rocks;
             _rng = new Pcg32(m.Seed, 0x9E3779B97F4A7C15UL);
             _waterCell = p.IsWater(c);
+            _isVolcano = Volcanoes.IsVolcano(p, c);
             _res = new float[ResourceKinds.Count * N];
         }
 
@@ -205,7 +208,9 @@ public static class ProvinceGenerator
                 Add(g.TriA[ta], l1 / 3, cells, wts, ref n); Add(g.TriB[ta], l1 / 3, cells, wts, ref n); Add(g.TriC[ta], l1 / 3, cells, wts, ref n);
                 Add(g.TriA[tb], l2 / 3, cells, wts, ref n); Add(g.TriB[tb], l2 / 3, cells, wts, ref n); Add(g.TriC[tb], l2 / 3, cells, wts, ref n);
 
-                double lw = 0, e = 0, t = 0, pr = 0, ro = 0;
+                double lw = 0, e = 0, t = 0, pr = 0, ro = 0, vw = 0;
+                for (int q = 0; q < n; q++) if (Volcanoes.IsVolcano(p, cells[q])) vw += wts[q];
+                _volc[i] = (float)vw;
                 for (int q = 0; q < n; q++)
                 {
                     int cc = cells[q];
@@ -759,7 +764,37 @@ public static class ProvinceGenerator
                 double f = StoneCover(ro) * (0.8 + 0.2 * _res[ResourceKinds.Stone * N + i]);
                 if (v > TailThreshold(f) * StoneSigma) _m.Ground[i] = Ground.Stone;
             }
+            if (_isVolcano) Volcano();
             StoneDepth();
+        }
+
+        /// <summary>
+        /// 화산 지방: 가운데에 지나갈 수 없는 현무암 산(반지름 약 24 타일)과 그 꼭대기의 분화구(약 6 타일), 둘레는 현무암 바닥 · 자갈.
+        /// 지방 가운데에만 세우므로(변에서 25 타일 이상) 이웃 지방과의 이음매에 닿지 않는다.
+        /// </summary>
+        private void Volcano()
+        {
+            int basalt = _rocks.Rocks.ToList().FindIndex(r => r.Id == "basalt");
+            double cx = HexFrame.Center + (_rng.NextDouble() - 0.5) * 8, cy = HexFrame.Center + (_rng.NextDouble() - 0.5) * 8;
+            const double Crater = 6, Cone = 24, Apron = 34;
+            for (int i = 0; i < N; i++)
+            {
+                if (!HexFrame.Inside[i]) continue;
+                double dx = i % S + 0.5 - cx, dy = i / S + 0.5 - cy;
+                double d = Math.Sqrt(dx * dx + dy * dy) * (1 + 0.12 * Noise(_n.Edge, i, 6, 2));
+                if (d >= Apron || _water[i] && d > Cone || _riverD[i] < 2 && d > Cone) continue;
+                _m.Flags[i] |= TileFlags.Volcano;
+                if (basalt >= 0) _m.Rock[i] = (byte)basalt;
+                double rise = d < Cone ? 1100 * (1 - d / Cone) * (1 - d / Cone) + 250 : 250 * (Apron - d) / (Apron - Cone);
+                if (d < Crater) rise -= 280 * (1 - d / Crater); // 분화구는 꼭대기에서 오목하게
+                _h[i] += (float)rise;
+                _m.Height[i] = (short)Math.Clamp(Math.Round(_h[i]), -32000, 32000);
+                _water[i] = false; _riverD[i] = float.MaxValue;
+                _m.Flags[i] &= ~TileFlags.River;
+                if (d < Crater) _m.Ground[i] = Ground.Crater;
+                else if (d < Cone) _m.Ground[i] = Ground.Stone;
+                else if (_m.Ground[i] != Ground.Stone) _m.Ground[i] = Unit(TileHash(i, 11)) < 0.35 ? Ground.Gravel : Ground.Rock;
+            }
         }
 
         /// <summary>바위 안쪽 깊이: 바위가 아닌 타일까지 거리(타일). 육각형 밖은 바위로 본다(이웃 지방에서 덩어리가 이어질 수 있으므로).</summary>
@@ -796,7 +831,7 @@ public static class ProvinceGenerator
         {
             for (int i = 0; i < N; i++)
             {
-                if (!HexFrame.Inside[i] || _m.Ground[i] != Ground.Stone || _stoneDepth[i] < 4 || HexFrame.BorderDistance(i) < 10) continue;
+                if (!HexFrame.Inside[i] || _m.Ground[i] != Ground.Stone || _stoneDepth[i] < 4 || HexFrame.BorderDistance(i) < 10 || (_m.Flags[i] & TileFlags.Volcano) != 0) continue;
                 double tunnel = Math.Abs(Noise(_n.Cave, i, 8, 2));
                 double room = Noise(_n.CaveB, i, 11, 2);
                 if (tunnel < 0.085 || room > 0.3)
@@ -805,6 +840,73 @@ public static class ProvinceGenerator
                     _m.Flags[i] |= TileFlags.Roof;
                 }
             }
+            CaveEntrances();
+        }
+
+        private readonly HashSet<int> _caveMouth = new();
+
+        /// <summary>
+        /// 동굴 입구: 동굴 덩어리(이어진 동굴 바닥)마다 절반쯤은 가장 가까운 바깥 땅까지 굴을 뚫어 입구를 낸다(원시인은 도구 없이 들어가 살았다).
+        /// 입구 쪽 2 타일만 보이고, 안쪽은 사람이 들어가 보기 전까지 숨김(검게).
+        /// </summary>
+        private void CaveEntrances()
+        {
+            var comp = new int[N];
+            Array.Fill(comp, -1);
+            var comps = new List<List<int>>();
+            for (int i = 0; i < N; i++)
+            {
+                if (comp[i] >= 0 || (_m.Flags[i] & TileFlags.Roof) == 0) continue;
+                var list = new List<int>();
+                var q = new Queue<int>(); q.Enqueue(i); comp[i] = comps.Count;
+                while (q.Count > 0)
+                {
+                    int a = q.Dequeue(); list.Add(a);
+                    foreach (int b in Around4(a))
+                        if (comp[b] < 0 && (_m.Flags[b] & TileFlags.Roof) != 0) { comp[b] = comps.Count; q.Enqueue(b); }
+                }
+                comps.Add(list);
+            }
+            foreach (var list in comps)
+            {
+                if (list.Count < 10 || _rng.NextDouble() > 0.55) continue;
+                // 동굴에서 바위를 지나 가장 가까운 바깥 땅까지 너비 우선으로 찾는다
+                var prev = new Dictionary<int, int>();
+                var q = new Queue<int>();
+                foreach (int a in list) { prev[a] = -1; q.Enqueue(a); }
+                int exit = -1;
+                while (q.Count > 0 && exit < 0)
+                {
+                    int a = q.Dequeue();
+                    foreach (int b in Around4(a))
+                    {
+                        if (prev.ContainsKey(b) || !HexFrame.Inside[b] || HexFrame.BorderDistance(b) < 6) continue;
+                        var g = _m.Ground[b];
+                        if (g == Ground.Stone && (_m.Flags[b] & TileFlags.Volcano) == 0) { prev[b] = a; q.Enqueue(b); }
+                        else if (GroundInfo.IsWalkable(g) && (_m.Flags[b] & TileFlags.Roof) == 0 && !_water[b]) { prev[b] = a; exit = b; break; }
+                    }
+                }
+                if (exit < 0) continue;
+                // 굴: 바깥 땅 바로 안쪽부터 동굴까지 (입구 쪽 2 타일은 보이게)
+                int cur = prev[exit], k = 0;
+                while (cur >= 0 && _m.Ground[cur] == Ground.Stone)
+                {
+                    _m.Ground[cur] = Ground.Rock;
+                    _m.Flags[cur] |= TileFlags.Roof;
+                    if (k < 2) _caveMouth.Add(cur);
+                    k++;
+                    cur = prev[cur];
+                }
+            }
+        }
+
+        private IEnumerable<int> Around4(int i)
+        {
+            int x = i % S, y = i / S;
+            if (x > 0) yield return i - 1;
+            if (x < S - 1) yield return i + 1;
+            if (y > 0) yield return i - S;
+            if (y < S - 1) yield return i + S;
         }
 
         /// <summary>
@@ -816,7 +918,7 @@ public static class ProvinceGenerator
             var stones = new List<int>();
             var rims = new List<int>(); // 바깥 면 가까이(깊이 2 이하) — 뭉치의 절반은 여기서 시작해 드러난 광맥이 생긴다
             for (int i = 0; i < N; i++)
-                if (HexFrame.Inside[i] && _m.Ground[i] == Ground.Stone && HexFrame.BorderDistance(i) > 4)
+                if (HexFrame.Inside[i] && _m.Ground[i] == Ground.Stone && HexFrame.BorderDistance(i) > 4 && (_m.Flags[i] & TileFlags.Volcano) == 0)
                 {
                     stones.Add(i);
                     if (_stoneDepth[i] <= 2) rims.Add(i);
@@ -886,8 +988,8 @@ public static class ProvinceGenerator
             for (int i = 0; i < N; i++)
             {
                 if (!HexFrame.Inside[i]) continue;
-                if ((_m.Flags[i] & TileFlags.Roof) != 0) { _m.Flags[i] |= TileFlags.Hidden; continue; }
-                if (_m.Ground[i] != Ground.Stone) continue;
+                if ((_m.Flags[i] & TileFlags.Roof) != 0) { if (!_caveMouth.Contains(i)) _m.Flags[i] |= TileFlags.Hidden; continue; }
+                if (_m.Ground[i] != Ground.Stone || (_m.Flags[i] & TileFlags.Volcano) != 0) continue; // 화산은 보이는 산
                 int x = i % S, y = i / S;
                 bool exposed = false;
                 for (int dy = -1; dy <= 1 && !exposed; dy++)
@@ -958,7 +1060,8 @@ public static class ProvinceGenerator
             {
                 if (!HexFrame.Inside[i] || _m.Object[i] != 0) continue;
                 var gnd = _m.Ground[i];
-                if (gnd is Ground.Cliff or Ground.DeepWater or Ground.None or Ground.Stone || _m.IsHidden(i)) continue;
+                if (gnd is Ground.Cliff or Ground.DeepWater or Ground.None or Ground.Stone or Ground.Crater || _m.IsHidden(i) || (_m.Flags[i] & TileFlags.Roof) != 0) continue;
+                int rockT = _m.Rock[i];
                 int b = (int)_m.Biome[i];
                 double forest = -1, sum = 0;
                 for (int k = 0; k < objs.Count; k++)
@@ -969,6 +1072,8 @@ public static class ProvinceGenerator
                     double w = o.Density * o.BiomeWeight[b] * o.GroundWeight[(int)gnd];
                     if (w <= 0) continue;
                     if (o.Resource >= 0) w *= Math.Max(o.ResourceFloor, _res[o.Resource * N + i] * 0.5); // 많음 = density, 있음 = 절반, 없음 = resource_floor
+                    if (rockT < o.RockWeight.Length) w *= o.RockWeight[rockT];                         // 그 자리 바위 종류(부싯돌 = 석회암 둘레 …)
+                    if (o.NeedsVolcano) w *= Math.Min(1, _volc[i] * 2.5);                              // 흑요석 = 화산 둘레에만
                     if (o.IsTree)
                     {
                         if (forest < 0) forest = Math.Clamp(1 + 0.9 * Noise(_n.Forest, i, 20, 3), 0.1, 1.9); // 숲과 빈터

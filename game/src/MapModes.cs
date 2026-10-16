@@ -170,9 +170,13 @@ public static class MapModes
                 else if (lv == 2) col = C(255, 220, 95);
                 break;
         }
+        // 화산: 자연 · 높낮이 · 생물군계 지도에서 검붉게(분화구)
+        if (mode is MapMode.Natural or MapMode.Elevation or MapMode.Biome && Volcanoes.IsVolcano(p, c)) col = Volcano;
         col.A = ocean || lake ? 0.45f : 0.92f;
         return col;
     }
+
+    public static readonly Color Volcano = new(0.62f, 0.12f, 0.06f);
 
     private static Color Ramp((double V, Color C)[] stops, double v)
     {
@@ -191,13 +195,13 @@ public static class MapModes
             case MapMode.Natural:
                 l.Add((BiomeColors[(int)Biome.Rainforest], "숲 (열대·온대·침엽수)")); l.Add((BiomeColors[(int)Biome.Grassland], "초원 · 사바나"));
                 l.Add((BiomeColors[(int)Biome.Desert], "사막")); l.Add((BiomeColors[(int)Biome.Tundra], "툰드라"));
-                l.Add((IceSheet, "얼음 땅")); l.Add((Rock, "산 (바위)")); l.Add((Snow, "높은 산의 눈"));
+                l.Add((IceSheet, "얼음 땅")); l.Add((Rock, "산 (바위)")); l.Add((Snow, "높은 산의 눈")); l.Add((Volcano, "화산"));
                 l.Add((ShallowSea, "얕은 바다")); l.Add((DeepSea, "깊은 바다")); l.Add((Art.River, "강"));
                 l.Add((Colors.Transparent, "(북서쪽 해가 만드는 산 그늘)"));
                 break;
             case MapMode.Elevation:
                 l.Add((HighMountain, "높은 산 (3,000m~)")); l.Add((Mountain, "산")); l.Add((Plateau, "고원"));
-                l.Add((Hill, "언덕")); l.Add((Plain, "평야")); l.Add((Lake, "호수"));
+                l.Add((Hill, "언덕")); l.Add((Plain, "평야")); l.Add((Lake, "호수")); l.Add((Volcano, "화산"));
                 l.Add((ShallowSea, "얕은 바다")); l.Add((DeepSea, "깊은 바다")); l.Add((Art.River, "강"));
                 break;
             case MapMode.Biome:

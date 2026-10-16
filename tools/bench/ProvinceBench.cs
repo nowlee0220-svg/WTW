@@ -134,7 +134,7 @@ static class ProvinceBench
             Ground.Rock => (130, 128, 122), Ground.Snow => (235, 238, 242), Ground.Ice => (195, 220, 235), Ground.Marsh => (85, 105, 70),
             Ground.ShallowWater => (70, 125, 175), Ground.DeepWater => (35, 70, 125), Ground.Cliff => (70, 60, 55),
             Ground.Stone => (RockCatalog.Default.Rocks[m.Rock[i]].Color.R, RockCatalog.Default.Rocks[m.Rock[i]].Color.G, RockCatalog.Default.Rocks[m.Rock[i]].Color.B),
-            Ground.Gravel => (165, 158, 145), _ => (0, 0, 0),
+            Ground.Gravel => (165, 158, 145), Ground.Crater => (120, 30, 20), _ => (0, 0, 0),
         };
         if (m.IsHidden(i)) c = (c.r / 2, c.gg / 2, c.b / 2);
         if ((m.Flags[i] & TileFlags.Roof) != 0) c = (20, 18, 16);

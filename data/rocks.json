@@ -7,17 +7,17 @@
     "  바깥 면에 드러난 광맥만 보이고(color 로 칠함) 안쪽 광맥은 숨는다."
   ],
   "rocks": [
-    { "id": "granite",   "name": "화강암", "color": [146, 138, 136], "yields": ["granite"],
+    { "id": "granite",   "name": "화강암", "color": [156, 152, 150], "yields": ["granite"],
       "terrain": { "plain": 0.25, "hill": 0.7, "plateau": 0.6, "mountain": 1.0, "high_mountain": 1.1 } },
-    { "id": "limestone", "name": "석회암", "color": [192, 186, 164], "yields": ["limestone"],
+    { "id": "limestone", "name": "석회암", "color": [198, 194, 182], "yields": ["limestone"],
       "terrain": { "plain": 1.0, "hill": 0.9, "plateau": 0.8, "mountain": 0.45, "high_mountain": 0.3 },
       "biomes": { "rainforest": 1.2, "temperate": 1.1 } },
-    { "id": "sandstone", "name": "사암",   "color": [190, 150, 104], "yields": ["sandstone"],
+    { "id": "sandstone", "name": "사암",   "color": [178, 160, 134], "yields": ["sandstone"],
       "terrain": { "plain": 0.8, "hill": 0.8, "plateau": 1.0, "mountain": 0.4, "high_mountain": 0.2 },
       "biomes": { "desert": 1.8, "savanna": 1.3, "tundra": 0.5, "ice": 0.4 } },
-    { "id": "basalt",    "name": "현무암", "color": [84, 84, 90],    "yields": ["basalt"],
+    { "id": "basalt",    "name": "현무암", "color": [112, 112, 120],    "yields": ["basalt"],
       "terrain": { "plain": 0.35, "hill": 0.55, "plateau": 0.9, "mountain": 0.75, "high_mountain": 0.9 } },
-    { "id": "slate",     "name": "점판암", "color": [104, 112, 122], "yields": ["slate"],
+    { "id": "slate",     "name": "점판암", "color": [124, 130, 140], "yields": ["slate"],
       "terrain": { "plain": 0.2, "hill": 0.6, "plateau": 0.4, "mountain": 0.85, "high_mountain": 0.8 },
       "biomes": { "boreal": 1.3, "tundra": 1.3 } }
   ],

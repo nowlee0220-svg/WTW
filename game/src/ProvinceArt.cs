@@ -74,6 +74,7 @@ public static partial class Art
         GroundKind.Cliff => C(78, 68, 62),
         GroundKind.Stone => C(140, 136, 130),
         GroundKind.Gravel => C(168, 162, 150),
+        GroundKind.Crater => C(60, 24, 18),
         _ => C(0, 0, 0),
     };
 
@@ -209,7 +210,9 @@ public static partial class Art
         _ when o.Kind == "bush" => 1.35f,
         "reeds" or "grass_tall" => 1.2f,
         _ when o.Kind == "plant" => 1.0f,
-        "boulder" => 1.35f,
+        "stones" => 1.8f,
+        "flint" or "obsidian" => 1.7f,
+        "quartz" => 1.6f,
         _ => 1.15f,
     };
 
@@ -470,23 +473,36 @@ public static partial class Art
                 s.Line(Bx - 12, By - 34, Bx + 6, By - 24, 2, C(90, 88, 84));
                 break;
             }
-            case "stones":
+            case "stones":   // 흔한 돌: 굵은 회색 돌 몇 개 — 진한 테두리 · 그림자로 멀리서도 보이게
+            case "flint":    // 부싯돌: 검푸른 깨진 돌 + 하얀 겉껍질
+            case "obsidian": // 흑요석: 반짝이는 검은 유리 조각
+            case "quartz":   // 석영: 하얗고 반투명한 모난 조각
             {
-                for (int i = 0; i < 6; i++)
+                int count = art == "stones" ? 5 : 4;
+                for (int i = 0; i < count; i++)
                 {
-                    float x = Bx + r.R(-30, 30), y = By - r.R(4, 30), rr = r.R(6, 11);
-                    s.Ellipse(x + 2, y + rr * 0.6f, rr, rr * 0.4f, C(0, 0, 0, 60));
-                    s.Ellipse(x, y, rr, rr * 0.75f, Jit(C(146, 142, 134), r, 0.06f), 1.2f);
-                }
-                break;
-            }
-            case "flint":
-            {
-                for (int i = 0; i < 6; i++)
-                {
-                    float x = Bx + r.R(-26, 26), y = 64 + r.R(-22, 22), rr = r.R(7, 12);
-                    s.Polygon(new[] { new Vector2(x - rr, y + rr * 0.4f), new Vector2(x - rr * 0.2f, y - rr * 0.7f), new Vector2(x + rr, y - rr * 0.2f), new Vector2(x + rr * 0.3f, y + rr * 0.6f) }, Jit(C(58, 58, 66), r, 0.04f), 1.4f);
-                    s.Line(x - rr * 0.2f, y - rr * 0.6f, x + rr * 0.8f, y - rr * 0.2f, 1.5f, C(220, 220, 225));
+                    float x = Bx + r.R(-30, 30), y = By - r.R(8, 34), rr = r.R(10, 16);
+                    s.Ellipse(x + 5, y + rr * 0.55f, rr * 1.05f, rr * 0.42f, C(0, 0, 0, 90));
+                    int sides = art == "stones" ? 7 : 5;
+                    var pts = new Vector2[sides];
+                    for (int k = 0; k < sides; k++)
+                    {
+                        float a = k * Mathf.Tau / sides + r.R(-0.25f, 0.25f), q = art == "stones" ? r.R(0.85f, 1.05f) : r.R(0.6f, 1.1f);
+                        pts[k] = new Vector2(x + Mathf.Cos(a) * rr * q, y + Mathf.Sin(a) * rr * 0.75f * q);
+                    }
+                    var outline = new Vector2[sides];
+                    for (int k = 0; k < sides; k++) outline[k] = pts[k] + (pts[k] - new Vector2(x, y)).Normalized() * 2.2f;
+                    s.Polygon(outline, C(30, 28, 26, 230));
+                    var col = art switch
+                    {
+                        "stones" => Jit(C(150, 146, 140), r, 0.05f),
+                        "flint" => Jit(C(66, 70, 82), r, 0.03f),
+                        "obsidian" => Jit(C(24, 22, 30), r, 0.02f),
+                        _ => Jit(C(226, 226, 232), r, 0.03f),
+                    };
+                    s.Polygon(pts, col, 1.3f);
+                    if (art == "flint") s.Line(pts[0].X, pts[0].Y, pts[1].X, pts[1].Y, 3f, C(226, 222, 210));
+                    if (art is "obsidian" or "quartz") s.Line(x - rr * 0.4f, y - rr * 0.3f, x + rr * 0.1f, y - rr * 0.5f, 2.2f, C(255, 255, 255, art == "obsidian" ? 170 : 220));
                 }
                 break;
             }

@@ -134,6 +134,16 @@ public partial class Hud : Control
     /// <summary>지방 화면이면 위쪽 단추를 보이고 지도 모드 단추는 감춘다.</summary>
     public void SetResourceViewPressed(bool on) => _resView.SetPressedNoSignal(on);
 
+    /// <summary>화면에서 차지하는 자리(가장자리 이름이 피할 곳): 위 · 아래 막대, 지방 화면의 위쪽 단추 줄, 알림.</summary>
+    public IEnumerable<Rect2> Blockers()
+    {
+        var vp = GetViewportRect().Size;
+        yield return new Rect2(0, 0, vp.X, UiTheme.TopBarHeight);
+        yield return new Rect2(0, vp.Y - UiTheme.BottomBarHeight, vp.X, UiTheme.BottomBarHeight);
+        if (_provBar.Visible) yield return _provBar.GetGlobalRect();
+        if (_notice.Visible) yield return _notice.GetGlobalRect();
+    }
+
     public void SetProvinceMode(bool on, string name, bool neighbors)
     {
         _provBar.Visible = on;

@@ -102,6 +102,7 @@ public partial class GlobeView : Node3D
         _walkStart = 0;
         BuildMesh(p);
         BuildRivers(p);
+        BuildVolcanoes(p);
         _shade = MapModes.HillShade(p);
         FaceLand(p);
         Recolor();
@@ -224,6 +225,30 @@ public partial class GlobeView : Node3D
         var mesh = new ArrayMesh();
         mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
         _rivers.Mesh = mesh;
+    }
+
+    private Node3D? _volcanoes;
+
+    /// <summary>화산 표시: 화산 칸 위에 작은 원뿔(검붉은 산 + 붉은 꼭대기) — 멀리서도 보이게.</summary>
+    private void BuildVolcanoes(Planet p)
+    {
+        _volcanoes?.QueueFree();
+        _volcanoes = new Node3D();
+        AddChild(_volcanoes);
+        var body = new StandardMaterial3D { AlbedoColor = new Color(0.22f, 0.12f, 0.1f) };
+        var top = new StandardMaterial3D { AlbedoColor = new Color(1f, 0.35f, 0.08f), EmissionEnabled = true, Emission = new Color(1f, 0.3f, 0.05f), EmissionEnergyMultiplier = 0.8f };
+        foreach (int c in Wtw.Sim.Planet.Volcanoes.All(p))
+        {
+            var up = ToGodot(p.X[c], p.Y[c], p.Z[c]).Normalized();
+            float r = CellRadius(p, c);
+            var basis = new Basis(new Quaternion(Vector3.Up, up));
+            var cone = new MeshInstance3D { Mesh = new CylinderMesh { TopRadius = 0.0015f, BottomRadius = 0.009f, Height = 0.014f, RadialSegments = 12, Rings = 1 }, MaterialOverride = body };
+            cone.Transform = new Transform3D(basis, up * (r + 0.006f));
+            _volcanoes.AddChild(cone);
+            var cap = new MeshInstance3D { Mesh = new SphereMesh { Radius = 0.0022f, Height = 0.0044f, RadialSegments = 8, Rings = 4 }, MaterialOverride = top };
+            cap.Transform = new Transform3D(basis, up * (r + 0.0135f));
+            _volcanoes.AddChild(cap);
+        }
     }
 
     // ───────── 지도 모드 ─────────

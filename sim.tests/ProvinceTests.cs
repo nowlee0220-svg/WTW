@@ -143,9 +143,11 @@ public class ProvinceTests : IClassFixture<ProvinceFixture>
     {
         var pins = new (string Kind, int Cell, ulong Fp)[]
         {
-            ("forest", 179, 0xB682B8C77ECF4348UL), ("river", 399, 0x276E308D08A81DF5UL),
-            ("coast", 40, 0x9D93B3BC1F0998BDUL), ("pentagon", 1, 0xE76420133C36591DUL),
+            ("forest", 179, 0xF991DC98A9BB230DUL), ("river", 399, 0xE2074C1DF6E93C2AUL),
+            ("coast", 40, 0x29008FCC00F497C1UL), ("pentagon", 1, 0x7F60FB1A649D48DEUL),
         };
+        foreach (var (kind, _, _) in pins)
+            _out.WriteLine($"{kind} {Find(kind)} 0x{ProvinceGenerator.Generate(_p, Find(kind)).Fingerprint:X16}UL");
         foreach (var (kind, cell, fp) in pins)
         {
             Assert.Equal(cell, Find(kind));
@@ -221,46 +223,6 @@ public class ProvinceTests : IClassFixture<ProvinceFixture>
     }
 
     [Fact]
-    public void BordersMatch_EitherOrder()
-    {
-        var checkedPairs = 0;
-        int stoneSamples = 0, stoneMismatch = 0;
-        double innerRate = 0; int innerN = 0;
-        foreach (var kind in new[] { "river", "coast", "mountain", "forest", "desert" })
-        {
-            int c = Find(kind);
-            foreach (int nb in _p.Grid.Neighbors(c))
-            {
-                if (!_p.IsLand(nb)) continue;
-                ProvinceCache.Clear();
-                var b1 = ProvinceCache.Get(_p, nb); // 이웃을 먼저
-                var a1 = ProvinceCache.Get(_p, c);
-                ProvinceCache.Clear();
-                var a2 = ProvinceCache.Get(_p, c);  // 가운데를 먼저
-                var b2 = ProvinceCache.Get(_p, nb);
-                Assert.Equal(a1.Fingerprint, a2.Fingerprint);
-                Assert.Equal(b1.Fingerprint, b2.Fingerprint);
-                var r = ProvinceChecks.CompareEdge(a1, b1);
-                _out.WriteLine($"{kind} {c}↔{nb}: 표본 {r.Samples} · 물 다름 {r.WaterMismatch} · 강 다름 {r.RiverMismatch} · 땅 종류 다름 {r.GroundMismatch} · 높이 차 {r.MeanHeightDiff:0.0}m (지도 안 이웃 타일 {r.InteriorHeightDiff:0.0}m)");
-                Assert.True(r.Samples > 150);
-                Assert.True(r.WaterMismatch <= r.Samples * 0.03, $"물이 어긋남 {r.WaterMismatch}/{r.Samples}");
-                Assert.True(r.RiverMismatch <= 6, $"강이 어긋남 {r.RiverMismatch}");
-                Assert.True(r.MeanHeightDiff <= r.InteriorHeightDiff * 2.5 + 4, $"높이 차 {r.MeanHeightDiff:0.0} (안쪽 {r.InteriorHeightDiff:0.0})");
-                stoneSamples += r.Stones; stoneMismatch += r.StoneMismatch;
-                innerRate += ProvinceChecks.InteriorStoneMismatch; innerN++;
-                checkedPairs++;
-            }
-        }
-        Assert.True(checkedPairs >= 15);
-        // 바위 덩어리도 경계에서 이어진다: 바위가 있는 표본 중 한쪽만 바위인 곳은 바로 옆 타일 차이(가장자리 한 줄) 정도
-        double edgeRate = stoneMismatch / (double)Math.Max(1, stoneSamples), inRate = innerRate / Math.Max(1, innerN);
-        _out.WriteLine($"바위 표본 {stoneSamples} · 한쪽만 바위 {edgeRate * 100:0.0}% (지도 안에서 같은 거리 {inRate * 100:0.0}%)");
-        Assert.True(stoneSamples > 200);
-        // 경계를 사이에 둔 두 타일이 같은 지도 안의 같은 거리 두 타일보다 많이 어긋나지 않는다 = 경계에서 끊기지 않는다
-        Assert.True(edgeRate <= inRate * 1.4 + 0.05, $"바위가 경계에서 어긋남 {edgeRate:P1} (안쪽 {inRate:P1})");
-    }
-
-    [Fact]
     public void RiversEnterAndLeaveThroughPlanetRiverEdges()
     {
         int rivers = 0;
@@ -328,98 +290,9 @@ public class ProvinceTests : IClassFixture<ProvinceFixture>
     }
 
     [Fact]
-    public void ResourceLevelsDriveObjectCounts()
-    {
-        var cat = ObjectCatalog.Default;
-        var rocks = RockCatalog.Default;
-        int copper = rocks.Ores.First(o => o.Id == "copper").Index + 1;
-        var trees = cat.Objects.Where(o => o.IsTree).Select(o => o.Index).ToArray();
-        // 구리 = 바위 속 구리 광맥 타일, 돌 = 잔돌, 나무 = 나무 오브젝트, 진흙 = 진흙 바닥
-        var byRes = new (string Res, Func<ProvinceMap, int[], double> Count)[]
-        {
-            ("copper", (m, oc) => m.Ore.Count(o => o == copper)),
-            ("stone", (m, oc) => oc[cat.IndexOf("loose_stones")] + m.GroundCounts()[(int)Ground.Stone] * 0.1),
-            ("wood", (m, oc) => trees.Sum(t => oc[t])),
-            ("clay", (m, oc) => oc[cat.IndexOf("clay_bed")]),
-        };
-        var sums = new double[byRes.Length, 3];
-        var counts = new int[byRes.Length, 3];
-        int made = 0;
-        for (int c = 5; c < _p.CellCount && made < 70; c += 211)
-        {
-            if (!_p.IsLand(c)) continue;
-            var m = ProvinceGenerator.Generate(_p, c);
-            var oc = m.ObjectCounts(cat.Objects.Count);
-            made++;
-            for (int k = 0; k < byRes.Length; k++)
-            {
-                int lvl = _p.Resource(c, Array.IndexOf(ResourceKinds.Ids, byRes[k].Res));
-                sums[k, lvl] += byRes[k].Count(m, oc);
-                counts[k, lvl]++;
-            }
-        }
-        for (int k = 0; k < byRes.Length; k++)
-        {
-            double Avg(int l) => counts[k, l] == 0 ? double.NaN : sums[k, l] / counts[k, l];
-            _out.WriteLine($"{byRes[k].Res}: 없음 {Avg(0):0.0} ({counts[k, 0]}칸) · 있음 {Avg(1):0.0} ({counts[k, 1]}칸) · 많음 {Avg(2):0.0} ({counts[k, 2]}칸)");
-            var present = Enumerable.Range(0, 3).Where(l => counts[k, l] >= 5 || (l == 2 && counts[k, l] > 0)).Select(Avg).ToArray(); // 칸이 너무 적은 단계는 빼고
-            for (int q = 1; q < present.Length; q++) Assert.True(present[q] >= present[q - 1], $"{byRes[k].Res}: 단계가 높을수록 많아야 함");
-            Assert.True(present[^1] > present[0], $"{byRes[k].Res}: 많음이 없음보다 많아야 함");
-        }
-        // 구리가 "없음" 인 칸에는 구리 광맥이 없다
-        Assert.Equal(0, sums[0, 0]);
-    }
-
-
-    [Fact]
-    public void StoneAmountFollowsTerrain_AndStoneAgeCanStart()
-    {
-        var cat = ObjectCatalog.Default;
-        int stonesObj = cat.IndexOf("loose_stones"), flint = cat.IndexOf("flint_nodules");
-        double Frac(ProvinceMap m) => m.GroundCounts()[(int)Ground.Stone] / (double)HexFrame.InsideCount;
-        var byTerrain = new Dictionary<Terrain, List<double>>();
-        int plainsWithStones = 0, plains = 0;
-        for (int c = 3; c < _p.CellCount && byTerrain.Values.Sum(l => l.Count) < 60; c += 173)
-        {
-            if (!_p.IsLand(c)) continue;
-            var m = ProvinceGenerator.Generate(_p, c);
-            var t = _p.Terrain[c];
-            if (!byTerrain.TryGetValue(t, out var l)) byTerrain[t] = l = new();
-            l.Add(Frac(m));
-            if (t == Terrain.Plain)
-            {
-                plains++;
-                var oc = m.ObjectCounts(cat.Objects.Count);
-                // 평야에도 돌(바위 무리 · 잔돌)과 부싯돌이 조금씩 — 석기 시대를 시작할 수 있게
-                if (Frac(m) > 0 && oc[stonesObj] > 0 && oc[flint] > 0) plainsWithStones++;
-                else _out.WriteLine($"평야 {c}: 바위 {Frac(m) * 100:0.0}% · 잔돌 {oc[stonesObj]} · 부싯돌 {oc[flint]}");
-            }
-        }
-        foreach (var (t, l) in byTerrain.OrderBy(k => k.Key)) _out.WriteLine($"{PlanetNames.Of(t)}: 바위 {l.Average() * 100:0.0}% ({l.Count}칸)");
-        double Avg(Terrain t) => byTerrain.TryGetValue(t, out var l) ? l.Average() : double.NaN;
-        Assert.InRange(Avg(Terrain.Plain), 0.005, 0.10);
-        Assert.True(Avg(Terrain.Hill) > Avg(Terrain.Plain) * 2);
-        if (byTerrain.ContainsKey(Terrain.Mountain)) Assert.True(Avg(Terrain.Mountain) > 0.3);
-        Assert.True(plains >= 10);
-        Assert.Equal(plains, plainsWithStones);
-        // 강가에는 자갈 · 잔돌이 많다
-        int riverCell = Enumerable.Range(0, _p.CellCount).First(c => _p.IsLand(c) && _p.RiverSize[c] >= 2 && _p.Biome[c] is Biome.Temperate or Biome.Grassland or Biome.Boreal or Biome.Savanna);
-        var river = ProvinceGenerator.Generate(_p, riverCell);
-        int gravel = river.GroundCounts()[(int)Ground.Gravel];
-        int nearRiverStones = 0;
-        for (int i = 0; i < HexFrame.TileCount; i++)
-            if (river.ObjectAt(i) == stonesObj && river.Ground[i] == Ground.Gravel) nearRiverStones++;
-        _out.WriteLine($"강 지방: 자갈 {gravel} 타일 · 자갈 위 잔돌 {nearRiverStones}");
-        Assert.True(gravel > 100);
-        Assert.True(nearRiverStones > 5);
-        Assert.False(GroundInfo.IsWalkable(Ground.Stone));
-        Assert.True(GroundInfo.IsWalkable(Ground.Gravel));
-    }
-
-    [Fact]
     public void OresSitInsideStone_HiddenUnlessExposed_CavesAreRoofedAndHidden()
     {
-        int ores = 0, exposed = 0, hidden = 0, caves = 0;
+        int ores = 0, exposed = 0, hidden = 0, caves = 0, mouths = 0;
         // 광맥이 많은 칸(구리 · 철 "많음") 몇 개 + 종류별 칸
         var cellsToCheck = Enumerable.Range(0, _p.CellCount)
             .Where(c => _p.IsLand(c) && (_p.Resource(c, ResourceKinds.Copper) == 2 || _p.Resource(c, ResourceKinds.Iron) == 2))
@@ -450,17 +323,18 @@ public class ProvinceTests : IClassFixture<ProvinceFixture>
                     if ((m.Flags[i] & TileFlags.Roof) != 0)
                     {
                         caves++;
-                        Assert.True(m.IsHidden(i));                      // 아직 아무도 안 들어가 본 동굴은 가려진다
                         Assert.Equal(Ground.Rock, m.Ground[i]);          // 동굴 바닥
-                        Assert.False(open && NeighborOpenUnroofed(m, i)); // 바깥 땅과 바로 닿지 않는다(바위 벽 안)
                         Assert.Equal(0, m.Object[i]);
+                        if (m.IsHidden(i)) Assert.False(NeighborOpenUnroofed(m, i)); // 가려진 안쪽은 바깥 땅과 바로 닿지 않는다(바위 벽 안)
+                        else mouths++;                                    // 열린 입구(바깥에서 두 칸)만 보인다
                     }
                     if (m.Ground[i] == Ground.Stone) Assert.Equal(0, m.Object[i]); // 바위 타일에는 오브젝트가 없다
                 }
             }
-        _out.WriteLine($"광맥 타일 {ores} (드러남 {exposed} · 숨음 {hidden}) · 동굴 타일 {caves}");
+        _out.WriteLine($"광맥 타일 {ores} (드러남 {exposed} · 숨음 {hidden}) · 동굴 타일 {caves} (입구 {mouths})");
         Assert.True(ores > 10 && exposed > 0 && hidden > 0);
         Assert.True(caves > 20);
+        Assert.True(mouths > 0 && mouths < caves / 2); // 입구가 있는 동굴도 있지만 안쪽은 대부분 가려진 채
     }
 
     private static bool NeighborOpenUnroofed(ProvinceMap m, int i)
@@ -565,16 +439,6 @@ public class ProvinceTests : IClassFixture<ProvinceFixture>
         Assert.Empty(loaded.ProvinceChanges);
     }
 
-    [Fact]
-    public void CacheForgetsOldMaps()
-    {
-        ProvinceCache.Clear();
-        int n = 0;
-        for (int c = 0; c < _p.CellCount && n < ProvinceCache.Capacity + 5; c++)
-            if (_p.IsLand(c)) { ProvinceCache.Get(_p, c); n++; }
-        Assert.Equal(ProvinceCache.Capacity, ProvinceCache.Count);
-        ProvinceCache.Clear();
-    }
 }
 
 [Trait("Category", "Fast")]
@@ -598,7 +462,7 @@ public class ObjectDataTests
         // 프롬프트의 예
         Assert.Equal("따기 → 사과 · 베기 → 나무", cat.Find("apple_tree")!.UsesText);
         Assert.Equal("베기 → 나무, 송진", cat.Find("pine")!.UsesText);
-        Assert.Equal("줍기 → 돌", cat.Find("loose_stones")!.UsesText);
+        Assert.Equal("줍기 → 흔한 돌", cat.Find("loose_stones")!.UsesText);
         Assert.Null(cat.Find("boulder")); // 바위는 오브젝트가 아니라 타일
         var rocks = RockCatalog.LoadDirectory(DataTests.FindDataDir());
         Assert.Equal(rocks.Rocks.Select(r => r.Id), RockCatalog.Default.Rocks.Select(r => r.Id));
@@ -656,5 +520,168 @@ public class ObjectDataTests
         Assert.Contains(r, s => s.Contains("robot"));
         var bad = Problems(Items, "{ \"objects\": [ ");
         Assert.Contains(bad, s => s.Contains("문법"));
+    }
+}
+
+/// <summary>무거운 지방 테스트(지도를 수십 개 만든다) — 느린 테스트로 옮김(빠른 테스트는 1분 안).</summary>
+[Trait("Category", "Slow")]
+public class ProvinceHeavyTests : IClassFixture<ProvinceFixture>
+{
+    private readonly Planet.Planet _p;
+    private readonly ITestOutputHelper _out;
+    public ProvinceHeavyTests(ProvinceFixture f, ITestOutputHelper output) { _p = f.P; _out = output; }
+
+    private int Find(string kind)
+    {
+        int c = ProvinceSamples.Find(_p, kind);
+        Assert.True(c >= 0, $"{kind} 칸이 없음");
+        return c;
+    }
+
+    [Fact]
+    public void ResourceLevelsDriveObjectCounts()
+    {
+        var cat = ObjectCatalog.Default;
+        var rocks = RockCatalog.Default;
+        int copper = rocks.Ores.First(o => o.Id == "copper").Index + 1;
+        var trees = cat.Objects.Where(o => o.IsTree).Select(o => o.Index).ToArray();
+        // 구리 = 바위 속 구리 광맥 타일, 돌 = 잔돌, 나무 = 나무 오브젝트, 진흙 = 진흙 바닥
+        var byRes = new (string Res, Func<ProvinceMap, int[], double> Count)[]
+        {
+            ("copper", (m, oc) => m.Ore.Count(o => o == copper)),
+            ("stone", (m, oc) => oc[cat.IndexOf("loose_stones")] + m.GroundCounts()[(int)Ground.Stone] * 0.1),
+            ("wood", (m, oc) => trees.Sum(t => oc[t])),
+            ("clay", (m, oc) => oc[cat.IndexOf("clay_bed")]),
+        };
+        var sums = new double[byRes.Length, 3];
+        var counts = new int[byRes.Length, 3];
+        int made = 0;
+        for (int c = 5; c < _p.CellCount && made < 70; c += 211)
+        {
+            if (!_p.IsLand(c)) continue;
+            var m = ProvinceGenerator.Generate(_p, c);
+            var oc = m.ObjectCounts(cat.Objects.Count);
+            made++;
+            for (int k = 0; k < byRes.Length; k++)
+            {
+                int lvl = _p.Resource(c, Array.IndexOf(ResourceKinds.Ids, byRes[k].Res));
+                sums[k, lvl] += byRes[k].Count(m, oc);
+                counts[k, lvl]++;
+            }
+        }
+        for (int k = 0; k < byRes.Length; k++)
+        {
+            double Avg(int l) => counts[k, l] == 0 ? double.NaN : sums[k, l] / counts[k, l];
+            _out.WriteLine($"{byRes[k].Res}: 없음 {Avg(0):0.0} ({counts[k, 0]}칸) · 있음 {Avg(1):0.0} ({counts[k, 1]}칸) · 많음 {Avg(2):0.0} ({counts[k, 2]}칸)");
+            var present = Enumerable.Range(0, 3).Where(l => counts[k, l] >= 5 || (l == 2 && counts[k, l] > 0)).Select(Avg).ToArray(); // 칸이 너무 적은 단계는 빼고
+            for (int q = 1; q < present.Length; q++) Assert.True(present[q] >= present[q - 1], $"{byRes[k].Res}: 단계가 높을수록 많아야 함");
+            Assert.True(present[^1] > present[0], $"{byRes[k].Res}: 많음이 없음보다 많아야 함");
+        }
+        // 구리가 "없음" 인 칸에는 구리 광맥이 없다
+        Assert.Equal(0, sums[0, 0]);
+    }
+
+
+
+    [Fact]
+    public void BordersMatch_EitherOrder()
+    {
+        var checkedPairs = 0;
+        int stoneSamples = 0, stoneMismatch = 0;
+        double innerRate = 0; int innerN = 0;
+        foreach (var kind in new[] { "river", "coast", "mountain", "forest", "desert" })
+        {
+            int c = Find(kind);
+            foreach (int nb in _p.Grid.Neighbors(c))
+            {
+                if (!_p.IsLand(nb)) continue;
+                ProvinceCache.Clear();
+                var b1 = ProvinceCache.Get(_p, nb); // 이웃을 먼저
+                var a1 = ProvinceCache.Get(_p, c);
+                ProvinceCache.Clear();
+                var a2 = ProvinceCache.Get(_p, c);  // 가운데를 먼저
+                var b2 = ProvinceCache.Get(_p, nb);
+                Assert.Equal(a1.Fingerprint, a2.Fingerprint);
+                Assert.Equal(b1.Fingerprint, b2.Fingerprint);
+                var r = ProvinceChecks.CompareEdge(a1, b1);
+                _out.WriteLine($"{kind} {c}↔{nb}: 표본 {r.Samples} · 물 다름 {r.WaterMismatch} · 강 다름 {r.RiverMismatch} · 땅 종류 다름 {r.GroundMismatch} · 높이 차 {r.MeanHeightDiff:0.0}m (지도 안 이웃 타일 {r.InteriorHeightDiff:0.0}m)");
+                Assert.True(r.Samples > 150);
+                Assert.True(r.WaterMismatch <= r.Samples * 0.03, $"물이 어긋남 {r.WaterMismatch}/{r.Samples}");
+                Assert.True(r.RiverMismatch <= 6, $"강이 어긋남 {r.RiverMismatch}");
+                Assert.True(r.MeanHeightDiff <= r.InteriorHeightDiff * 2.5 + 4, $"높이 차 {r.MeanHeightDiff:0.0} (안쪽 {r.InteriorHeightDiff:0.0})");
+                stoneSamples += r.Stones; stoneMismatch += r.StoneMismatch;
+                innerRate += ProvinceChecks.InteriorStoneMismatch; innerN++;
+                checkedPairs++;
+            }
+        }
+        Assert.True(checkedPairs >= 15);
+        // 바위 덩어리도 경계에서 이어진다: 바위가 있는 표본 중 한쪽만 바위인 곳은 바로 옆 타일 차이(가장자리 한 줄) 정도
+        double edgeRate = stoneMismatch / (double)Math.Max(1, stoneSamples), inRate = innerRate / Math.Max(1, innerN);
+        _out.WriteLine($"바위 표본 {stoneSamples} · 한쪽만 바위 {edgeRate * 100:0.0}% (지도 안에서 같은 거리 {inRate * 100:0.0}%)");
+        Assert.True(stoneSamples > 200);
+        // 경계를 사이에 둔 두 타일이 같은 지도 안의 같은 거리 두 타일보다 많이 어긋나지 않는다 = 경계에서 끊기지 않는다
+        Assert.True(edgeRate <= inRate * 1.4 + 0.05, $"바위가 경계에서 어긋남 {edgeRate:P1} (안쪽 {inRate:P1})");
+    }
+
+
+    [Fact]
+    public void StoneAmountFollowsTerrain_AndStoneAgeCanStart()
+    {
+        var cat = ObjectCatalog.Default;
+        int stonesObj = cat.IndexOf("loose_stones"), flint = cat.IndexOf("flint_nodules"), quartz = cat.IndexOf("quartz_pebbles"), obsidian = cat.IndexOf("obsidian_shards");
+        double Frac(ProvinceMap m) => m.GroundCounts()[(int)Ground.Stone] / (double)HexFrame.InsideCount;
+        var byTerrain = new Dictionary<Terrain, List<double>>();
+        int plainsWithStones = 0, plainsWithSharp = 0, plains = 0;
+        for (int c = 3; c < _p.CellCount && byTerrain.Values.Sum(l => l.Count) < 60; c += 173)
+        {
+            if (!_p.IsLand(c)) continue;
+            var m = ProvinceGenerator.Generate(_p, c);
+            var t = _p.Terrain[c];
+            if (!byTerrain.TryGetValue(t, out var l)) byTerrain[t] = l = new();
+            l.Add(Frac(m));
+            if (t == Terrain.Plain)
+            {
+                plains++;
+                var oc = m.ObjectCounts(cat.Objects.Count);
+                // 평야에도 돌(바위 무리 · 잔돌)이 조금씩 — 석기 시대를 시작할 수 있게.
+                // 날이 서는 돌(부싯돌 · 석영 · 흑요석)은 바위 종류를 따라가므로(부싯돌은 석회암 땅) 없는 평야도 조금 있다.
+                if (Frac(m) > 0 && oc[stonesObj] > 0) plainsWithStones++;
+                if (oc[flint] + oc[quartz] + oc[obsidian] > 0) plainsWithSharp++;
+                else _out.WriteLine($"평야 {c}: 바위 {Frac(m) * 100:0.0}% · 잔돌 {oc[stonesObj]} · 날 서는 돌 없음");
+            }
+        }
+        foreach (var (t, l) in byTerrain.OrderBy(k => k.Key)) _out.WriteLine($"{PlanetNames.Of(t)}: 바위 {l.Average() * 100:0.0}% ({l.Count}칸)");
+        double Avg(Terrain t) => byTerrain.TryGetValue(t, out var l) ? l.Average() : double.NaN;
+        Assert.InRange(Avg(Terrain.Plain), 0.005, 0.10);
+        Assert.True(Avg(Terrain.Hill) > Avg(Terrain.Plain) * 2);
+        if (byTerrain.ContainsKey(Terrain.Mountain)) Assert.True(Avg(Terrain.Mountain) > 0.3);
+        Assert.True(plains >= 10);
+        Assert.Equal(plains, plainsWithStones);
+        _out.WriteLine($"날 서는 돌이 있는 평야 {plainsWithSharp}/{plains}");
+        Assert.True(plainsWithSharp * 5 >= plains * 4, "평야 대부분(80% 이상)에 날 서는 돌");
+        // 강가에는 자갈 · 잔돌이 많다
+        int riverCell = Enumerable.Range(0, _p.CellCount).First(c => _p.IsLand(c) && _p.RiverSize[c] >= 2 && _p.Biome[c] is Biome.Temperate or Biome.Grassland or Biome.Boreal or Biome.Savanna);
+        var river = ProvinceGenerator.Generate(_p, riverCell);
+        int gravel = river.GroundCounts()[(int)Ground.Gravel];
+        int nearRiverStones = 0;
+        for (int i = 0; i < HexFrame.TileCount; i++)
+            if (river.ObjectAt(i) == stonesObj && river.Ground[i] == Ground.Gravel) nearRiverStones++;
+        _out.WriteLine($"강 지방: 자갈 {gravel} 타일 · 자갈 위 잔돌 {nearRiverStones}");
+        Assert.True(gravel > 100);
+        Assert.True(nearRiverStones > 5);
+        Assert.False(GroundInfo.IsWalkable(Ground.Stone));
+        Assert.True(GroundInfo.IsWalkable(Ground.Gravel));
+    }
+
+
+    [Fact]
+    public void CacheForgetsOldMaps()
+    {
+        ProvinceCache.Clear();
+        int n = 0;
+        for (int c = 0; c < _p.CellCount && n < ProvinceCache.Capacity + 5; c++)
+            if (_p.IsLand(c)) { ProvinceCache.Get(_p, c); n++; }
+        Assert.Equal(ProvinceCache.Capacity, ProvinceCache.Count);
+        ProvinceCache.Clear();
     }
 }

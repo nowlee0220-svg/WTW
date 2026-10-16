@@ -62,7 +62,7 @@ public partial class CellPanel : PanelContainer
 
         _whySep = new HSeparator();
         box.AddChild(_whySep);
-        // "왜?" — 누르면 같은 창 안에서 펼치고 접는다
+        // "자세히 보기" — 누르면 같은 창 안에서 펼치고 접는다(이유)
         _whyToggle = new Button { FocusMode = FocusModeEnum.None, Alignment = HorizontalAlignment.Left, Flat = true };
         _whyToggle.AddThemeFontOverride("font", UiTheme.Bold);
         _whyToggle.AddThemeColorOverride("font_color", UiTheme.Accent);
@@ -83,7 +83,7 @@ public partial class CellPanel : PanelContainer
     {
         _whyToggle.Visible = _whySep.Visible = _whyAvailable;
         _why.Visible = _whyOpen && _whyAvailable;
-        _whyToggle.Text = _whyOpen ? "왜? ▲ 접기" : "왜? ▼ 펼치기";
+        _whyToggle.Text = _whyOpen ? "자세히 보기 ▲" : "자세히 보기 ▼";
     }
 
     public void ShowCell(Planet p, int c)

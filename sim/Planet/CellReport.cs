@@ -35,7 +35,8 @@ public static class CellDescriber
             return new CellReport(PlanetNames.Of(ter), "바다", facts, why);
         }
 
-        string title = ter == Terrain.Lake ? "호수" : PlanetNames.Of(p.Biome[c]);
+        bool volcano = Volcanoes.IsVolcano(p, c);
+        string title = ter == Terrain.Lake ? "호수" : volcano ? $"화산 ({PlanetNames.Of(p.Biome[c])})" : PlanetNames.Of(p.Biome[c]);
         string sub = ter == Terrain.Lake ? $"수면 높이 {e.ToString("N0", Inv)}m" : $"{PlanetNames.Of(ter)} · {e.ToString("N0", Inv)}m";
         if (ter != Terrain.Lake) facts.Add(("생물군계", PlanetNames.Of(p.Biome[c])));
         facts.Add(("지형", ter == Terrain.Lake ? "호수" : $"{PlanetNames.Of(ter)} (높이 {e.ToString("N0", Inv)}m)"));
@@ -44,12 +45,15 @@ public static class CellDescriber
         facts.Add(("물", Water(p, c)));
         facts.Add(("자원", Resources(p, c)));
         if (ter != Terrain.Lake) facts.Add(("바위", Geology.Describe(p, c)));
+        if (volcano) facts.Add(("화산", "잠든 화산 — 가운데에 분화구가 있는 산 (분화는 아직 없음)"));
+        else if (Volcanoes.Distance(p, c) is int vd && vd > 0 && vd <= 3) facts.Add(("화산", $"가까이 있음 ({vd}칸)"));
         facts.Add(("좌표", coord));
         facts.Add(("칸 번호", $"{c}{(p.Grid.IsPentagon(c) ? " (오각형)" : "")} · 지방 시드 {p.ProvinceSeed(c) % 1_000_000_000UL}"));
 
         why.Add(TempWhy(p, c, lat));
         why.Add(RainWhy(p, c));
         if (ter != Terrain.Lake) why.Add(BiomeWhy(p, c));
+        if (volcano) why.Add("화산 ← 산맥 둘레에 드물게 생기는 자리(땅 5,000칸에 하나꼴). 둘레 바위는 굳은 용암인 현무암, 땅 위에는 흑요석이 있다");
         else why.Add("호수 ← 둘레가 막힌 오목한 땅에 물이 고였다");
         why.AddRange(Details(p, c, lat));
         return new CellReport(title, sub, facts, why);
@@ -81,7 +85,7 @@ public static class CellDescriber
 
     private static string Signed(double v) => (v >= 0 ? "+" : "−") + Math.Abs(v).ToString("0.0", Inv) + "°";
 
-    private static string TempWhy(Planet p, int c, double lat)
+    internal static string TempWhy(Planet p, int c, double lat)
     {
         double t = p.Temp10[c] / 10.0, tl = p.TempLatitude10[c] / 10.0, ta = p.TempAltitude10[c] / 10.0, ti = p.TempInland10[c] / 10.0;
         double bias = p.Settings.Climate switch { ClimateBias.Cold => -4, ClimateBias.Warm => 4, _ => 0 };
@@ -111,7 +115,7 @@ public static class CellDescriber
         return $"{feel} ← {string.Join(" + ", causes)}  ({string.Join(" · ", parts)})";
     }
 
-    private static string RainWhy(Planet p, int c)
+    internal static string RainWhy(Planet p, int c)
     {
         int pr = p.PrecipMm[c];
         string feel = pr < 250 ? "비가 아주 적다" : pr < 500 ? "비가 적다" : pr < 1000 ? "비가 보통이다" : pr < 2000 ? "비가 많다" : "비가 아주 많다";
@@ -136,7 +140,7 @@ public static class CellDescriber
         return $"{feel} ← {string.Join(" + ", causes)}";
     }
 
-    private static string BiomeWhy(Planet p, int c)
+    internal static string BiomeWhy(Planet p, int c)
     {
         double t = p.Temp10[c] / 10.0;
         int pr = p.PrecipMm[c];

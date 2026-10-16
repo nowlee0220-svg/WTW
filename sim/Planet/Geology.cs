@@ -6,7 +6,7 @@ namespace Wtw.Sim.Planet;
 
 /// <summary>
 /// 행성 칸마다 나는 바위 종류(주된 바위 · 섞인 바위). 지형 · 생물군계에 맞는 정도(data/rocks.json) × 넓은 지질 잡음
-/// (몇 칸 크기의 지역 — 이웃 칸은 대개 같은 바위). 행성 + 시드로 정해지므로 저장하지 않는다(행성 지문과는 따로).
+/// (몇 칸 크기의 지역 — 이웃 칸은 대개 같은 바위). 화산 칸은 현무암, 화산 둘레 2칸은 현무암이 섞인다. 행성 + 시드로 정해지므로 저장하지 않는다(행성 지문과는 따로).
 /// 결정론: 세계 시드의 "planet.geology" 스트림 잡음 · 사칙연산만.
 /// </summary>
 public static class Geology
@@ -43,6 +43,11 @@ public static class Geology
                 else if (sc > ss) { ss = sc; second = r; }
             }
             t.Primary[c] = (byte)best; t.Secondary[c] = (byte)(k > 1 ? second : best);
+            // 화산: 화산 칸은 현무암, 바로 둘레(2칸 안)는 현무암이 섞인다
+            int basalt = cat.Rocks.ToList().FindIndex(r => r.Id == "basalt");
+            int vd = Volcanoes.Distance(p, c);
+            if (basalt >= 0 && vd == 0) { t.Secondary[c] = (byte)(best == basalt ? second : best); t.Primary[c] = (byte)basalt; }
+            else if (basalt >= 0 && vd is 1 or 2 && best != basalt) t.Secondary[c] = (byte)basalt;
         }
         return t;
     }

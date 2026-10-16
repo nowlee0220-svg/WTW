@@ -6,7 +6,12 @@ namespace Wtw.Sim.Data;
 
 public sealed record ActionDef(string Id, string Name);
 
-public sealed record ItemDef(string Id, string Name);
+public sealed record ItemDef(string Id, string Name)
+{
+    /// <summary>성질 메모: 재료 속성 아이디(properties.json) → 낮음 · 보통 · 높음 · 아주 높음. 숫자는 E4 에서.</summary>
+    public IReadOnlyDictionary<string, string> Traits { get; init; } = new Dictionary<string, string>();
+    public static readonly string[] TraitLevels = { "낮음", "보통", "높음", "아주 높음" };
+}
 
 /// <summary>다루는 법 하나 → 나오는 아이템들.</summary>
 public sealed record ObjectUse(ActionDef Action, IReadOnlyList<ItemDef> Yields);
@@ -28,6 +33,10 @@ public sealed class ObjectDef
     public double[] BiomeWeight { get; init; } = Array.Empty<double>();
     /// <summary>[Ground 값] 가중치.</summary>
     public double[] GroundWeight { get; init; } = Array.Empty<double>();
+    /// <summary>[바위 종류 번호] 곱하는 값(rocks.json 순서). 바위 종류가 없는 타일은 1.</summary>
+    public double[] RockWeight { get; init; } = Array.Empty<double>();
+    /// <summary>화산 칸 · 화산 둘레에만 난다.</summary>
+    public bool NeedsVolcano { get; init; }
     public int ClusterCount { get; init; }
     public int ClusterSize { get; init; }
     public IReadOnlyList<ObjectUse> Uses { get; init; } = Array.Empty<ObjectUse>();
@@ -73,12 +82,28 @@ public sealed class ObjectCatalog
     public static ObjectCatalog LoadDirectory(string dir)
     {
         var files = new Dictionary<string, string>();
-        foreach (var name in new[] { ObjectsFile, ItemsFile })
+        foreach (var name in new[] { ObjectsFile, ItemsFile, RockCatalog.RocksFile })
         {
             var path = Path.Combine(dir, name);
             files[name] = File.Exists(path) ? File.ReadAllText(path) : "";
         }
         return Load(files);
+    }
+
+    /// <summary>바위 종류 아이디: rocks.json 이 주어지면 그 안에서, 아니면 시뮬 안의 기본 목록.</summary>
+    private static string[] RockIds(IReadOnlyDictionary<string, string> files)
+    {
+        if (files.TryGetValue(RockCatalog.RocksFile, out var text) && !string.IsNullOrWhiteSpace(text))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(text, new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
+                if (doc.RootElement.TryGetProperty("rocks", out var arr))
+                    return arr.EnumerateArray().Select(r => r.TryGetProperty("id", out var v) ? v.GetString() ?? "" : "").ToArray();
+            }
+            catch (JsonException) { }
+        }
+        return RockCatalog.Default.Rocks.Select(r => r.Id).ToArray();
     }
 
     /// <summary>파일 이름 → 내용. 틀린 곳은 모두 모아 DataValidationException 으로.</summary>
@@ -99,11 +124,23 @@ public sealed class ObjectCatalog
                     string? id = ReqString(e, "id", where, problems), name = ReqString(e, "name", where, problems);
                     if (id is null || name is null) continue;
                     if (itemById.ContainsKey(id)) { problems.Add($"{where}: 아이디 '{id}' 가 겹칩니다."); continue; }
-                    var it = new ItemDef(id, name);
+                    var traits = new Dictionary<string, string>();
+                    if (e.TryGetProperty("traits", out var te))
+                    {
+                        if (te.ValueKind != JsonValueKind.Object) problems.Add($"{where}: traits 는 {{ \"속성\": \"낮음|보통|높음|아주 높음\" }} 이어야 합니다.");
+                        else foreach (var tp in te.EnumerateObject())
+                            {
+                                string? lv = tp.Value.ValueKind == JsonValueKind.String ? tp.Value.GetString() : null;
+                                if (lv is null || !ItemDef.TraitLevels.Contains(lv)) problems.Add($"{where}: traits 의 '{tp.Name}' 값 '{lv}' 은(는) {string.Join(" · ", ItemDef.TraitLevels)} 중 하나여야 합니다.");
+                                else traits[tp.Name] = lv;
+                            }
+                    }
+                    var it = new ItemDef(id, name) { Traits = traits };
                     itemById[id] = it; items.Add(it);
                 }
             }
 
+        var rockIds = RockIds(files);
         var actions = new List<ActionDef>();
         var actionById = new Dictionary<string, ActionDef>();
         var objects = new List<ObjectDef>();
@@ -130,7 +167,7 @@ public sealed class ObjectCatalog
                 {
                     int index = i++;
                     string where = Where(ObjectsFile, index, e);
-                    var def = ReadObject(e, where, objects.Count, itemById, actionById, problems);
+                    var def = ReadObject(e, where, objects.Count, itemById, actionById, rockIds, problems);
                     if (def is null) continue;
                     if (seen.TryGetValue(def.Id, out int first)) { problems.Add($"{where}: 아이디 '{def.Id}' 가 {first + 1}번째 항목과 겹칩니다."); continue; }
                     seen[def.Id] = index;
@@ -142,7 +179,7 @@ public sealed class ObjectCatalog
         return new ObjectCatalog { Objects = objects, Items = items, Actions = actions };
     }
 
-    private static ObjectDef? ReadObject(JsonElement e, string where, int index, Dictionary<string, ItemDef> items, Dictionary<string, ActionDef> actions, List<string> problems)
+    private static ObjectDef? ReadObject(JsonElement e, string where, int index, Dictionary<string, ItemDef> items, Dictionary<string, ActionDef> actions, string[] rockIds, List<string> problems)
     {
         int before = problems.Count;
         string? id = ReqString(e, "id", where, problems);
@@ -177,6 +214,14 @@ public sealed class ObjectCatalog
 
         var biomes = Weights(e, "biomes", BiomeIds.Ids, "생물군계", where, problems);
         var grounds = Weights(e, "grounds", GroundInfo.Ids, "땅 종류", where, problems);
+        var rocks = new double[rockIds.Length];
+        Array.Fill(rocks, 1.0);
+        if (e.TryGetProperty("rocks", out _))
+        {
+            var w = Weights(e, "rocks", new[] { "(없음)" }.Concat(rockIds).ToArray(), "바위 종류", where, problems);
+            for (int k = 0; k < rocks.Length; k++) rocks[k] = w[k + 1];
+        }
+        bool volcano = e.TryGetProperty("volcano", out var ve) && ve.ValueKind == JsonValueKind.True;
 
         int cCount = 0, cSize = 0;
         if (e.TryGetProperty("cluster", out var ce))
@@ -212,7 +257,7 @@ public sealed class ObjectCatalog
         return new ObjectDef
         {
             Index = index, Id = id, Name = name, Kind = kind, Art = art, Resource = resource, Density = density, ResourceFloor = floor,
-            BiomeWeight = biomes, GroundWeight = grounds, ClusterCount = cCount, ClusterSize = cSize, Uses = uses,
+            BiomeWeight = biomes, GroundWeight = grounds, RockWeight = rocks, NeedsVolcano = volcano, ClusterCount = cCount, ClusterSize = cSize, Uses = uses,
         };
     }
 

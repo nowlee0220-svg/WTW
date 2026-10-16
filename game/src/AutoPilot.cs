@@ -16,7 +16,7 @@ namespace Wtw.Game;
 ///   --selftest : 달리는 중에 [저장] → 멈춘 화면 = 저장된 시각인지 → 더 돌림 → 불러오기 → 저장한 시각·점 위치로 돌아왔는지.
 ///   --dots=N --devdots : E0 점 시험(개발용 화면)
 ///   --enter=forest|river|coast|mountain|desert|tundra|pentagon|칸번호 : 그 지방으로 들어간다  --neighbors : [이웃까지]
-///   --pzoom=배율  지방 화면 확대   --focus=river|coast|edge|object|stone|ore|cave|gravel  --resview 자원 보기  그곳을 화면 가운데로   --hover  오브젝트 하나에 마우스를 올린다(카드)   --tileclick  그 타일 정보 창
+///   --pzoom=배율  지방 화면 확대   --focus=river|coast|edge|object|stone|ore|cave|gravel  --resview 자원 보기  --localhour=H 그 지방 시각을 H시로 보여 줌(개발용)  그곳을 화면 가운데로   --hover  오브젝트 하나에 마우스를 올린다(카드)   --tileclick  그 타일 정보 창
 ///   --enterexit=N : 지방을 N 번 드나들며 메모리를 잰다(지구본 ↔ 지방)
 /// 프레임 시간 통계(평균 fps, 가장 긴 프레임)도 출력한다.
 /// </summary>
@@ -36,6 +36,7 @@ public sealed class AutoPilot
     private bool _selftest;
     private string? _enter, _focus;
     private bool _neighbors, _hover, _tileClick, _resView;
+    private double? _localHour;
     private float? _pzoom;
     private int _enterExit;
     private bool _provinceOpened, _provinceReady;
@@ -93,6 +94,7 @@ public sealed class AutoPilot
                 case "--tileclick": _tileClick = true; break;
                 case "--enterexit": _enterExit = int.Parse(v); break;
                 case "--resview": _resView = true; break;
+                case "--localhour": _localHour = double.Parse(v, inv); break;
             }
         }
     }
@@ -138,7 +140,7 @@ public sealed class AutoPilot
                 if (score > best) { best = score; cell = c; }
             }
         }
-        else cell = int.Parse(_select!);
+        else cell = int.TryParse(_select, out int sc) ? sc : ProvinceSamples.Find(p, _select!);
         g.LookAtCell(cell, _zoom ?? 1.7f);
         g.Select(cell);
         if (_whyOpen) _main.Panel.SetWhyOpen(true);
@@ -251,6 +253,7 @@ public sealed class AutoPilot
             case "stone": FindTile(i => m.Ground[i] == Ground.Stone && !m.IsHidden(i)); break;
             case "ore": FindTile(i => m.VisibleOreAt(i) >= 0); break;
             case "cave": FindTile(i => (m.Flags[i] & TileFlags.Roof) != 0); break;
+            case "mouth": FindTile(i => (m.Flags[i] & TileFlags.Roof) != 0 && !m.IsHidden(i)); break;
             case "gravel": FindTile(i => m.Ground[i] == Ground.Gravel); break;
         }
         if ((_hover && _focus is null or "object" or "river" or "coast" or "edge") || _focus == "object")
@@ -273,6 +276,11 @@ public sealed class AutoPilot
         }
         if (_tileClick) _main.ClickForTest(pv.Center, fx, fy);
         if (_resView) _main.ResourceViewForTest(true);
+        if (_localHour is double lh)
+        {
+            double now = ProvinceReport.LocalHour(p, pv.Center, _main.Host!.RenderTick);
+            _main.ShowTickOffset = ((lh - now) % 24 + 24) % 24 * Wtw.Sim.Time.GameTime.TicksPerHour;
+        }
         GD.Print($"PROVINCE cell={pv.Center} neighbors={pv.Neighbors} shown={pv.ShownCount} gen_s={m.GenerationSeconds:F3} focus=({fx},{fy}) zoom={pv.Zoom:F3}");
     }
 
