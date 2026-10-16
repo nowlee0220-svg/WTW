@@ -1,6 +1,7 @@
 using Godot;
 using Wtw.Sim.Persistence;
 using Wtw.Sim.Planet;
+using Wtw.Sim.Provinces;
 using Wtw.Sim.Runtime;
 using Wtw.Sim.World;
 
@@ -9,6 +10,7 @@ namespace Wtw.Game;
 /// <summary>
 /// 시작점. 켜면 새 세계 화면 → [만들기] → (다른 스레드에서 행성 만들기, 진행 표시) → 지구본.
 /// 시뮬(SimHost, 별도 스레드)은 첫 세계가 생길 때 띄운다. 매 프레임 스냅샷을 받아 지구본과 막대를 그린다.
+/// 지구본에서 땅 칸을 두 번 누르거나 칸 정보의 [들어가기] → 2D 지방 화면(ProvinceView). [지구본으로] · Esc → 들어갔던 칸을 보는 지구본.
 /// 명령줄(사용자 인자, -- 뒤): AutoPilot 참고.
 /// </summary>
 public partial class Main : Node
@@ -20,6 +22,11 @@ public partial class Main : Node
     private CellPanel _panel = null!;
     private Legend _legend = null!;
     private NewWorldScreen _newWorld = null!;
+    private ProvinceView _province = null!;
+    private TileCard _card = null!;
+    private ProvinceInfoPanel _info = null!;
+    private double _infoTimer;
+    private bool _neighborsPref;
     private readonly AutoPilot _auto = new();
 
     private Task<GameWorld>? _making;
@@ -39,6 +46,14 @@ public partial class Main : Node
         _globe = new GlobeView();
         AddChild(_globe);
         _globe.CellSelected += OnCellSelected;
+        _globe.CellActivated += c => EnterProvince(c);
+
+        _province = new ProvinceView();
+        AddChild(_province);
+        _province.TileClicked += OnTileClicked;
+        _province.HoverChanged += OnTileHover;
+        _province.Notice += n => _hud.ShowNotice(n);
+        _province.Loaded += UpdateResourceLegend;
 
         _map = new MapView { Visible = false }; // E0 의 점 시험 화면 — 개발용(F12)
         AddChild(_map);
@@ -53,6 +68,9 @@ public partial class Main : Node
         _hud.SpeedRequested += s => { if (_host is null) return; if (s == 0) _host.SetPaused(true); else _host.SetSpeed(s); };
         _hud.ModeRequested += SetMode;
         _hud.PlaceholderPressed += why => _hud.ShowNotice(why);
+        _hud.ScopeRequested += SetScope;
+        _hud.ExitProvinceRequested += ExitProvince;
+        _hud.ResourceViewRequested += SetResourceView;
 
         _legend = new Legend { Theme = theme, Visible = false };
         ui.AddChild(_legend);
@@ -60,7 +78,14 @@ public partial class Main : Node
 
         _panel = new CellPanel { Theme = theme, Visible = false };
         ui.AddChild(_panel);
-        _panel.CloseRequested += () => _globe.Select(-1);
+        _panel.CloseRequested += () => { if (_province.IsOpen) _panel.Visible = false; else _globe.Select(-1); };
+        _panel.EnterRequested += () => EnterProvince(_globe.Selected);
+
+        _info = new ProvinceInfoPanel { Theme = theme, Visible = false };
+        ui.AddChild(_info);
+        _card = new TileCard { Theme = theme };
+        ui.AddChild(_card);
+        _province.LabelBlockers = LabelBlockers;
 
         _newWorld = new NewWorldScreen { Theme = theme };
         ui.AddChild(_newWorld);
@@ -98,6 +123,7 @@ public partial class Main : Node
     private void Load()
     {
         if (_making is not null) return;
+        if (_province.IsOpen) ExitProvince();
         if (!File.Exists(SavePath)) { _hud.ShowNotice("저장 파일이 없습니다. 먼저 저장하세요."); return; }
         _host?.SetPaused(true);
         _makingNotice = "불러왔습니다";
@@ -160,6 +186,7 @@ public partial class Main : Node
     private void OpenNewWorld()
     {
         if (_making is not null) return;
+        if (_province.IsOpen) ExitProvince();
         _newWorld.SetValues(NewWorldScreen.RandomSeed(), _lastConfig.LandCells, _lastConfig.Climate);
         _newWorld.Open(_host is not null, File.Exists(SavePath));
     }
@@ -181,6 +208,115 @@ public partial class Main : Node
         _legend.Show(mode, _globe.Resource);
     }
 
+    // ───────── 지방 화면 ─────────
+
+    private void EnterProvince(int c)
+    {
+        var p = _globe.Planet;
+        if (p is null || c < 0) return;
+        if (!p.IsLand(c)) { _hud.ShowNotice(p.IsOcean(c) ? "바다에는 들어갈 수 없습니다 — 땅 칸을 고르세요." : "호수에는 들어갈 수 없습니다 — 땅 칸을 고르세요."); return; }
+        _panel.Visible = false;
+        _legend.Visible = false;
+        _globe.Visible = false;
+        _province.Open(p, c, _neighborsPref);
+        _hud.SetProvinceMode(true, TileDescriber.ProvinceName(p, c), _neighborsPref);
+        _auto.OnProvinceOpened();
+    }
+
+    /// <summary>가장자리 이름이 피할 곳: 막대 · 단추 줄 · 지방 정보 칸 · 칸 정보 창 · 범례 · 카드.</summary>
+    private IEnumerable<Rect2> LabelBlockers()
+    {
+        foreach (var r in _hud.Blockers()) yield return r;
+        if (_info.Visible) yield return _info.GetGlobalRect();
+        if (_panel.Visible) yield return _panel.GetGlobalRect();
+        if (_legend.Visible) yield return _legend.GetGlobalRect();
+    }
+
+    /// <summary>지방 정보 칸: 그 지방의 시각 · 기온 등. 0.5초마다 다시 채운다(시각이 흐르므로).</summary>
+    private void UpdateProvinceInfo(double delta)
+    {
+        _info.Visible = _province.IsOpen && _province.ShownCount > 0;
+        if (!_info.Visible || _host is null || _globe.Planet is not { } p) return;
+        // 아래 끝: 범례(자원 보기)가 있으면 그 위까지
+        var vp = GetViewport().GetVisibleRect().Size;
+        float bottom = _legend.Visible ? _legend.GetGlobalRect().Position.Y - 12 : vp.Y - UiTheme.BottomBarHeight - 12;
+        _info.SetBottom(bottom, vp.Y);
+        _infoTimer -= delta;
+        if (_infoTimer > 0) return;
+        _infoTimer = 0.5;
+        var m = _province.MapOf(_province.Center);
+        if (m is null) return;
+        _info.Show($"지방 정보 — {TileDescriber.ProvinceName(p, m.Cell)}", ProvinceReport.Describe(p, m, _host.RenderTick + ShowTickOffset));
+    }
+
+    /// <summary>지방 화면의 자원 보기: 바위 · 광맥 · 돌만 밝게 + 범례(이 화면에 있는 것만).</summary>
+    private void SetResourceView(bool on)
+    {
+        if (!_province.IsOpen) return;
+        _province.SetResourceView(on);
+        _hud.SetResourceViewPressed(on);
+        UpdateResourceLegend();
+    }
+
+    private void UpdateResourceLegend()
+    {
+        if (!_province.IsOpen || !_province.ResourceView || _province.ShownCount == 0) { if (_province.IsOpen) _legend.Visible = false; return; }
+        var rocks = Wtw.Sim.Data.RockCatalog.Default;
+        var cat = Wtw.Sim.Data.ObjectCatalog.Default;
+        var (rk, ores, objs, gravel, hidden) = _province.ResourceSummary();
+        var items = new List<(Color, string)>();
+        for (int r = 0; r < rk.Length; r++)
+            if (rk[r] > 0) items.Add((Art.RockColor(Wtw.Sim.Provinces.Ground.Stone, r), $"{rocks.Rocks[r].Name} — 캐면 {string.Join(", ", rocks.Rocks[r].Yields.Select(y => y.Name))} ({rk[r]:N0}칸)"));
+        for (int o = 0; o < ores.Length; o++)
+            if (ores[o] > 0) { var oc = rocks.Ores[o].Color; items.Add((new Color(oc.R / 255f, oc.G / 255f, oc.B / 255f), $"{rocks.Ores[o].Name} — 캐면 {string.Join(", ", rocks.Ores[o].Yields.Select(y => y.Name))} ({ores[o]:N0}칸)")); }
+        if (gravel > 0) items.Add((new Color(0.78f, 0.76f, 0.7f), $"자갈 바닥 — 줍기 → 돌 ({gravel:N0}칸)"));
+        foreach (var (o, n) in objs.OrderByDescending(kv => kv.Value)) items.Add((new Color(1, 1, 1, 0), $"• {cat.Objects[o].Name} — {cat.Objects[o].UsesText} ({n:N0}개)"));
+        if (hidden > 0) items.Add((new Color(0.25f, 0.25f, 0.25f), $"바위 속(어둡게) — 안쪽 광맥 · 동굴은 아직 아무도 모름"));
+        if (items.Count == 0) items.Add((new Color(0, 0, 0, 0), "이 화면에는 바위 · 광맥이 없습니다"));
+        _legend.ShowItems("자원 보기 — 돌 · 광물", items);
+        _legend.Visible = true;
+    }
+
+    private void ExitProvince()
+    {
+        if (!_province.IsOpen) return;
+        int c = _province.Center;
+        if (_province.ResourceView) { _province.SetResourceView(false); _hud.SetResourceViewPressed(false); }
+        SetMode(_globe.Mode, null); // 지구본 범례로 되돌림
+        _province.Close();
+        _card.Visible = false;
+        _info.Visible = false;
+        _globe.Visible = true;
+        _legend.Visible = _host is not null;
+        _hud.SetProvinceMode(false, "", _neighborsPref);
+        // 들어갔던 칸을 보는 지구본으로
+        _globe.LookAtCell(c, Math.Min(_globe.Distance, 1.9f));
+        _globe.Select(c);
+    }
+
+    private void SetScope(bool neighbors)
+    {
+        _neighborsPref = neighbors;
+        _province.SetNeighbors(neighbors);
+        if (_globe.Planet is { } p && _province.IsOpen) _hud.SetProvinceMode(true, TileDescriber.ProvinceName(p, _province.Center), neighbors);
+    }
+
+    private void OnTileHover(int cell, int x, int y)
+    {
+        var p = _globe.Planet;
+        var m = cell >= 0 ? _province.MapOf(cell) : null;
+        if (p is null || m is null) { _card.Visible = false; return; }
+        _card.ShowAt(TileDescriber.Describe(p, m, x, y), GetViewport().GetMousePosition());
+    }
+
+    private void OnTileClicked(int cell, int x, int y)
+    {
+        var p = _globe.Planet;
+        var m = _province.MapOf(cell);
+        if (p is null || m is null) return;
+        _panel.ShowTile(TileDescriber.Describe(p, m, x, y));
+    }
+
     private void OnCellSelected(int c)
     {
         if (c < 0 || _globe.Planet is null) { _panel.Visible = false; return; }
@@ -194,7 +330,11 @@ public partial class Main : Node
         PollMaking();
         if (_host is null) { _auto.Tick(delta, null); return; }
         var snap = _host.Frame(delta);
+        if (snap.Planet is not null && !ReferenceEquals(snap.Planet, _globe.Planet) && _province.IsOpen) ExitProvince();
         if (snap.Planet is not null) _globe.SetPlanet(snap.Planet);
+        if (_card.Visible) _card.Follow(GetViewport().GetMousePosition());
+        _province.SetTime(_host.RenderTick + ShowTickOffset);
+        UpdateProvinceInfo(delta);
         _map.Visible = _devDots;
         if (_devDots) _map.Render(snap, _host.RenderTick);
         _hud.UpdateInfo(snap, _host, delta);
@@ -212,6 +352,7 @@ public partial class Main : Node
         if (k.Keycode == Key.Escape)
         {
             if (_newWorld.Visible) { if (_host is not null && !_newWorld.Busy) _newWorld.Visible = false; }
+            else if (_province.IsOpen) { _panel.Visible = false; ExitProvince(); }
             else if (_panel.Visible) _globe.Select(-1);
             GetViewport().SetInputAsHandled();
             return;
@@ -228,7 +369,10 @@ public partial class Main : Node
             case Key.F5: Save(); break;
             case Key.F9: Load(); break;
             case Key.F12: _devDots = !_devDots; break; // 개발용: E0 점 시험 화면
+            case Key.Enter or Key.KpEnter when !_province.IsOpen && _globe.Selected >= 0: EnterProvince(_globe.Selected); break;
+            case Key.Y when _province.IsOpen: SetResourceView(!_province.ResourceView); break;
             default:
+                if (_province.IsOpen) return;
                 var mode = MapModes.All.FirstOrDefault(m => MapModes.Hotkey(m) == k.Keycode, (MapMode)(-1));
                 if ((int)mode < 0) return;
                 SetMode(mode);
@@ -243,6 +387,16 @@ public partial class Main : Node
     internal SimHost? Host => _host;
     internal GlobeView Globe => _globe;
     internal CellPanel Panel => _panel;
+    internal ProvinceView Province => _province;
+    /// <summary>개발용(자동 확인): 지방 화면의 시각만 앞당겨 보여 준다(시뮬 시간은 그대로).</summary>
+    internal double ShowTickOffset;
+    internal TileCard Card => _card;
+    internal void EnterForTest(int c) => EnterProvince(c);
+    internal void ExitForTest() => ExitProvince();
+    internal void ScopeForTest(bool nb) => SetScope(nb);
+    internal void HoverForTest(int cell, int x, int y) => _province.SetHover(cell, x, y);
+    internal void ClickForTest(int cell, int x, int y) => OnTileClicked(cell, x, y);
+    internal void ResourceViewForTest(bool on) => SetResourceView(on);
     internal void SaveForTest() => Save();
     internal void LoadForTest() => Load();
 }

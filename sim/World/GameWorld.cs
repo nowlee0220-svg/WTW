@@ -1,6 +1,7 @@
 using Wtw.Sim.Core;
 using Wtw.Sim.Movers;
 using Wtw.Sim.Planet;
+using Wtw.Sim.Provinces;
 using Wtw.Sim.Scheduling;
 using Wtw.Sim.Time;
 
@@ -33,6 +34,15 @@ public sealed class GameWorld
     public Planet.Planet Planet => _planet ??= PlanetCache.Get(Seed, Config.PlanetSettings, null);
     public bool HasPlanet => _planet is not null;
     public Planet.Planet EnsurePlanet(Action<double, string>? progress) => _planet ??= PlanetCache.Get(Seed, Config.PlanetSettings, progress);
+
+    /// <summary>
+    /// 지방 지도. 행성 + 칸 번호로 언제나 똑같이 다시 만들어지므로(결정론) 저장하지 않고, 최근 것만 기억해 둔다.
+    /// 지도가 바뀌는 일(나무 베기 등)은 E3~ 에서 ProvinceChanges 에 "바뀐 타일"로 쌓는다.
+    /// </summary>
+    public ProvinceMap Province(int cell) => ProvinceCache.Get(Planet, cell);
+
+    /// <summary>바뀐 지방 목록(칸 번호 → 바뀐 타일들). 지금은 늘 비어 있다 — 저장 파일의 자리만 있다.</summary>
+    public SortedDictionary<int, int> ProvinceChanges { get; } = new();
 
     private readonly List<Intervention> _interventions = new();
     public IReadOnlyList<Intervention> Interventions => _interventions;

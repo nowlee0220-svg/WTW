@@ -6,7 +6,7 @@ namespace Wtw.Game;
 /// 그림 공급처 — 모든 그림은 여기서 받는다(기획서 17절). 지금은 코드로 그린 원,
 /// 나중에 진짜 그림이 생기면 이 파일만 바꿔 같은 자리에 갈아 끼운다.
 /// </summary>
-public static class Art
+public static partial class Art
 {
     public static readonly Color[] DotColors =
     {

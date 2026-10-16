@@ -15,8 +15,12 @@ fi
 WORK="$ROOT/build/wine-run"; rm -rf "$WORK"; mkdir -p "$WORK" "$(dirname "$SHOT")"
 unzip -q "$ZIP" -d "$WORK"
 export WINEDEBUG=-all WINEPREFIX="$ROOT/.tools/wineprefix"
-run() { timeout 300 xvfb-run -a -s "-screen 0 1920x1080x24" wine "$WORK/WTW/WTW.exe" --rendering-driver opengl3 --audio-driver Dummy --resolution 1920x1080 -- "$@" 2>&1 | grep -aE "SELFTEST|FRAMES|SCREENSHOT" | sort -u; }
+run() { timeout 300 xvfb-run -a -s "-screen 0 1920x1080x24" wine "$WORK/WTW/WTW.exe" --rendering-driver opengl3 --audio-driver Dummy --resolution 1920x1080 -- "$@" 2>&1 | grep -aE "SELFTEST|FRAMES|SCREENSHOT|PROVINCE" | sort -u; }
 run --selftest --speed=4 --seed=7 --dots=500
 WINSHOT="Z:$(echo "$SHOT" | tr '/' '\\')"
 run --screenshot="$WINSHOT" --shot-after=6 --speed=4 --seed=20261016
 [ -f "$SHOT" ] && echo "[wine] 스크린샷 $SHOT"
+# 2D 지방 화면(셰이더가 윈도우 빌드에서도 되는지)
+PSHOT="${SHOT%.png}-province.png"
+run --screenshot="Z:$(echo "$PSHOT" | tr '/' '\\')" --shot-after=4 --seed=20261016 --enter=river --neighbors
+[ -f "$PSHOT" ] && echo "[wine] 스크린샷 $PSHOT"
