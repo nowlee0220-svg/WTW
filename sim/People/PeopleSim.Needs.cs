@@ -111,8 +111,9 @@ public sealed partial class PeopleSim
         while (t < until)
         {
             long dt = Math.Min(until - t, GameTime.TicksPerHour);
-            bool fed = c is { Dead: false } && c.Food > 10_000 && c.Malnutrition < 30_000;
-            var r = new Rates { Food = fed ? 50_000 : -FoodAwake, Water = fed ? 50_000 : -WaterAwake, Rest = 5_000, Joy = 5_000, Social = 5_000 };
+            // 젖: 안은 사람이 잠깐 배고픈 정도로는 끊기지 않고, 그 사람이 영양실조에 빠지면 끊긴다(젖이 마름 → 아기는 굶는다)
+            bool fed = c is { Dead: false } && c.Malnutrition < 20_000;
+            var r = new Rates { Food = fed ? 50_000 : -FoodAwake, Water = fed ? 50_000 : 0, /* 젖이 마르면 굶는다(물은 따로 못 마심 → 굶주림으로 셈) */ Rest = 5_000, Joy = 5_000, Social = 5_000 };
             int felt = c is { Dead: false } ? life.FeltTemp10(t, c.Tile(t), true) : life.FeltTemp10(t, p.Tile(t), false);
             Step(ref n, r, felt, dt, p.HasTrait(T_tough));
             if (p.IllUntil > t) n.Health = Clamp(n.Health - (long)p.IllDamage * dt / GameTime.TicksPerDay);

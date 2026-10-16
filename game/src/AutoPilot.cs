@@ -203,8 +203,9 @@ public sealed class AutoPilot
             _frameTimes.Add(delta);
         }
         if (_elapsed > 120) { Finish(false, "AUTOPILOT 시간 초과 (세계가 만들어지지 않음?)"); return; }
-        if (_selftest) { if (_ready && snap is not null) SelfTest(delta, snap); }
+        if (_selftest) { if (_ready && snap is not null) { if (_people is not null && !_spawned) { if (_provinceReady) PeopleSteps(delta, snap); } else SelfTest(delta, snap); } }
         else if (_people is not null) { if (_provinceReady) PeopleSteps(delta, snap); }
+
         else if (_shotPath is not null && (StayOnNewWorld ? _elapsed : _enter is not null ? (_provinceReady ? _sinceProvince : -1) : (_ready ? _sinceReady : -1)) >= _shotAfter) Finish(true, "");
     }
 
@@ -238,7 +239,7 @@ public sealed class AutoPilot
                 double maxDiff = 0;
                 for (int i = 0; i < Math.Min(pos.Length, _savedPos.Length); i++) maxDiff = Math.Max(maxDiff, Math.Abs(pos[i] - _savedPos[i]));
                 bool ok = now == _savedTick && pos.Length == _savedPos.Length && maxDiff < 1e-6;
-                Finish(ok, $"SELFTEST saveload {(ok ? "OK" : "FAIL")}: {_saveCheck} / 저장 시각 {GameTime.FormatWithMinutes(_savedTick)}({_savedTick}) / 불러온 뒤 {GameTime.FormatWithMinutes(now)}({now}) / 점 {pos.Length / 2}개 위치 최대 차이 {maxDiff}");
+                Finish(ok, $"SELFTEST saveload {(ok ? "OK" : "FAIL")}: {_saveCheck} / 저장 시각 {GameTime.FormatWithMinutes(_savedTick)}({_savedTick}) / 불러온 뒤 {GameTime.FormatWithMinutes(now)}({now}) / 점 · 사람 {pos.Length / 2}개(사람 {snap.PeopleCount}) 위치 최대 차이 {maxDiff}");
                 break;
             }
             case 4 when _stageTime > 20:
@@ -463,8 +464,9 @@ public sealed class AutoPilot
 
     private static double[] Positions(WorldSnapshot snap, double tick)
     {
-        var r = new double[snap.DotCount * 2];
+        var r = new double[(snap.DotCount + snap.PeopleCount) * 2];
         for (int i = 0; i < snap.DotCount; i++) snap.DotPosition(i, tick, out r[2 * i], out r[2 * i + 1]);
+        for (int i = 0; i < snap.PeopleCount; i++) snap.People[i].PositionAt(tick, out r[2 * (snap.DotCount + i)], out r[2 * (snap.DotCount + i) + 1], out _, out _);
         return r;
     }
 
