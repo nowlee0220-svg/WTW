@@ -84,6 +84,8 @@ public static class ProvinceReport
         double now = mean + range / 2 * DailyCurve(h);
         list.Add(new("지금 기온", $"{Deg(now)}°C (밤 최저 {Deg(mean - range / 2)} · 낮 최고 {Deg(mean + range / 2)})",
             $"연평균 {Deg(mean)}°C 에 낮밤 차이를 더했다. 해 뜰 무렵(6시)이 가장 차갑고 15시가 가장 따뜻하다. 하루 기온 차이 {Deg(range)}°C ← " + string.Join(" · ", rangeWhy)));
+        list.Add(Water(p, m));
+        list.Add(Resources(p, m));
         list.Add(new("연평균 기온", $"{Deg(mean)}°C", CellDescriber.TempWhy(p, c, lat)));
 
         double noon = 90 - Math.Abs(lat), alt = SunAltitude(lat, h);
@@ -95,7 +97,7 @@ public static class ProvinceReport
 
         int pr = p.PrecipMm[c];
         list.Add(new("강수", $"{pr:N0}mm / 년 ({RainWord(pr)})", CellDescriber.RainWhy(p, c)));
-        list.Add(new("공기", HumidityWord(pr, mean), $"강수 {pr:N0}mm 와 기온 {Deg(mean)}°C 로 어림: 따뜻할수록 같은 비도 빨리 마른다(증발)."));
+        list.Add(new("땅의 물기", MoistureWord(pr, mean), $"강수 {pr:N0}mm 와 기온 {Deg(mean)}°C 로 어림: 비가 많을수록 젖고, 따뜻할수록 같은 비도 빨리 마른다(증발). 추운 곳은 비가 적어도 잘 마르지 않는다."));
 
         int minH = int.MaxValue, maxH = int.MinValue, walk = 0, inside = 0;
         for (int i = 0; i < HexFrame.TileCount; i++)
@@ -116,9 +118,7 @@ public static class ProvinceReport
             $"지형({PlanetNames.Of(p.Terrain[c])}) · 생물군계({PlanetNames.Of(p.Biome[c])})에 맞는 바위 + 몇 칸 크기의 넓은 지질 지역으로 정했다. {rocks.Rocks[ra].Name}: 캐면 {string.Join(", ", rocks.Rocks[ra].Yields.Select(y => y.Name))}." +
             (Volcanoes.Distance(p, c) is >= 0 and <= 2 ? " 화산 가까이라 굳은 용암(현무암)이 섞인다." : "")));
 
-        list.Add(Water(p, m));
         list.Add(Fertility(p, m));
-        list.Add(Resources(p, m));
 
         // 그 밖에 지역마다 달라지는 것
         double tmin = mean - range / 2;
@@ -247,9 +247,15 @@ public static class ProvinceReport
     private static string RainWord(int pr) => pr < 250 ? "아주 건조" : pr < 500 ? "건조" : pr < 1200 ? "보통" : pr < 2200 ? "습함" : "아주 습함";
     private static string RoughWord(double r) => r < 0.05 ? "탁 트임" : r < 0.2 ? "조금 막힘" : r < 0.45 ? "험함" : "아주 험함";
 
-    private static string HumidityWord(int pr, double t)
+    /// <summary>
+    /// 땅의 물기(비 ÷ 증발 어림). E2 에서는 "공기: 축축함"이 "강수: 아주 건조"와 같이 나와 어긋나 보였다(추운 곳은 비가 적어도 덜 말라서) →
+    /// 이름을 "땅의 물기"로 바꾸고, 비가 적은 곳은 "축축함" 대신 "비는 적지만 추워서 덜 마름"으로 까닭을 함께 쓴다.
+    /// </summary>
+    public static string MoistureWord(int pr, double t)
     {
         double idx = pr / Math.Max(150.0, 30 * (t + 12));
-        return idx < 0.4 ? "메마름" : idx < 0.8 ? "조금 건조" : idx < 1.6 ? "알맞음" : "축축함";
+        string w = idx < 0.4 ? "메마름" : idx < 0.8 ? "조금 마름" : idx < 1.6 ? "알맞음" : "젖음";
+        if (pr < 500 && idx >= 0.8) w = "비는 적지만 추워서 덜 마름";
+        return w;
     }
 }

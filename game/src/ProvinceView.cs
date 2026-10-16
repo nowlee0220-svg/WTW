@@ -31,6 +31,7 @@ public partial class ProvinceView : Node2D
         public required Node2D Node;
         public required ShaderMaterial Ground;
         public required MultiMeshInstance2D Objects;
+        public int[]? RevealedTiles;
     }
 
     private Planet? _planet;
@@ -95,6 +96,7 @@ public partial class ProvinceView : Node2D
         _objectShader = new Shader { Code = ObjectShaderCode };
         _hexMesh = MakeHexMesh();
         _spriteMesh = MakeSpriteMesh();
+        ReadyPeople();
         Visible = false;
     }
 
@@ -136,6 +138,11 @@ public partial class ProvinceView : Node2D
         _hoverBox.Visible = false;
         _centerOutline.Visible = false;
         SetHover(-1, 0, 0);
+        SetHoverPerson(-1);
+        _selected = _follow = -1;
+        foreach (var n in _pool) n.Root.Visible = false;
+        _selRing.Visible = false;
+        _spawnTool = 0;
     }
 
     private void Load(bool keepCamera)
@@ -167,6 +174,7 @@ public partial class ProvinceView : Node2D
         if (task.IsFaulted) { Notice?.Invoke("지방 지도를 만들지 못했습니다: " + task.Exception?.GetBaseException().Message); GD.PrintErr(task.Exception); return; }
         if (_center < 0) return;
         ClearShown();
+        _revealedSeen.Clear();
         foreach (var (pl, map) in task.Result) _shown.Add(Build(pl, map));
         BuildLabels();
         // 밝은 범위
@@ -206,7 +214,6 @@ public partial class ProvinceView : Node2D
         // 둘째 자료: R 바위 종류 · G 드러난 광맥(0 = 없음) · B 숨김 · A 동굴(위가 덮임).
         int n = HexFrame.TileCount;
         var data = new byte[n * 4];
-        var data2 = new byte[n * 4];
         double mean = 0; int cnt = 0;
         for (int i = 0; i < n; i++) if (HexFrame.Inside[i]) { mean += m.Height[i]; cnt++; }
         mean /= Math.Max(1, cnt);
@@ -217,10 +224,6 @@ public partial class ProvinceView : Node2D
             data[i * 4 + 1] = (byte)m.Biome[i];
             data[i * 4 + 2] = m.WaterDepth[i];
             data[i * 4 + 3] = (byte)(HexFrame.Inside[i] ? 255 : 0);
-            data2[i * 4] = m.Rock[i];
-            data2[i * 4 + 1] = (byte)(m.VisibleOreAt(i) + 1);
-            data2[i * 4 + 2] = (byte)(m.IsHidden(i) ? 255 : 0);
-            data2[i * 4 + 3] = (byte)((m.Flags[i] & TileFlags.Roof) != 0 ? 255 : 0);
             double h = HexFrame.Inside[i] ? ShadeHeight(m, i) - mean : 0;
             ushort bits = BitConverter.HalfToUInt16Bits((Half)(float)h);
             hbytes[i * 2] = (byte)bits; hbytes[i * 2 + 1] = (byte)(bits >> 8);
@@ -228,7 +231,7 @@ public partial class ProvinceView : Node2D
         // 육각형 밖 타일의 높이는 가까운 안쪽 높이로 채운다(가장자리에 그늘 줄이 생기지 않게)
         FillOutsideHeights(m, mean, hbytes);
         var dataTex = ImageTexture.CreateFromImage(Image.CreateFromData(HexFrame.Size, HexFrame.Size, false, Image.Format.Rgba8, data));
-        var data2Tex = ImageTexture.CreateFromImage(Image.CreateFromData(HexFrame.Size, HexFrame.Size, false, Image.Format.Rgba8, data2));
+        var data2Tex = MakeData2(m, null);
         var heightTex = ImageTexture.CreateFromImage(Image.CreateFromData(HexFrame.Size, HexFrame.Size, false, Image.Format.Rh, hbytes));
         var mat = new ShaderMaterial { Shader = _groundShader };
         mat.SetShaderParameter("data_tex", dataTex);
@@ -247,6 +250,28 @@ public partial class ProvinceView : Node2D
         var objects = BuildObjects(pl, m, node.Rotation);
         node.AddChild(objects);
         return new Shown { Place = pl, Map = m, Node = node, Ground = mat, Objects = objects };
+    }
+
+    /// <summary>
+    /// 둘째 자료: R 바위 종류 · G 드러난 광맥(0 = 없음) · B 숨김 · A 동굴(255 = 아무도 안 들어가 본 동굴 — 검게, 128 = 들어가 본 동굴 바닥 — 어둡게).
+    /// revealed = 사람이 들어가 걷힌 타일(시뮬의 바뀐 것).
+    /// </summary>
+    private static ImageTexture MakeData2(ProvinceMap m, int[]? revealed)
+    {
+        int n = HexFrame.TileCount;
+        var open = new bool[n];
+        if (revealed is not null) foreach (int t in revealed) if ((uint)t < n) open[t] = true;
+        var data2 = new byte[n * 4];
+        for (int i = 0; i < n; i++)
+        {
+            bool hidden = m.IsHidden(i) && !open[i];
+            bool roof = (m.Flags[i] & TileFlags.Roof) != 0;
+            data2[i * 4] = m.Rock[i];
+            data2[i * 4 + 1] = (byte)((hidden ? -1 : m.OreAt(i)) + 1);
+            data2[i * 4 + 2] = (byte)(hidden ? 255 : 0);
+            data2[i * 4 + 3] = (byte)(roof ? (hidden ? 255 : 128) : 0);
+        }
+        return ImageTexture.CreateFromImage(Image.CreateFromData(HexFrame.Size, HexFrame.Size, false, Image.Format.Rgba8, data2));
     }
 
     /// <summary>그늘용 높이: 바위 타일은 12m 솟게 그려 덩어리 가장자리에 그늘 · 빛이 생긴다.</summary>
@@ -585,8 +610,11 @@ public partial class ProvinceView : Node2D
                     if (_dragMoved < 6)
                     {
                         var hit = Pick(mb.Position);
-                        if (hit.Cell >= 0) TileClicked?.Invoke(hit.Cell, hit.X, hit.Y);
+                        if (_spawnTool != 0) { if (hit.Cell >= 0) SpawnClicked?.Invoke(hit.Cell, hit.X, hit.Y, _spawnTool == 2); }
+                        else if (PickPerson(mb.Position) is int pid and >= 0) PersonClicked?.Invoke(pid);
+                        else if (hit.Cell >= 0) TileClicked?.Invoke(hit.Cell, hit.X, hit.Y);
                     }
+                    else _follow = -1; // 끌어서 옮기면 따라가기를 멈춘다
                 }
                 GetViewport().SetInputAsHandled();
                 break;
@@ -673,6 +701,9 @@ public partial class ProvinceView : Node2D
 
     private void UpdateHover(Vector2 screen)
     {
+        int pid = _spawnTool == 0 ? PickPerson(screen) : -1;
+        SetHoverPerson(pid);
+        if (pid >= 0) { SetHover(-1, 0, 0); return; }
         var h = Pick(screen);
         SetHover(h.Cell, h.X, h.Y);
     }
@@ -694,6 +725,8 @@ public partial class ProvinceView : Node2D
             }
             _hoverBox.Points = pts;
             _hoverBox.Width = Math.Max(2f, 2.5f / _zoom);
+            bool walk = GroundInfo.IsWalkable(s.Map.Ground[y * HexFrame.Size + x]) && HexFrame.Inside[y * HexFrame.Size + x];
+            _hoverBox.DefaultColor = _spawnTool == 0 ? new Color(1, 1, 1, 0.7f) : walk ? new Color(0.4f, 1f, 0.5f, 0.95f) : new Color(1f, 0.35f, 0.3f, 0.95f);
             _hoverBox.Visible = true;
         }
         HoverChanged?.Invoke(cell, x, y);
@@ -729,7 +762,7 @@ vec3 tile_color(vec4 d, vec4 d2, vec4 n, vec4 m, vec2 wv) {
     // 바위 · 바위 바닥 · 자갈은 바위 종류의 색(색표 16번째 줄부터), 나머지는 생물군계 색
     float row = stony ? 16.0 + rock : b;
     vec3 c = texture(palette_tex, vec2((g + 0.5) / 16.0, (row + 0.5) / 32.0)).rgb;
-    if (d2.a > 0.5) return vec3(0.025, 0.022, 0.02);                      // 아직 아무도 안 들어가 본 동굴: 검게
+    if (d2.a > 0.75) return vec3(0.025, 0.022, 0.02);                     // 아직 아무도 안 들어가 본 동굴: 검게
     if (g == 14.0) {                                                        // 분화구: 검붉은 바닥, 가운데가 달아오름
         float glow = smoothstep(0.35, 0.75, texture(noise_tex, world * 0.25 + vec2(TIME * 0.01, 0.0)).g);
         return mix(vec3(0.16, 0.06, 0.04), vec3(0.85, 0.28, 0.06), glow * 0.8) * (0.85 + 0.3 * n.z);
@@ -749,6 +782,7 @@ vec3 tile_color(vec4 d, vec4 d2, vec4 n, vec4 m, vec2 wv) {
     }
     if (g == 13.0) return c * (0.8 + 0.35 * n.w) * (0.9 + 0.2 * smoothstep(0.45, 0.6, texture(noise_tex, world * 1.7).r)); // 자갈: 굵은 알갱이
     c *= (0.86 + 0.24 * n.x) * (0.93 + 0.14 * n.y);
+    if (d2.a > 0.25) c = mix(c, vec3(0.2, 0.18, 0.16), 0.35) * 0.5;       // 들어가 본 동굴 바닥(위가 바위): 어둡게
     if (g == 2.0) c *= 0.86 + 0.22 * m.x + 0.08 * n.z;                       // 풀밭
     else if (g == 1.0 || g == 4.0) c *= 0.9 + 0.16 * n.w + 0.06 * n.z;     // 흙 · 진흙
     else if (g == 3.0) c *= 0.94 + 0.08 * n.w + 0.06 * m.y;                // 모래
@@ -776,7 +810,7 @@ vec3 res_color(vec4 d, vec4 d2, vec3 normal) {
     float rock = floor(d2.r * 255.0 + 0.5);
     float ore = floor(d2.g * 255.0 + 0.5);
     float gray = dot(normal, vec3(0.3, 0.59, 0.11)) * 0.28;
-    if (d2.a > 0.5) return vec3(0.02);
+    if (d2.a > 0.75) return vec3(0.02);
     if (ore > 0.5) return ore_colors[int(ore) - 1] * 1.25;
     if (g == 12.0 && rock < 16.0) {
         vec3 rc = texture(palette_tex, vec2((12.0 + 0.5) / 16.0, (16.0 + rock + 0.5) / 32.0)).rgb * 1.15;
@@ -816,7 +850,7 @@ void fragment() {
             float jit = 0.45 + 1.1 * texture(noise_tex, wp * 0.35 + vec2(hash12(t), hash12(t + 7.31))).r;
             tw[k] = d.a < 0.5 ? 0.0 : bx[i] * by[j] * jit;   // 육각형 밖은 섞지 않는다
             // 같은 무리 = 같은 땅 종류 + 같은 바위 종류 + 광맥 + 숨김 · 동굴 (경계가 부드러운 곡선으로)
-            tg[k] = floor(d.r * 255.0 + 0.5) + 16.0 * floor(d2.g * 255.0 + 0.5) + 128.0 * step(0.5, d2.b) + 256.0 * step(0.5, d2.a) + 512.0 * floor(d2.r * 255.0 + 0.5);
+            tg[k] = floor(d.r * 255.0 + 0.5) + 16.0 * floor(d2.g * 255.0 + 0.5) + 128.0 * step(0.5, d2.b) + 256.0 * step(0.25, d2.a) + 1024.0 * step(0.75, d2.a) + 512.0 * floor(d2.r * 255.0 + 0.5);
             if (floor(d.r * 255.0 + 0.5) == 12.0) stoneW += tw[k];
             vec3 nc = tw[k] > 0.0 ? tile_color(d, d2, n, m, wv) : vec3(0.0);
             tc[k] = res_view > 0.5 ? res_color(d, d2, nc) : nc;

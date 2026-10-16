@@ -18,6 +18,10 @@ namespace Wtw.Game;
 ///   --enter=forest|river|coast|mountain|desert|tundra|pentagon|칸번호 : 그 지방으로 들어간다  --neighbors : [이웃까지]
 ///   --pzoom=배율  지방 화면 확대   --focus=river|coast|edge|object|stone|ore|cave|gravel  --resview 자원 보기  --localhour=H 그 지방 시각을 H시로 보여 줌(개발용)  그곳을 화면 가운데로   --hover  오브젝트 하나에 마우스를 올린다(카드)   --tileclick  그 타일 정보 창
 ///   --enterexit=N : 지방을 N 번 드나들며 메모리를 잰다(지구본 ↔ 지방)
+///   (E3 사람) --people=N  들어간 지방에 가족 2 + 혼자 N 명을 뿌린다 (--enter=home|cave|cold 로 칸)   --families=K 가족 수
+///   --card=0~6  첫 사람의 큰 카드를 그 슬롯으로   --hoverperson  첫 어른에 마우스   --follow  첫 사람 따라가기
+///   --untilhour=H  4배속으로 돌리다 그 지방 시각 H시가 되면 1배속(밤 · 잠 확인)   --globeafter=초  그 시간 뒤 지구본으로 나와 사람 사는 칸을 본다
+///   --waitdays=D  뿌린 뒤 D 일을 5배속으로 돌린 다음 찍는다
 /// 프레임 시간 통계(평균 fps, 가장 긴 프레임)도 출력한다.
 /// </summary>
 public sealed class AutoPilot
@@ -39,6 +43,13 @@ public sealed class AutoPilot
     private double? _localHour;
     private float? _pzoom;
     private int _enterExit;
+    private int? _people, _cardTab, _untilHour;
+    private int _families = 2;
+    private bool _hoverPerson, _follow, _spawned, _peopleReady;
+    private double? _globeAfter, _waitDays;
+    private double _sincePeople;
+    private long _spawnTick;
+    private bool _globeDone;
     private bool _provinceOpened, _provinceReady;
     private double _sinceProvince;
 
@@ -71,7 +82,7 @@ public sealed class AutoPilot
                 case "--seed": Seed = ulong.Parse(v); break;
                 case "--dots": Dots = int.Parse(v); break;
                 case "--devdots": DevDots = true; break;
-                case "--speed": Speed = int.Parse(v); break;
+                case "--speed": Speed = int.Parse(v); _speedAfter = Speed.Value; break;
                 case "--land": Land = int.Parse(v); break;
                 case "--climate": Climate = v switch { "cold" => ClimateBias.Cold, "warm" => ClimateBias.Warm, _ => ClimateBias.Normal }; break;
                 case "--mode":
@@ -95,6 +106,14 @@ public sealed class AutoPilot
                 case "--enterexit": _enterExit = int.Parse(v); break;
                 case "--resview": _resView = true; break;
                 case "--localhour": _localHour = double.Parse(v, inv); break;
+                case "--people": _people = int.Parse(v); break;
+                case "--families": _families = int.Parse(v); break;
+                case "--card": _cardTab = int.Parse(v); break;
+                case "--hoverperson": _hoverPerson = true; break;
+                case "--follow": _follow = true; break;
+                case "--untilhour": _untilHour = int.Parse(v); break;
+                case "--globeafter": _globeAfter = double.Parse(v, inv); break;
+                case "--waitdays": _waitDays = double.Parse(v, inv); break;
             }
         }
     }
@@ -106,6 +125,7 @@ public sealed class AutoPilot
     }
 
     public void OnNotice(string n) => _lastNotice = n;
+    public void OnSpawned() { }
 
     public void OnProvinceOpened() { _provinceOpened = true; _provinceReady = false; }
 
@@ -156,7 +176,13 @@ public sealed class AutoPilot
         if (_enter is not null && _ready && _main.Globe.Planet is not null && !_provinceOpened && _enterExit == 0)
         {
             var p = _main.Globe.Planet;
-            int cell = int.TryParse(_enter, out int ec) ? ec : ProvinceSamples.Find(p, _enter);
+            int cell = int.TryParse(_enter, out int ec) ? ec : _enter switch
+            {
+                "home" => Wtw.Sim.People.PeopleSamples.Home(p),
+                "cold" => Wtw.Sim.People.PeopleSamples.Cold(p),
+                "cave" => CaveCell(p),
+                _ => ProvinceSamples.Find(p, _enter),
+            };
             if (cell < 0) { Finish(false, $"AUTOPILOT: {_enter} 칸이 없음"); return; }
             if (_neighbors) _main.ScopeForTest(true);
             _main.Globe.Select(cell);
@@ -178,6 +204,7 @@ public sealed class AutoPilot
         }
         if (_elapsed > 120) { Finish(false, "AUTOPILOT 시간 초과 (세계가 만들어지지 않음?)"); return; }
         if (_selftest) { if (_ready && snap is not null) SelfTest(delta, snap); }
+        else if (_people is not null) { if (_provinceReady) PeopleSteps(delta, snap); }
         else if (_shotPath is not null && (StayOnNewWorld ? _elapsed : _enter is not null ? (_provinceReady ? _sinceProvince : -1) : (_ready ? _sinceReady : -1)) >= _shotAfter) Finish(true, "");
     }
 
@@ -284,6 +311,121 @@ public sealed class AutoPilot
         GD.Print($"PROVINCE cell={pv.Center} neighbors={pv.Neighbors} shown={pv.ShownCount} gen_s={m.GenerationSeconds:F3} focus=({fx},{fy}) zoom={pv.Zoom:F3}");
     }
 
+    // ───────── 사람(E3) ─────────
+
+    /// <summary>동굴(입구가 열린)이 있고 밤에 쌀쌀한 칸 — 사람이 동굴로 들어가 자는 모습을 보려고.</summary>
+    private static int CaveCell(Planet p)
+    {
+        foreach (int c in Wtw.Sim.People.PeopleSamples.Ranked(p, (pl, c) => pl.Terrain[c] is Terrain.Hill or Terrain.Plateau && pl.Temp10[c] is > 20 and < 110 && pl.Biome[c] is Biome.Temperate or Biome.Boreal or Biome.Grassland ? 100 - Math.Abs(pl.Temp10[c] - 70) / 5 + (pl.RiverSize[c] > 0 ? 20 : 0) : int.MinValue).Take(60))
+        {
+            var m = ProvinceCache.Get(p, c);
+            int mouths = 0, caves = 0;
+            for (int i = 0; i < HexFrame.TileCount; i++) if ((m.Flags[i] & TileFlags.Roof) != 0) { caves++; if (!m.IsHidden(i)) mouths++; }
+            if (mouths > 0 && caves > 30) return c;
+        }
+        return Wtw.Sim.People.PeopleSamples.Home(p);
+    }
+
+    private void PeopleSteps(double delta, WorldSnapshot? snap)
+    {
+        var host = _main.Host!;
+        var pv = _main.Province;
+        var p = _main.Globe.Planet!;
+        if (!_spawned)
+        {
+            _spawned = true;
+            var map = pv.MapOf(pv.Center)!;
+            var life = new Wtw.Sim.People.ProvinceLife(p, map, Wtw.Sim.People.PeopleData.Default); // 화면 쪽 사본(자리 고르기만)
+            List<(int X, int Y)> spots;
+            if (_enter == "cave")
+            {
+                // 동굴 입구 둘레
+                int mouth = Enumerable.Range(0, HexFrame.TileCount).Where(i => (map.Flags[i] & TileFlags.Roof) != 0 && !map.IsHidden(i) && life.Walk[i]).OrderBy(i => Math.Abs(i % 150 - 75) + Math.Abs(i / 150 - 75)).FirstOrDefault(-1);
+                spots = new List<(int, int)>();
+                if (mouth >= 0)
+                    for (int r = 2; r < 20 && spots.Count < _people + _families; r++)
+                        foreach (int t in Enumerable.Range(0, HexFrame.TileCount).Where(t => life.Walk[t] && life.Region[t] == life.Region[mouth] && (map.Flags[t] & TileFlags.Roof) == 0 && Math.Max(Math.Abs(t % 150 - mouth % 150), Math.Abs(t / 150 - mouth / 150)) == r).Take(3))
+                            if (spots.Count < _people + _families) spots.Add((t % 150, t / 150));
+                if (spots.Count == 0) spots = Wtw.Sim.People.PeopleSamples.SpawnSpots(life, _people!.Value + _families);
+            }
+            else spots = Wtw.Sim.People.PeopleSamples.SpawnSpots(life, _people!.Value + _families);
+            for (int k = 0; k < spots.Count; k++) _main.SpawnForTest(pv.Center, spots[k].X, spots[k].Y, k < _families);
+            _spawnTick = (long)host.RenderTick;
+            if (spots.Count > 0)
+            {
+                var lp = pv.LayoutOf(pv.Center, spots[0].X, spots[0].Y)!.Value;
+                pv.LookAt(lp.X, lp.Y, _pzoom ?? 1.3f);
+            }
+            if (_waitDays is not null || _untilHour is not null) host.SetSpeed(_waitDays is not null ? 5 : 4);
+            GD.Print($"PEOPLE spawned {spots.Count} spots in cell {pv.Center}");
+            return;
+        }
+        if (snap is null || snap.PeopleCount == 0) return;
+        _sincePeople += delta;
+        if (!_peopleReady)
+        {
+            if (_waitDays is double wd && host.RenderTick - _spawnTick < wd * Wtw.Sim.Time.GameTime.TicksPerDay) return;
+            if (_untilHour is int uh)
+            {
+                double lh = ProvinceReport.LocalHour(p, pv.Center, host.RenderTick);
+                if (host.RenderTick - _spawnTick < Wtw.Sim.Time.GameTime.TicksPerHour * 6 || Math.Abs(lh - uh) > 0.6) { if (host.SpeedLevel != 4 && _waitDays is null) host.SetSpeed(4); return; }
+            }
+            _peopleReady = true;
+            _sincePeople = 0;
+            host.SetSpeed(_speedAfter);
+            int first = -1, adult = -1;
+            for (int i = 0; i < snap.PeopleCount; i++)
+            {
+                var v = snap.People[i];
+                if (v.Dead || v.Cell != pv.Center) continue;
+                if (first < 0) first = v.Id;
+                if (adult < 0 && v.Stage >= Wtw.Sim.People.LifeStage.Adult && v.Carrier < 0) adult = v.Id;
+            }
+            int target = adult >= 0 ? adult : first;
+            if (_enter == "cave")
+            {
+                // 동굴 안에 있는 사람을 화면 가운데로
+                var map = pv.MapOf(pv.Center)!;
+                for (int i = 0; i < snap.PeopleCount; i++)
+                {
+                    var v = snap.People[i];
+                    v.PositionAt(host.RenderTick, out double x, out double y, out _, out _);
+                    int t = (int)(y / 1000) * 150 + (int)(x / 1000);
+                    if (!v.Dead && (uint)t < HexFrame.TileCount && (map.Flags[t] & TileFlags.Roof) != 0) { target = v.Id; break; }
+                }
+            }
+            float z = _pzoom ?? 1.3f;
+            double shift = _cardTab is not null ? (PersonCardPanel.Width / 2.0) / z / ProvinceView.TilePx : 0; // 카드에 가리지 않게 왼쪽으로
+            if (pv.PersonWorld(target) is { } wpos) pv.LookAt(wpos.X / ProvinceView.TilePx + shift, wpos.Y / ProvinceView.TilePx - 0.6, z);
+            if (_follow) pv.Follow(target);
+            if (_cardTab is int tab) { _main.OpenCardForTest(target); _main.CardPanel.SetTab(tab); }
+            if (_hoverPerson) { _hoverTarget = target; }
+            _cave = _enter == "cave";
+            GD.Print($"PEOPLE ready alive={snap.AliveCount} target={target} local_hour={ProvinceReport.LocalHour(p, pv.Center, host.RenderTick):F1}");
+            return;
+        }
+        if (_hoverTarget >= 0 && pv.PersonScreen(_hoverTarget) is { } sp)
+        {
+            Input.WarpMouse(sp);
+            pv.SetHoverPerson(_hoverTarget);
+            _main.HoverPersonForTest(_hoverTarget);
+        }
+        if (_globeAfter is double ga && !_globeDone && _sincePeople >= ga)
+        {
+            _globeDone = true;
+            int c = pv.Center;
+            _main.ExitForTest();
+            _main.Globe.LookAtCell(c, 1.6f);
+            _sincePeople = 0;
+            return;
+        }
+        if (_sincePeople >= _shotAfter && (_globeAfter is null || _globeDone)) Finish(true, $"PEOPLE alive={snap.AliveCount} total={snap.PeopleCount}");
+    }
+
+    private int _hoverTarget = -1;
+    private bool _cave;
+    private int _speedAfter = 1;
+
     private int _eeCount;
     private double _eeTimer;
     private long _memStart;
@@ -332,6 +474,7 @@ public sealed class AutoPilot
         _frameTimes.Sort();
         double p99 = _frameTimes.Count > 0 ? _frameTimes[(int)(_frameTimes.Count * 0.99)] : 0;
         double avg = _frameTimes.Count > 0 ? _frameTimes.Average() : 0;
+        if (ProvinceView.PeopleFrames > 0) GD.Print($"PEOPLE draw_ms_avg={ProvinceView.PeopleMsTotal / ProvinceView.PeopleFrames:F2} frames={ProvinceView.PeopleFrames}");
         GD.Print($"FRAMES n={_frames} avg_fps={(avg > 0 ? 1 / avg : 0):F1} p99_ms={p99 * 1000:F1} max_ms={_maxFrame * 1000:F1} stalled_frames={_main.Host?.StalledFrames ?? 0}");
         var p = _main.Globe.Planet;
         if (p is not null)

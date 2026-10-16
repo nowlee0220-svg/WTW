@@ -232,7 +232,7 @@ public sealed partial class PeopleSim
         BioKind.Passion => $"{Data.Skills[b.Param].Name}에 열정이 생겼다",
         BioKind.Adult => "어른이 되었다",
         BioKind.Ill => "병에 걸렸다",
-        BioKind.Argument => $"{Hangul.Gwa(NameOf(b.Other))} 말다툼을 했다",
+        BioKind.Argument => $"{Hangul.Gwa(NameOf(b.Other))} 거듭 다투어 원한이 깊어졌다",
         _ => "",
     };
 }

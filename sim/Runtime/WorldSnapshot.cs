@@ -1,4 +1,5 @@
 using Wtw.Sim.Movers;
+using Wtw.Sim.People;
 using Wtw.Sim.World;
 
 namespace Wtw.Sim.Runtime;
@@ -26,8 +27,23 @@ public sealed class WorldSnapshot
     public int[] LegCount = Array.Empty<int>();
     public Leg[] Legs = Array.Empty<Leg>(); // [dot * History + k], k=0 이 가장 최근
 
+    // ── 사람(E3) ──
+    public int PeopleCount;
+    public PersonView[] People = Array.Empty<PersonView>();
+    /// <summary>사람이 사는 칸과 살아 있는 사람 수(칸 번호 순).</summary>
+    public (int Cell, int Alive)[] CellPeople = Array.Empty<(int, int)>();
+    /// <summary>한 번이라도 사람이 산 칸(열린 칸).</summary>
+    public int[] OpenedCells = Array.Empty<int>();
+    public WorldEvent[] RecentEvents = Array.Empty<WorldEvent>();
+    public int AliveCount;
+    public int PeopleCap;
+    /// <summary>사람이 들어가 걷힌 타일(칸 → 타일 번호들). 바뀔 때만 새 배열.</summary>
+    public Dictionary<int, int[]> Revealed = new();
+
     internal void Fill(GameWorld w, long epoch, double daysPerSecond, double load)
     {
+        if (epoch != Epoch) Revealed = new();
+        FillPeople(w);
         Epoch = epoch;
         Now = w.Now;
         Seed = w.Seed;
@@ -57,6 +73,37 @@ public sealed class WorldSnapshot
         }
     }
 
+    private void FillPeople(GameWorld w)
+    {
+        var all = w.People.All;
+        PeopleCount = all.Count;
+        AliveCount = w.People.AliveCount;
+        PeopleCap = w.Config.PeopleCap;
+        if (People.Length < PeopleCount)
+        {
+            var arr = new PersonView[Math.Max(PeopleCount, People.Length * 2)];
+            for (int i = 0; i < arr.Length; i++) arr[i] = i < People.Length ? People[i] : new PersonView();
+            People = arr;
+        }
+        for (int i = 0; i < PeopleCount; i++) People[i].Fill(all[i], w.Now);
+        var counts = new List<(int, int)>();
+        var opened = new List<int>();
+        foreach (var (cell, life) in w.People.Provinces)
+        {
+            int alive = 0, ever = 0;
+            foreach (var p in life.People) { ever++; if (!p.Dead) alive++; }
+            if (ever > 0) opened.Add(cell);
+            if (alive > 0) counts.Add((cell, alive));
+        }
+        foreach (var (cell, life) in w.People.Provinces)
+            if (life.Revealed.Count > 0 && (!Revealed.TryGetValue(cell, out var old) || old.Length != life.Revealed.Count)) Revealed[cell] = life.Revealed.ToArray();
+        CellPeople = counts.ToArray();
+        OpenedCells = opened.ToArray();
+        var ev = w.People.Events;
+        int n = Math.Min(30, ev.Count);
+        if (RecentEvents.Length != n || (n > 0 && RecentEvents[^1].Seq != ev[^1].Seq)) RecentEvents = ev.Skip(ev.Count - n).ToArray();
+    }
+
     /// <summary>점 i 의 tick 시점 위치(밀리타일, 실수). 출발이 tick 이하인 가장 최근 구간을 쓴다.</summary>
     public void DotPosition(int i, double tick, out double x, out double y)
     {
@@ -72,6 +119,45 @@ public sealed class WorldSnapshot
             }
         }
         x = y = 0;
+    }
+}
+
+/// <summary>화면이 사람 하나를 그리는 데 필요한 것(사본).</summary>
+public sealed class PersonView
+{
+    public int Id, Cell, Carrier, AgeYears;
+    public long DeathTick;
+    public string Name = "";
+    public bool Dead, Female, Asleep, Walking, Breaking, Talking, Eaten;
+    public LifeStage Stage;
+    public Act Act;
+    public Appearance Look;
+    public int MotionCount;
+    public readonly Motion[] Motions = { new(), new(), new(), new() }; // k = 0 이 가장 최근
+
+    internal void Fill(Person p, long now)
+    {
+        Id = p.Id; Cell = p.Cell; Carrier = p.Carrier; Name = p.Name;
+        DeathTick = p.DeathTick;
+        Dead = p.Dead; Female = p.Female; Asleep = p.Asleep; Walking = p.Walking; Eaten = p.Eaten;
+        long at = p.Dead ? p.DeathTick : now;
+        AgeYears = p.AgeYears(at); Stage = p.Stage(at);
+        Act = p.Act; Look = p.Look;
+        Breaking = p.Act is Act.BreakArgue or Act.BreakLeave or Act.BreakWander;
+        Talking = (p.Act == Act.Talk || p.Act == Act.BreakArgue) && !p.Walking;
+        MotionCount = p.MotionCount;
+        for (int k = 0; k < MotionCount; k++) Motions[k].CopyFrom(p.MotionAgo(k));
+    }
+
+    /// <summary>tick 시점 위치(밀리타일)와 걷는 방향. 출발이 tick 이하인 가장 최근 구간.</summary>
+    public void PositionAt(double tick, out double x, out double y, out double dx, out double dy)
+    {
+        for (int k = 0; k < MotionCount; k++)
+        {
+            var m = Motions[k];
+            if (m.Depart <= tick || k == MotionCount - 1) { m.PositionAt(tick, out x, out y, out dx, out dy); return; }
+        }
+        x = y = dx = dy = 0;
     }
 }
 

@@ -306,7 +306,9 @@ public sealed partial class PeopleSim
         bool coldNight = life.Mean10 - life.Range10 / 2 < 120;
         if (spot < 0 && coldNight)
         {
-            int sh = life.NearestShelter(hx, hy, 60, caveOnly: false);
+            // 추운 밤에는 동굴이 가장 따뜻하다(늘 연평균 근처) — 가까운 동굴이 있으면 그리로, 없으면 바위 그늘
+            int sh = life.NearestShelter(hx, hy, 60, caveOnly: true);
+            if (sh < 0 || !life.Paths.Reachable(here, sh)) sh = life.NearestShelter(hx, hy, 60, caveOnly: false);
             if (sh >= 0 && life.Shelter[sh] > life.Shelter[here]) { spot = Beside(p, sh, 0 + 1); if (life.Shelter[spot] < 2) spot = sh; reason = Why.Cold; }
         }
         if (spot < 0)
@@ -630,8 +632,9 @@ public sealed partial class PeopleSim
         rq.Grudge = Math.Min(100, rq.Grudge + (q.HasTrait(T_abrasive) ? 16 : 8));
         if (!p.HasTrait(T_bloodlust)) AddThought(p, H_argument, q.Id); else AddThought(p, H_talked, q.Id);
         if (!q.HasTrait(T_bloodlust)) AddThought(q, H_argument, p.Id); else AddThought(q, H_talked, p.Id);
-        AddBio(p, BioKind.Argument, q.Id);
-        AddBio(q, BioKind.Argument, p.Id);
+        // 말다툼은 생각(기분)에 남고, 전기에는 원한이 깊어졌을 때만(자잘한 다툼으로 이야기가 넘치지 않게)
+        if (rp.Grudge >= 40 && rp.Grudge - (p.HasTrait(T_abrasive) ? 16 : 8) < 40) AddBio(p, BioKind.Argument, q.Id);
+        if (rq.Grudge >= 40 && rq.Grudge - (q.HasTrait(T_abrasive) ? 16 : 8) < 40) AddBio(q, BioKind.Argument, p.Id);
     }
 
     private bool IsFamily(Person a, Person b) =>

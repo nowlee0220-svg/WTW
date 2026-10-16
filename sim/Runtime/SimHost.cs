@@ -152,6 +152,30 @@ public sealed class SimHost : IDisposable
 
     private void Post(Action a) { _commands.Enqueue(a); _wake.Set(); }
 
+    // ── 인물 카드 · 사람 목록 (시뮬 스레드가 만들어 건넨다 — 보기만 해도 세계는 바뀌지 않는다) ──
+    private readonly People.PersonCard?[] _cards = new People.PersonCard?[2];
+    private readonly bool[] _cardBusy = new bool[2];
+    private volatile List<People.PersonRow>? _rows;
+    private volatile bool _rowsBusy;
+
+    /// <summary>카드 자리: 0 = 큰 카드, 1 = 마우스를 올린 작은 카드.</summary>
+    public People.PersonCard? Card(int slot) => Volatile.Read(ref _cards[slot]);
+    public List<People.PersonRow>? Rows => _rows;
+
+    public void RequestCard(int id, int slot = 0)
+    {
+        if (Volatile.Read(ref _cardBusy[slot])) return;
+        Volatile.Write(ref _cardBusy[slot], true);
+        Post(() => { try { Volatile.Write(ref _cards[slot], _world.People.Card(id)); } finally { Volatile.Write(ref _cardBusy[slot], false); } });
+    }
+
+    public void RequestRows(int cell)
+    {
+        if (_rowsBusy) return;
+        _rowsBusy = true;
+        Post(() => { try { _rows = _world.People.Rows(cell); } finally { _rowsBusy = false; } });
+    }
+
     // ───────── 시뮬 스레드 쪽 ─────────
 
     private double _lastDaysPerSecond, _lastLoad;
