@@ -16,6 +16,7 @@ public partial class Hud : Control
     public event Action<string>? PlaceholderPressed;
     public event Action<bool>? ScopeRequested;     // 지방 화면: false = 이 지방만, true = 이웃까지
     public event Action? ExitProvinceRequested;    // 지방 화면 → 지구본
+    public event Action<bool>? ResourceViewRequested; // 지방 화면: 자원 보기 켜기/끄기
 
     private Label _date = null!, _speed = null!, _metrics = null!, _notice = null!;
     private readonly Button[] _speedButtons = new Button[Speed.Max + 1];
@@ -24,7 +25,7 @@ public partial class Hud : Control
     private double _metricsTimer;
     private PanelContainer _provBar = null!;
     private Label _provName = null!;
-    private Button _scopeOne = null!, _scopeNb = null!;
+    private Button _scopeOne = null!, _scopeNb = null!, _resView = null!;
     private readonly List<Control> _globeOnly = new();
 
     public override void _Ready()
@@ -108,6 +109,10 @@ public partial class Hud : Control
         prow.AddChild(_scopeOne);
         prow.AddChild(_scopeNb);
         prow.AddChild(new VSeparator());
+        _resView = MakeButton("자원 보기", () => ResourceViewRequested?.Invoke(_resView.ButtonPressed), "바위 · 광맥 · 돌이 어디 있는지 (키 Y)");
+        _resView.ToggleMode = true;
+        prow.AddChild(_resView);
+        prow.AddChild(new VSeparator());
         prow.AddChild(MakeButton("지구본으로", () => ExitProvinceRequested?.Invoke(), "Esc"));
 
         // 알림
@@ -127,6 +132,8 @@ public partial class Hud : Control
     }
 
     /// <summary>지방 화면이면 위쪽 단추를 보이고 지도 모드 단추는 감춘다.</summary>
+    public void SetResourceViewPressed(bool on) => _resView.SetPressedNoSignal(on);
+
     public void SetProvinceMode(bool on, string name, bool neighbors)
     {
         _provBar.Visible = on;

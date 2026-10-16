@@ -21,7 +21,7 @@ dotnet run -c Release --project tools/bench -- --province-dump build/f.ppm --see
 tools/screenshot.sh build/shot.png 5 1          # 가상 화면 스크린샷 (5초, 1배속)
 tools/screenshot.sh build/t.png 0 4 --selftest --dots=500  # 게임 안 저장/불러오기 자체 시험
 tools/screenshot.sh build/b.png 3 1 --mode=biome --select=auto  # 지도 모드 · 칸 정보 (AutoPilot.cs 참고)
-tools/screenshot.sh build/r.png 4 1 --enter=river --neighbors   # 2D 지방 화면 (--pzoom= --focus= --hover --tileclick)
+tools/screenshot.sh build/r.png 4 1 --enter=river --neighbors   # 2D 지방 화면 (--pzoom= --focus=stone|ore|cave|gravel --hover --tileclick --resview)
 tools/screenshot.sh build/e.png 1 1 --enterexit=40              # 지방을 40번 드나들며 메모리
 tools/export-windows.sh        # dist/WTW-<단계>-windows.zip (단계 = game/project.godot 의 config/version)
 tools/test-windows-exe.sh      # 내보낸 exe 를 Wine 으로 띄워 확인

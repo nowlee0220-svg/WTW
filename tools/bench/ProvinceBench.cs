@@ -42,7 +42,7 @@ static class ProvinceBench
                     Seed = seed, Kind = kind, Cell = c, Seconds = Math.Round(singles[^1], 4),
                     Biome = PlanetNames.Of(p.Biome[c]), Terrain = PlanetNames.Of(p.Terrain[c]),
                     Objects = oc.Sum(), Trees = cat.Objects.Where(o => o.IsTree).Sum(o => oc[o.Index]),
-                    Ores = cat.Objects.Where(o => o.Kind == "ore").Sum(o => oc[o.Index]),
+                    Ores = m.Ore.Count(o => o > 0),
                     Water = gc[(int)Ground.ShallowWater] + gc[(int)Ground.DeepWater], Grounds = gc, ObjectCountsById = oc,
                     Fingerprint = m.Fingerprint,
                 });
@@ -132,8 +132,13 @@ static class ProvinceBench
         {
             Ground.Soil => (120, 95, 65), Ground.Grass => (95, 135, 60), Ground.Sand => (215, 195, 140), Ground.Mud => (100, 85, 60),
             Ground.Rock => (130, 128, 122), Ground.Snow => (235, 238, 242), Ground.Ice => (195, 220, 235), Ground.Marsh => (85, 105, 70),
-            Ground.ShallowWater => (70, 125, 175), Ground.DeepWater => (35, 70, 125), Ground.Cliff => (70, 60, 55), _ => (0, 0, 0),
+            Ground.ShallowWater => (70, 125, 175), Ground.DeepWater => (35, 70, 125), Ground.Cliff => (70, 60, 55),
+            Ground.Stone => (RockCatalog.Default.Rocks[m.Rock[i]].Color.R, RockCatalog.Default.Rocks[m.Rock[i]].Color.G, RockCatalog.Default.Rocks[m.Rock[i]].Color.B),
+            Ground.Gravel => (165, 158, 145), _ => (0, 0, 0),
         };
+        if (m.IsHidden(i)) c = (c.r / 2, c.gg / 2, c.b / 2);
+        if ((m.Flags[i] & TileFlags.Roof) != 0) c = (20, 18, 16);
+        if (m.VisibleOreAt(i) is int vo && vo >= 0) { var oc = RockCatalog.Default.Ores[vo].Color; c = (oc.R, oc.G, oc.B); }
         if (m.Biome[i] == Biome.Savanna && g == Ground.Grass) c = (165, 160, 75);
         if (m.Biome[i] == Biome.Tundra && g == Ground.Grass) c = (130, 140, 100);
         if (m.Biome[i] == Biome.Rainforest && g == Ground.Grass) c = (60, 130, 50);
@@ -152,7 +157,6 @@ static class ProvinceBench
             c = def.Kind switch
             {
                 "tree" => (30, 75, 30), "bush" => (70, 100, 45), "plant" => (140, 170, 70), "rock" => (90, 90, 95),
-                "ore" => def.Id == "copper_vein" ? (200, 110, 50) : def.Id == "tin_vein" ? (200, 200, 210) : (150, 70, 60),
                 _ => (180, 150, 120),
             };
             shade = 1;

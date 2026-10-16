@@ -62,4 +62,27 @@ public partial class Legend : PanelContainer
         OffsetTop = OffsetBottom;
         OffsetRight = OffsetLeft;
     }
+
+    /// <summary>지도 모드가 아닌 범례(지방 화면의 자원 보기 등): 제목 + (색, 글) 줄.</summary>
+    public void ShowItems(string titleText, IEnumerable<(Color Color, string Text)> items)
+    {
+        foreach (var n in _box.GetChildren()) { _box.RemoveChild(n); n.QueueFree(); }
+        var title = new Label { Text = titleText };
+        title.AddThemeFontOverride("font", UiTheme.Bold);
+        title.AddThemeColorOverride("font_color", UiTheme.Accent);
+        _box.AddChild(title);
+        foreach (var (color, text) in items)
+        {
+            var row = new HBoxContainer();
+            row.AddThemeConstantOverride("separation", 8);
+            if (color.A > 0) row.AddChild(new ColorRect { Color = color, CustomMinimumSize = new Vector2(20, 20) });
+            var l = new Label { Text = text };
+            l.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeSmall);
+            if (color.A == 0) l.AddThemeColorOverride("font_color", UiTheme.TextDim);
+            row.AddChild(l);
+            _box.AddChild(row);
+        }
+        OffsetTop = OffsetBottom;
+        OffsetRight = OffsetLeft;
+    }
 }

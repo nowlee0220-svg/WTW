@@ -43,6 +43,7 @@ public static class CellDescriber
         facts.Add(("강수", $"{pr.ToString("N0", Inv)}mm / 년"));
         facts.Add(("물", Water(p, c)));
         facts.Add(("자원", Resources(p, c)));
+        if (ter != Terrain.Lake) facts.Add(("바위", Geology.Describe(p, c)));
         facts.Add(("좌표", coord));
         facts.Add(("칸 번호", $"{c}{(p.Grid.IsPentagon(c) ? " (오각형)" : "")} · 지방 시드 {p.ProvinceSeed(c) % 1_000_000_000UL}"));
 

@@ -5,12 +5,12 @@ namespace Wtw.Sim.Provinces;
 /// <summary>측정 · 테스트 · 스크린샷용: 종류별로 그럴듯한 땅 칸 하나를 고른다(결정론 — 칸 번호 순으로 첫 번째 가장 좋은 칸).</summary>
 public static class ProvinceSamples
 {
-    public static readonly string[] Kinds = { "plain", "forest", "mountain", "coast", "river", "desert", "tundra", "pentagon" };
+    public static readonly string[] Kinds = { "plain", "forest", "mountain", "coast", "river", "desert", "tundra", "pentagon", "ore" };
 
     public static string Name(string kind) => kind switch
     {
         "plain" => "평야", "forest" => "숲", "mountain" => "산", "coast" => "해안", "river" => "강",
-        "desert" => "사막", "tundra" => "툰드라", "pentagon" => "오각형", "wetland" => "습지", "savanna" => "사바나", "rainforest" => "열대우림",
+        "desert" => "사막", "tundra" => "툰드라", "pentagon" => "오각형", "ore" => "광맥 언덕", "riverbank" => "자갈 강가", "wetland" => "습지", "savanna" => "사바나", "rainforest" => "열대우림",
         _ => kind,
     };
 
@@ -48,6 +48,10 @@ public static class ProvinceSamples
             case "wetland": return b == Biome.Wetland ? 100 + landNbs * 5 : No;
             case "savanna": return b == Biome.Savanna ? 100 + landNbs * 5 + (river ? 10 : 0) : No;
             case "rainforest": return b == Biome.Rainforest ? 100 + landNbs * 5 : No;
+            case "riverbank": // 자갈 강가(습지 · 사막이 아닌 강)
+                return river && !coast && b is Biome.Temperate or Biome.Grassland or Biome.Boreal or Biome.Savanna ? 100 + p.RiverSize[c] * 20 + landNbs * 5 : No;
+            case "ore": // 구리 · 철이 많은 언덕(광맥이 드러난 바위 덩어리를 보기 좋게)
+                return t is Terrain.Hill or Terrain.Plateau && p.Temp10[c] > 50 && p.Resource(c, ResourceKinds.Copper) == 2 ? 100 + p.Resource(c, ResourceKinds.Iron) * 20 + p.Resource(c, ResourceKinds.Tin) * 10 + landNbs * 3 - (coast ? 30 : 0) : No;
             default: return No;
         }
     }

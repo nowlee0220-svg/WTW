@@ -25,6 +25,7 @@ public class ProvinceSlowTests
         var edges = new List<ProvinceChecks.EdgeResult>();
         int riverEdges = 0, riverEdgeErrors = 0;
         var gate = new object();
+        double innerStone = 0; int innerStoneN = 0;
         Parallel.For(1, 21, s =>
         {
             ulong seed = (ulong)s;
@@ -40,6 +41,7 @@ public class ProvinceSlowTests
                 {
                     if (!p.IsLand(nb)) continue;
                     localEdges.Add(ProvinceChecks.CompareEdge(m, ProvinceGenerator.Generate(p, nb)));
+                    lock (gate) { innerStone += ProvinceChecks.InteriorStoneMismatch; innerStoneN++; }
                 }
                 for (int slot = 0; slot < 6; slot++)
                 {
@@ -71,6 +73,16 @@ public class ProvinceSlowTests
         double dh = Median(edges.Select(e => e.MeanHeightDiff)), inner = Median(edges.Select(e => e.InteriorHeightDiff));
         _out.WriteLine($"맞댄 변 {edges.Count}개: 표본 {samples} · 물 다름 {water * 100.0 / samples:0.00}% · 강 다름 {river * 100.0 / samples:0.00}% · 땅 종류 다름 {ground * 100.0 / samples:0.0}% · 높이 차 중앙값 {dh:0.0}m (지도 안 이웃 타일 {inner:0.0}m)");
         _out.WriteLine($"강이 드나드는 변 {riverEdges}개 · 틀린 변 {riverEdgeErrors}개");
+        int st = edges.Sum(e => e.Stones), sm = edges.Sum(e => e.StoneMismatch);
+        // 경계 양쪽 3 타일 띠의 바위 비율이 비슷한가 (바위 덩어리가 경계에서 끊기지 않는다) — 같은 지방의 서로 다른 변끼리와 비교
+        double stripDiff = edges.Average(e => Math.Abs(e.StripStoneA - e.StripStoneB)), stripMean = edges.Average(e => (e.StripStoneA + e.StripStoneB) / 2);
+        var rnd = new Random(1);
+        double randomDiff = Enumerable.Range(0, 2000).Average(_ => Math.Abs(edges[rnd.Next(edges.Count)].StripStoneA - edges[rnd.Next(edges.Count)].StripStoneB));
+        _out.WriteLine($"바위 띠(경계 양쪽 3타일): 바위 비율 평균 {stripMean * 100:0.0}% · 양쪽 차이 평균 {stripDiff * 100:0.0}%p (아무 변끼리 짝지으면 {randomDiff * 100:0.0}%p)");
+        Assert.True(stripDiff < randomDiff * 0.5, "바위 덩어리가 경계에서 끊김");
+        double inRate = innerStone / Math.Max(1, innerStoneN);
+        _out.WriteLine($"바위: 변 근처 바위 표본 {st} · 한쪽만 바위 {sm * 100.0 / Math.Max(1, st):0.0}% (같은 지도 안에서 같은 거리 {inRate * 100:0.0}%)");
+        Assert.True(sm / (double)Math.Max(1, st) <= inRate * 1.4 + 0.05, "바위가 경계에서 끊김");
 
         Assert.True(rows.Count >= 20 * 7, $"지방 {rows.Count}개");
         Assert.True(water <= samples * 0.01, "물이 경계에서 어긋남");

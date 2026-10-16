@@ -26,12 +26,13 @@ public static class ProvinceGenerator
 
     private sealed class Noises
     {
-        public readonly Noise3 Height, Ridge, Rough, Biome, Coast, Forest, GroundA, GroundB, Marsh, Edge;
+        public readonly Noise3 Height, Ridge, Rough, Biome, Coast, Forest, GroundA, GroundB, Marsh, Edge, StoneBig, StoneSmall, Cave, CaveB, RockType;
         public Noises(ulong seed)
         {
             Noise3 N(string name) => new(RngStreams.Create(seed, "province.noise." + name, RngStreams.GlobalProvince));
             Height = N("height"); Ridge = N("ridge"); Rough = N("rough"); Biome = N("biome"); Coast = N("coast");
             Forest = N("forest"); GroundA = N("ground.a"); GroundB = N("ground.b"); Marsh = N("marsh"); Edge = N("edge");
+            StoneBig = N("stone.big"); StoneSmall = N("stone.small"); Cave = N("cave"); CaveB = N("cave.b"); RockType = N("rock.type");
         }
     }
 
@@ -75,14 +76,16 @@ public static class ProvinceGenerator
 
     public static ProvinceMap Generate(Planet.Planet p, int cell) => Generate(p, cell, ObjectCatalog.Default);
 
-    public static ProvinceMap Generate(Planet.Planet p, int cell, ObjectCatalog catalog)
+    public static ProvinceMap Generate(Planet.Planet p, int cell, ObjectCatalog catalog) => Generate(p, cell, catalog, RockCatalog.Default);
+
+    public static ProvinceMap Generate(Planet.Planet p, int cell, ObjectCatalog catalog, RockCatalog rocks)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         if ((uint)cell >= (uint)p.CellCount) throw new ArgumentOutOfRangeException(nameof(cell));
         var (rot, blocked, slotCell, slotTri) = Slots(p, cell);
         ulong seed = p.ProvinceSeed(cell);
         var m = new ProvinceMap(cell, seed, rot, blocked, slotCell, slotTri);
-        var gen = new Builder(p, cell, m, NoisesFor(p), catalog);
+        var gen = new Builder(p, cell, m, NoisesFor(p), catalog, rocks);
         gen.Run();
         m.GenerationSeconds = sw.Elapsed.TotalSeconds;
         return m;
@@ -96,6 +99,7 @@ public static class ProvinceGenerator
         private readonly ProvinceMap _m;
         private readonly Noises _n;
         private readonly ObjectCatalog _cat;
+        private readonly RockCatalog _rocks;
         private readonly Pcg32 _rng;
         private readonly bool _waterCell;
 
@@ -109,9 +113,9 @@ public static class ProvinceGenerator
         private readonly float[] _waterDepthTiles = new float[N];
         private readonly bool[] _water = new bool[N], _sea = new bool[N];
 
-        public Builder(Planet.Planet p, int c, ProvinceMap m, Noises n, ObjectCatalog cat)
+        public Builder(Planet.Planet p, int c, ProvinceMap m, Noises n, ObjectCatalog cat, RockCatalog rocks)
         {
-            _p = p; _c = c; _m = m; _n = n; _cat = cat;
+            _p = p; _c = c; _m = m; _n = n; _cat = cat; _rocks = rocks;
             _rng = new Pcg32(m.Seed, 0x9E3779B97F4A7C15UL);
             _waterCell = p.IsWater(c);
             _res = new float[ResourceKinds.Count * N];
@@ -119,6 +123,7 @@ public static class ProvinceGenerator
 
         public void Run()
         {
+            Array.Fill(_riverD, float.MaxValue);
             Fields();
             if (_waterCell) WaterCell();
             else
@@ -129,9 +134,15 @@ public static class ProvinceGenerator
                 Blocked();
                 Shore();
                 Grounds();
+                Stones();
+                Caves();
+                Ores();
+                Hide();
                 Clusters();
                 Scatter();
             }
+            for (int i = 0; i < N; i++)
+                if (!HexFrame.Inside[i] || GroundInfo.IsWater(_m.Ground[i])) _m.Rock[i] = 255;
             for (int i = 0; i < N; i++) if (!HexFrame.Inside[i]) { _m.Ground[i] = Ground.None; _m.Biome[i] = Biome.None; }
         }
 
@@ -159,6 +170,7 @@ public static class ProvinceGenerator
             Span<int> cells = stackalloc int[8];
             Span<double> wts = stackalloc double[8];
             Span<double> bw = stackalloc double[BiomeIds.Count];
+            Span<double> rw = stackalloc double[16];
             double inv = 1.0 / TileAngle;
             int rk = ResourceKinds.Count;
             for (int i = 0; i < N; i++)
@@ -233,6 +245,25 @@ public static class ProvinceGenerator
                         if (sc > bs) { bs = sc; best = (Biome)b; }
                     }
                 _m.Biome[i] = best;
+
+                // 바위 종류: 칸마다 주된 바위 0.7 · 섞인 바위 0.3 의 무게를 모으고 종류마다 다른 잡음 → 경계에서 이어진다
+                rw.Clear();
+                int nr = _rocks.Rocks.Count;
+                for (int q = 0; q < n; q++)
+                {
+                    int cc = cells[q];
+                    if (p.IsWater(cc)) continue;
+                    var (ra, rb) = Geology.RocksOf(p, cc);
+                    rw[ra] += wts[q] * 0.7; rw[rb] += wts[q] * 0.3;
+                }
+                int bestRock = Geology.RocksOf(p, _c).Primary; double rs = double.NegativeInfinity;
+                for (int r = 0; r < nr; r++)
+                {
+                    if (rw[r] <= 0) continue;
+                    double sc = rw[r] + 0.35 * Noise(_n.RockType, i, 10, 2, r * 21.37);
+                    if (sc > rs) { rs = sc; bestRock = r; }
+                }
+                _m.Rock[i] = (byte)bestRock;
             }
         }
 
@@ -353,7 +384,6 @@ public static class ProvinceGenerator
             if (size == 0 && inflow.Count == 0) return;
             if (size == 0) size = inflow.Max(f => f.Size);
 
-            for (int i = 0; i < N; i++) _riverD[i] = float.MaxValue;
             double cx = HexFrame.Center, cy = HexFrame.Center;
             double ang = _rng.NextDouble(), rad = 6 + 10 * _rng.NextDouble();
             var (mx, my) = Around(cx, cy, ang, rad);
@@ -637,11 +667,14 @@ public static class ProvinceGenerator
             if (t < -2 && slope < 25 && g1 * 0.5 + 0.5 > (t + 14) / 12) return Ground.Snow;
             double rocky = _rough[i] * 0.85 + slope / 55 + 0.22 * g2 + 0.12 * g1;
             if (rocky > 0.82) return Ground.Rock;
+            // 강가: 자갈 바닥(돌을 줍기 좋은 곳)이 많다
+            if (_riverD[i] < 3.2 && _riverD[i] >= 0 && g2 > (b == Biome.Wetland ? 0.25 : -0.3) + 0.1 * _riverD[i]) return Ground.Gravel; // 습지는 진흙이 더 많다
             if (shore <= 1.5)
             {
                 if (nearSea) return t < 2 ? Ground.Rock : Ground.Sand;
                 if (b == Biome.Desert) return Ground.Sand;
                 if (b == Biome.Wetland) return Ground.Marsh;
+                if (_riverD[i] < 4 && g1 > 0.1) return Ground.Gravel;
                 return t < 0 ? Ground.Soil : Ground.Mud;
             }
             if (nearSea && _h[i] < 18 && g2 > -0.4 && t >= 2) return Ground.Sand;
@@ -682,7 +715,195 @@ public static class ProvinceGenerator
             return false;
         }
 
-        // ───────── 7. 오브젝트 ─────────
+
+        // ───────── 7. 바위 덩어리 · 동굴 · 광맥 (림월드처럼: 바위는 타일, 지나갈 수 없다) ─────────
+
+        // 덮는 비율 → 문턱(표준 정규 분포의 위쪽 꼬리, 표에서 — Log 없이)
+        private static readonly double[] TailF = { 0.005, 0.01, 0.02, 0.03, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8 };
+        private static readonly double[] TailZ = { 2.576, 2.326, 2.054, 1.881, 1.645, 1.282, 1.036, 0.842, 0.524, 0.253, 0, -0.253, -0.524, -0.842 };
+        private static double TailThreshold(double f)
+        {
+            if (f <= TailF[0]) return TailZ[0];
+            for (int k = 1; k < TailF.Length; k++)
+                if (f <= TailF[k]) return TailZ[k - 1] + (TailZ[k] - TailZ[k - 1]) * (f - TailF[k - 1]) / (TailF[k] - TailF[k - 1]);
+            return TailZ[^1];
+        }
+
+        /// <summary>지형(거칠기)마다 바위가 덮는 비율: 평야 약 3%(작은 바위 무리) · 언덕 약 22% · 산 약 50% · 높은 산 약 62%.</summary>
+        public static double StoneCover(double rough)
+        {
+            double[] r = { 0.0, 0.12, 0.32, 0.45, 0.8, 1.0 };
+            double[] f = { 0.015, 0.022, 0.14, 0.22, 0.50, 0.62 };
+            if (rough <= r[0]) return f[0];
+            for (int k = 1; k < r.Length; k++)
+                if (rough <= r[k]) return f[k - 1] + (f[k] - f[k - 1]) * (rough - r[k - 1]) / (r[k] - r[k - 1]);
+            return f[^1];
+        }
+
+        // 잡음 값의 대략의 표준편차(측정값): 큰 덩어리 · 작은 무리를 섞은 값
+        private const double StoneSigma = 0.17;
+        private readonly float[] _stoneDepth = new float[N];
+
+        private void Stones()
+        {
+            for (int i = 0; i < N; i++)
+            {
+                if (!HexFrame.Inside[i]) continue;
+                var g = _m.Ground[i];
+                if (_water[i] || g == Ground.Cliff || GroundInfo.IsWater(g) || _riverD[i] < 1.5) continue;
+                double ro = _rough[i];
+                // 산이 많으면 큰 덩어리, 평야는 작은 무리. 행성 전체의 잡음 · 섞은 거칠기라 이웃 지방과 이어진다.
+                double big = Noise(_n.StoneBig, i, 22, 3), small = Noise(_n.StoneSmall, i, 5, 2);
+                double mix = Smooth(0.12, 0.5, ro);
+                double v = small * (1 - mix) + (0.8 * big + 0.35 * small) * mix;
+                double f = StoneCover(ro) * (0.8 + 0.2 * _res[ResourceKinds.Stone * N + i]);
+                if (v > TailThreshold(f) * StoneSigma) _m.Ground[i] = Ground.Stone;
+            }
+            StoneDepth();
+        }
+
+        /// <summary>바위 안쪽 깊이: 바위가 아닌 타일까지 거리(타일). 육각형 밖은 바위로 본다(이웃 지방에서 덩어리가 이어질 수 있으므로).</summary>
+        private void StoneDepth()
+        {
+            const float Big = 1e6f, D1 = 1f, D2 = 1.4142f;
+            for (int i = 0; i < N; i++) _stoneDepth[i] = !HexFrame.Inside[i] || _m.Ground[i] == Ground.Stone ? Big : 0;
+            for (int y = 0; y < S; y++)
+                for (int x = 0; x < S; x++)
+                {
+                    int i = y * S + x;
+                    float v = _stoneDepth[i];
+                    if (x > 0) v = Math.Min(v, _stoneDepth[i - 1] + D1);
+                    if (y > 0) v = Math.Min(v, _stoneDepth[i - S] + D1);
+                    if (x > 0 && y > 0) v = Math.Min(v, _stoneDepth[i - S - 1] + D2);
+                    if (x < S - 1 && y > 0) v = Math.Min(v, _stoneDepth[i - S + 1] + D2);
+                    _stoneDepth[i] = v;
+                }
+            for (int y = S - 1; y >= 0; y--)
+                for (int x = S - 1; x >= 0; x--)
+                {
+                    int i = y * S + x;
+                    float v = _stoneDepth[i];
+                    if (x < S - 1) v = Math.Min(v, _stoneDepth[i + 1] + D1);
+                    if (y < S - 1) v = Math.Min(v, _stoneDepth[i + S] + D1);
+                    if (x < S - 1 && y < S - 1) v = Math.Min(v, _stoneDepth[i + S + 1] + D2);
+                    if (x > 0 && y < S - 1) v = Math.Min(v, _stoneDepth[i + S - 1] + D2);
+                    _stoneDepth[i] = v;
+                }
+        }
+
+        /// <summary>큰 바위 덩어리 안쪽(바깥에서 4타일 이상)의 동굴: 굴(가는 잡음 줄기) + 방(둥근 얼룩). 위는 바위로 덮였다.</summary>
+        private void Caves()
+        {
+            for (int i = 0; i < N; i++)
+            {
+                if (!HexFrame.Inside[i] || _m.Ground[i] != Ground.Stone || _stoneDepth[i] < 4 || HexFrame.BorderDistance(i) < 10) continue;
+                double tunnel = Math.Abs(Noise(_n.Cave, i, 8, 2));
+                double room = Noise(_n.CaveB, i, 11, 2);
+                if (tunnel < 0.085 || room > 0.3)
+                {
+                    _m.Ground[i] = Ground.Rock; // 동굴 바닥
+                    _m.Flags[i] |= TileFlags.Roof;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 광맥: 행성 칸의 자원 단계 × count 뭉치를 바위 덩어리 안에 박는다. 바위가 거의 없는 칸(평야)이면
+        /// 광맥이 드러난 작은 바위 무리를 하나 세운다(변에서 멀리 — 이웃 지방과의 이음매에 닿지 않게).
+        /// </summary>
+        private void Ores()
+        {
+            var stones = new List<int>();
+            var rims = new List<int>(); // 바깥 면 가까이(깊이 2 이하) — 뭉치의 절반은 여기서 시작해 드러난 광맥이 생긴다
+            for (int i = 0; i < N; i++)
+                if (HexFrame.Inside[i] && _m.Ground[i] == Ground.Stone && HexFrame.BorderDistance(i) > 4)
+                {
+                    stones.Add(i);
+                    if (_stoneDepth[i] <= 2) rims.Add(i);
+                }
+            foreach (var ore in _rocks.Ores)
+            {
+                int level = _p.Resource(_c, ore.Resource);
+                if (level == 0) continue;
+                int count = Math.Max(1, level * ore.Count + _rng.NextInt(-1, 2));
+                for (int q = 0; q < count; q++)
+                {
+                    int start;
+                    if (stones.Count < 40) start = Outcrop(stones);
+                    else if (q % 2 == 0 && rims.Count > 0) start = rims[_rng.NextInt(rims.Count)];
+                    else start = stones[_rng.NextInt(stones.Count)];
+                    if (start < 0) continue;
+                    int size = Math.Max(2, (int)Math.Round(ore.Size * (0.6 + 0.8 * _rng.NextDouble())));
+                    var frontier = new List<int> { start };
+                    int placed = 0;
+                    for (int guard = 0; guard < size * 12 && placed < size && frontier.Count > 0; guard++)
+                    {
+                        int fi = _rng.NextInt(frontier.Count);
+                        int i = frontier[fi];
+                        frontier.RemoveAt(fi);
+                        if (_m.Ground[i] != Ground.Stone || _m.Ore[i] != 0) continue;
+                        if (_rng.NextDouble() > 0.75) continue;
+                        _m.Ore[i] = (byte)(ore.Index + 1);
+                        placed++;
+                        int x = i % S, y = i / S;
+                        if (x > 0) frontier.Add(i - 1);
+                        if (x < S - 1) frontier.Add(i + 1);
+                        if (y > 0) frontier.Add(i - S);
+                        if (y < S - 1) frontier.Add(i + S);
+                    }
+                }
+            }
+        }
+
+        /// <summary>광맥을 품은 작은 바위 무리(반지름 2~4)를 세우고 그 가운데 타일을 돌려준다.</summary>
+        private int Outcrop(List<int> stones)
+        {
+            for (int tries = 0; tries < 60; tries++)
+            {
+                int c = _rng.NextInt(N);
+                if (!HexFrame.Inside[c] || HexFrame.BorderDistance(c) < 14 || _water[c] || _shoreDist[c] < 4 || _riverD[c] < 4) continue;
+                if (!GroundInfo.IsWalkable(_m.Ground[c]) && _m.Ground[c] != Ground.Stone) continue;
+                double r = 2 + 2 * _rng.NextDouble();
+                int cx = c % S, cy = c / S;
+                for (int dy = -5; dy <= 5; dy++)
+                    for (int dx = -5; dx <= 5; dx++)
+                    {
+                        int x = cx + dx, y = cy + dy;
+                        if (x < 0 || y < 0 || x >= S || y >= S) continue;
+                        int i = y * S + x;
+                        if (!HexFrame.Inside[i] || _water[i] || _m.Ground[i] == Ground.Cliff || GroundInfo.IsWater(_m.Ground[i])) continue;
+                        double d = Math.Sqrt(dx * dx + dy * dy) * (0.8 + 0.4 * Unit(TileHash(i, 7)));
+                        if (d <= r && _m.Ground[i] != Ground.Stone) { _m.Ground[i] = Ground.Stone; stones.Add(i); }
+                    }
+                return c;
+            }
+            return -1;
+        }
+
+        /// <summary>숨김: 동굴 바닥, 그리고 둘레 8칸에 드러난 땅(바위도 동굴도 아닌 곳)이 없는 바위 — 그 속 광맥은 아무도 모른다.</summary>
+        private void Hide()
+        {
+            for (int i = 0; i < N; i++)
+            {
+                if (!HexFrame.Inside[i]) continue;
+                if ((_m.Flags[i] & TileFlags.Roof) != 0) { _m.Flags[i] |= TileFlags.Hidden; continue; }
+                if (_m.Ground[i] != Ground.Stone) continue;
+                int x = i % S, y = i / S;
+                bool exposed = false;
+                for (int dy = -1; dy <= 1 && !exposed; dy++)
+                    for (int dx = -1; dx <= 1 && !exposed; dx++)
+                    {
+                        int nx = x + dx, ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= S || ny >= S) continue;
+                        int j = ny * S + nx;
+                        if (!HexFrame.Inside[j]) continue; // 바깥은 바위로 본다
+                        if (_m.Ground[j] != Ground.Stone && (_m.Flags[j] & TileFlags.Roof) == 0) exposed = true;
+                    }
+                if (!exposed) _m.Flags[i] |= TileFlags.Hidden;
+            }
+        }
+
+        // ───────── 8. 오브젝트 ─────────
 
         private void Clusters()
         {
@@ -701,7 +922,7 @@ public static class ProvinceGenerator
                     for (int tries = 0; tries < 40 && start < 0; tries++)
                     {
                         int i = _rng.NextInt(N);
-                        if (HexFrame.Inside[i] && _m.Object[i] == 0 && o.GroundWeight[(int)_m.Ground[i]] > 0 && HexFrame.BorderDistance(i) > 3) start = i;
+                        if (HexFrame.Inside[i] && _m.Object[i] == 0 && !_m.IsHidden(i) && o.GroundWeight[(int)_m.Ground[i]] > 0 && HexFrame.BorderDistance(i) > 3) start = i;
                     }
                     if (start < 0) continue;
                     int size = Math.Max(1, (int)Math.Round(o.ClusterSize * (0.6 + 0.8 * _rng.NextDouble())));
@@ -711,7 +932,7 @@ public static class ProvinceGenerator
                     {
                         int fi = _rng.NextInt(frontier.Count);
                         int i = frontier[fi];
-                        if (_m.Object[i] == 0 && _rng.NextDouble() < Math.Min(1, o.GroundWeight[(int)_m.Ground[i]]))
+                        if (_m.Object[i] == 0 && !_m.IsHidden(i) && _rng.NextDouble() < Math.Min(1, o.GroundWeight[(int)_m.Ground[i]]))
                         {
                             _m.Object[i] = (ushort)(k + 1);
                             _m.Variant[i] = (byte)(TileHash(i, 3) >> 56);
@@ -737,7 +958,7 @@ public static class ProvinceGenerator
             {
                 if (!HexFrame.Inside[i] || _m.Object[i] != 0) continue;
                 var gnd = _m.Ground[i];
-                if (gnd is Ground.Cliff or Ground.DeepWater or Ground.None) continue;
+                if (gnd is Ground.Cliff or Ground.DeepWater or Ground.None or Ground.Stone || _m.IsHidden(i)) continue;
                 int b = (int)_m.Biome[i];
                 double forest = -1, sum = 0;
                 for (int k = 0; k < objs.Count; k++)
@@ -747,7 +968,7 @@ public static class ProvinceGenerator
                     if (o.IsCluster || o.Density <= 0) continue;
                     double w = o.Density * o.BiomeWeight[b] * o.GroundWeight[(int)gnd];
                     if (w <= 0) continue;
-                    if (o.Resource >= 0) w *= _res[o.Resource * N + i] * 0.5; // 많음 = density, 있음 = 절반, 없음 = 0
+                    if (o.Resource >= 0) w *= Math.Max(o.ResourceFloor, _res[o.Resource * N + i] * 0.5); // 많음 = density, 있음 = 절반, 없음 = resource_floor
                     if (o.IsTree)
                     {
                         if (forest < 0) forest = Math.Clamp(1 + 0.9 * Noise(_n.Forest, i, 20, 3), 0.1, 1.9); // 숲과 빈터

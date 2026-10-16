@@ -32,6 +32,10 @@ public sealed class ProvinceMap
     /// <summary>같은 종류도 조금씩 다르게(크기 · 기울기 · 색) 그리기 위한 값.</summary>
     public readonly byte[] Variant = new byte[HexFrame.TileCount];
     public readonly TileFlags[] Flags = new TileFlags[HexFrame.TileCount];
+    /// <summary>그 자리의 바위 종류(RockCatalog 번호). 바위 · 바위 바닥 · 자갈의 돌이 이것이다. 물 · 바깥은 255.</summary>
+    public readonly byte[] Rock = new byte[HexFrame.TileCount];
+    /// <summary>바위 타일 안의 광맥: 0 = 없음, 아니면 RockCatalog.Ores 번호 + 1. 숨은(Hidden) 바위 속 광맥은 아직 아무도 모른다.</summary>
+    public readonly byte[] Ore = new byte[HexFrame.TileCount];
 
     public double GenerationSeconds { get; internal set; }
 
@@ -43,6 +47,10 @@ public sealed class ProvinceMap
     public static int Index(int x, int y) => y * HexFrame.Size + x;
     public bool InBounds(int x, int y) => (uint)x < HexFrame.Size && (uint)y < HexFrame.Size;
     public int ObjectAt(int i) => Object[i] - 1;
+    public int OreAt(int i) => Ore[i] - 1;
+    public bool IsHidden(int i) => (Flags[i] & TileFlags.Hidden) != 0;
+    /// <summary>바깥 면에 드러나 보이는 광맥(숨은 것은 −1).</summary>
+    public int VisibleOreAt(int i) => IsHidden(i) ? -1 : Ore[i] - 1;
 
     /// <summary>행성 칸 nb 가 어느 자리(변)에 있나. 이웃이 아니면 −1.</summary>
     public int SlotOf(int nb) => System.Array.IndexOf(SlotCell, nb);
@@ -63,7 +71,7 @@ public sealed class ProvinceMap
     }
 
     /// <summary>대략의 메모리(바이트): 타일 배열들.</summary>
-    public static int ApproxBytes => HexFrame.TileCount * (1 + 2 + 1 + 1 + 2 + 1 + 1);
+    public static int ApproxBytes => HexFrame.TileCount * (1 + 2 + 1 + 1 + 2 + 1 + 1 + 1 + 1);
 
     private ulong? _fingerprint;
 
@@ -76,7 +84,7 @@ public sealed class ProvinceMap
         for (int i = 0; i < HexFrame.TileCount; i++)
         {
             ulong a = (ulong)(byte)Ground[i] | ((ulong)(ushort)Height[i] << 8) | ((ulong)(byte)Biome[i] << 24) | ((ulong)Object[i] << 32) | ((ulong)Variant[i] << 48) | ((ulong)Flags[i] << 56);
-            h = StableHash.Combine(h, a, WaterDepth[i]);
+            h = StableHash.Combine(h, a, (ulong)WaterDepth[i] | ((ulong)Rock[i] << 8) | ((ulong)Ore[i] << 16));
         }
         return h;
     }

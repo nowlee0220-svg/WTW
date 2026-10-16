@@ -51,6 +51,7 @@ public partial class Main : Node
         _province.TileClicked += OnTileClicked;
         _province.HoverChanged += OnTileHover;
         _province.Notice += n => _hud.ShowNotice(n);
+        _province.Loaded += UpdateResourceLegend;
 
         _map = new MapView { Visible = false }; // E0 의 점 시험 화면 — 개발용(F12)
         AddChild(_map);
@@ -67,6 +68,7 @@ public partial class Main : Node
         _hud.PlaceholderPressed += why => _hud.ShowNotice(why);
         _hud.ScopeRequested += SetScope;
         _hud.ExitProvinceRequested += ExitProvince;
+        _hud.ResourceViewRequested += SetResourceView;
 
         _legend = new Legend { Theme = theme, Visible = false };
         ui.AddChild(_legend);
@@ -216,10 +218,40 @@ public partial class Main : Node
         _auto.OnProvinceOpened();
     }
 
+    /// <summary>지방 화면의 자원 보기: 바위 · 광맥 · 돌만 밝게 + 범례(이 화면에 있는 것만).</summary>
+    private void SetResourceView(bool on)
+    {
+        if (!_province.IsOpen) return;
+        _province.SetResourceView(on);
+        _hud.SetResourceViewPressed(on);
+        UpdateResourceLegend();
+    }
+
+    private void UpdateResourceLegend()
+    {
+        if (!_province.IsOpen || !_province.ResourceView || _province.ShownCount == 0) { if (_province.IsOpen) _legend.Visible = false; return; }
+        var rocks = Wtw.Sim.Data.RockCatalog.Default;
+        var cat = Wtw.Sim.Data.ObjectCatalog.Default;
+        var (rk, ores, objs, gravel, hidden) = _province.ResourceSummary();
+        var items = new List<(Color, string)>();
+        for (int r = 0; r < rk.Length; r++)
+            if (rk[r] > 0) items.Add((Art.RockColor(Wtw.Sim.Provinces.Ground.Stone, r), $"{rocks.Rocks[r].Name} — 캐면 {string.Join(", ", rocks.Rocks[r].Yields.Select(y => y.Name))} ({rk[r]:N0}칸)"));
+        for (int o = 0; o < ores.Length; o++)
+            if (ores[o] > 0) { var oc = rocks.Ores[o].Color; items.Add((new Color(oc.R / 255f, oc.G / 255f, oc.B / 255f), $"{rocks.Ores[o].Name} — 캐면 {string.Join(", ", rocks.Ores[o].Yields.Select(y => y.Name))} ({ores[o]:N0}칸)")); }
+        if (gravel > 0) items.Add((new Color(0.78f, 0.76f, 0.7f), $"자갈 바닥 — 줍기 → 돌 ({gravel:N0}칸)"));
+        foreach (var (o, n) in objs.OrderByDescending(kv => kv.Value)) items.Add((new Color(1, 1, 1, 0), $"• {cat.Objects[o].Name} — {cat.Objects[o].UsesText} ({n:N0}개)"));
+        if (hidden > 0) items.Add((new Color(0.25f, 0.25f, 0.25f), $"바위 속(어둡게) — 안쪽 광맥 · 동굴은 아직 아무도 모름"));
+        if (items.Count == 0) items.Add((new Color(0, 0, 0, 0), "이 화면에는 바위 · 광맥이 없습니다"));
+        _legend.ShowItems("자원 보기 — 돌 · 광물", items);
+        _legend.Visible = true;
+    }
+
     private void ExitProvince()
     {
         if (!_province.IsOpen) return;
         int c = _province.Center;
+        if (_province.ResourceView) { _province.SetResourceView(false); _hud.SetResourceViewPressed(false); }
+        SetMode(_globe.Mode, null); // 지구본 범례로 되돌림
         _province.Close();
         _card.Visible = false;
         _globe.Visible = true;
@@ -304,6 +336,7 @@ public partial class Main : Node
             case Key.F9: Load(); break;
             case Key.F12: _devDots = !_devDots; break; // 개발용: E0 점 시험 화면
             case Key.Enter or Key.KpEnter when !_province.IsOpen && _globe.Selected >= 0: EnterProvince(_globe.Selected); break;
+            case Key.Y when _province.IsOpen: SetResourceView(!_province.ResourceView); break;
             default:
                 if (_province.IsOpen) return;
                 var mode = MapModes.All.FirstOrDefault(m => MapModes.Hotkey(m) == k.Keycode, (MapMode)(-1));
@@ -327,6 +360,7 @@ public partial class Main : Node
     internal void ScopeForTest(bool nb) => SetScope(nb);
     internal void HoverForTest(int cell, int x, int y) => _province.SetHover(cell, x, y);
     internal void ClickForTest(int cell, int x, int y) => OnTileClicked(cell, x, y);
+    internal void ResourceViewForTest(bool on) => SetResourceView(on);
     internal void SaveForTest() => Save();
     internal void LoadForTest() => Load();
 }

@@ -22,6 +22,8 @@ public sealed class ObjectDef
     /// <summary>묶인 행성 자원(ResourceKinds 번호), 없으면 −1.</summary>
     public int Resource { get; init; } = -1;
     public double Density { get; init; }
+    /// <summary>묶인 행성 자원이 없음이어도 이만큼(0~1)은 난다.</summary>
+    public double ResourceFloor { get; init; }
     /// <summary>[Biome 값] 가중치.</summary>
     public double[] BiomeWeight { get; init; } = Array.Empty<double>();
     /// <summary>[Ground 값] 가중치.</summary>
@@ -42,7 +44,7 @@ public sealed class ObjectCatalog
 {
     public const string ObjectsFile = "objects.json";
     public const string ItemsFile = "items.json";
-    public static readonly string[] Kinds = { "tree", "bush", "plant", "rock", "ore", "ground" };
+    public static readonly string[] Kinds = { "tree", "bush", "plant", "rock", "ground" };
 
     public IReadOnlyList<ObjectDef> Objects { get; init; } = Array.Empty<ObjectDef>();
     public IReadOnlyList<ItemDef> Items { get; init; } = Array.Empty<ItemDef>();
@@ -51,15 +53,15 @@ public sealed class ObjectCatalog
     public ObjectDef? Find(string id) => Objects.FirstOrDefault(o => o.Id == id);
     public int IndexOf(string id) => Find(id)?.Index ?? -1;
 
-    private static readonly Lazy<ObjectCatalog> DefaultCatalog = new(() => Load(EmbeddedFiles()), LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly Lazy<ObjectCatalog> DefaultCatalog = new(() => Load(EmbeddedFiles(ObjectsFile, ItemsFile)), LazyThreadSafetyMode.ExecutionAndPublication);
     /// <summary>시뮬에 넣어 둔 data/objects.json · items.json.</summary>
     public static ObjectCatalog Default => DefaultCatalog.Value;
 
-    private static Dictionary<string, string> EmbeddedFiles()
+    internal static Dictionary<string, string> EmbeddedFiles(params string[] names)
     {
         var asm = typeof(ObjectCatalog).Assembly;
         var files = new Dictionary<string, string>();
-        foreach (var name in new[] { ObjectsFile, ItemsFile })
+        foreach (var name in names)
         {
             using var s = asm.GetManifestResourceStream("data/" + name) ?? throw new InvalidOperationException($"시뮬 안에 data/{name} 가 없습니다(빌드 설정).");
             using var r = new StreamReader(s);
@@ -157,6 +159,14 @@ public sealed class ObjectCatalog
             if (resource < 0) problems.Add($"{where}: resource '{r}' 은(는) resources.json 에 없는 행성 자원입니다.");
         }
 
+        double floor = 0;
+        if (e.TryGetProperty("resource_floor", out var rf))
+        {
+            if (rf.ValueKind != JsonValueKind.Number || rf.GetDouble() < 0 || rf.GetDouble() > 1) problems.Add($"{where}: resource_floor 는 0~1 이어야 합니다.");
+            else floor = rf.GetDouble();
+            if (resource < 0) problems.Add($"{where}: resource_floor 는 행성 자원(resource)에 묶인 오브젝트에만 씁니다.");
+        }
+
         double density = 0;
         if (!e.TryGetProperty("density", out var de) || de.ValueKind != JsonValueKind.Number) problems.Add($"{where}: 꼭 있어야 하는 칸 'density'(날 확률)가 없습니다.");
         else
@@ -201,7 +211,7 @@ public sealed class ObjectCatalog
         if (problems.Count > before || id is null || name is null || kind is null || art is null) return null;
         return new ObjectDef
         {
-            Index = index, Id = id, Name = name, Kind = kind, Art = art, Resource = resource, Density = density,
+            Index = index, Id = id, Name = name, Kind = kind, Art = art, Resource = resource, Density = density, ResourceFloor = floor,
             BiomeWeight = biomes, GroundWeight = grounds, ClusterCount = cCount, ClusterSize = cSize, Uses = uses,
         };
     }

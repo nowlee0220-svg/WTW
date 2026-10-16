@@ -72,15 +72,48 @@ public static partial class Art
         GroundKind.ShallowWater => C(64, 128, 160),
         GroundKind.DeepWater => C(30, 72, 120),
         GroundKind.Cliff => C(78, 68, 62),
+        GroundKind.Stone => C(140, 136, 130),
+        GroundKind.Gravel => C(168, 162, 150),
         _ => C(0, 0, 0),
     };
 
+    /// <summary>바위 종류의 색(data/rocks.json): 바위(벽)는 그 색, 바위 바닥은 조금 어둡고 흙빛, 자갈은 밝은 회색과 섞음.</summary>
+    public static Color RockColor(GroundKind g, int rock)
+    {
+        var rocks = RockCatalog.Default.Rocks;
+        if (rock >= rocks.Count) return GroundColor(g, Biome.None);
+        var (r, gg, b) = rocks[rock].Color;
+        var c = C(r, gg, b);
+        return g switch
+        {
+            GroundKind.Stone => c,
+            GroundKind.Gravel => c.Lerp(C(176, 170, 160), 0.5f),
+            _ => c.Darkened(0.12f).Lerp(C(120, 106, 90), 0.2f),
+        };
+    }
+
+    /// <summary>광맥 색: 구리 = 초록 얼룩, 주석 = 은빛, 철 = 붉은 돌 (data/rocks.json).</summary>
+    public static Vector3[] OreColors => RockCatalog.Default.Ores.Select(o => new Vector3(o.Color.R / 255f, o.Color.G / 255f, o.Color.B / 255f)).Concat(Enumerable.Repeat(Vector3.Zero, 4)).Take(4).ToArray();
+
+    /// <summary>자원 보기에서 밝게 보일 오브젝트(돌 · 바닥: 잔돌 · 부싯돌 · 진흙 바닥 · 소금 바닥).</summary>
+    public static bool IsResourceObject(int index)
+    {
+        var k = ObjectCatalog.Default.Objects[index].Kind;
+        return k is "rock" or "ground";
+    }
+
+    // 색표: 가로 = 땅 종류(16), 세로 0~15 = 생물군계, 16~31 = 바위 종류
     private static ImageTexture MakePalette()
     {
-        var img = Image.CreateEmpty(16, 16, false, Image.Format.Rgba8);
+        var img = Image.CreateEmpty(16, 32, false, Image.Format.Rgba8);
         for (int g = 0; g < 16; g++)
-            for (int b = 0; b < 16; b++)
-                img.SetPixel(g, b, g < GroundInfo.Count && b < BiomeIds.Count ? GroundColor((GroundKind)g, (Biome)b) : Colors.Black);
+            for (int b = 0; b < 32; b++)
+            {
+                Color c = Colors.Black;
+                if (g < GroundInfo.Count && b < 16 && b < BiomeIds.Count) c = GroundColor((GroundKind)g, (Biome)b);
+                else if (g < GroundInfo.Count && b >= 16) c = RockColor((GroundKind)g, b - 16);
+                img.SetPixel(g, b, c);
+            }
         return ImageTexture.CreateFromImage(img);
     }
 
