@@ -88,7 +88,7 @@
       "biomes": { "*": 1 }, "grounds": { "soil": 1, "grass": 0.6, "rock": 0.8, "sand": 0.4 },
       "cluster": { "count": 4, "size": 5 },
       "uses": [ { "action": "gather", "yields": ["flint"] } ] },
-    { "id": "clay_bed", "name": "진흙 바닥", "kind": "ground", "art": "clay", "resource": "clay", "density": 0.05,
+    { "id": "clay_bed", "name": "진흙 바닥", "kind": "ground", "art": "clay", "resource": "clay", "density": 0.02,
       "biomes": { "*": 1 }, "grounds": { "mud": 1, "marsh": 0.5, "soil": 0.04 },
       "uses": [ { "action": "dig", "yields": ["clay"] } ] },
     { "id": "copper_vein", "name": "구리 광맥", "kind": "ore", "art": "ore_copper", "resource": "copper", "density": 0,

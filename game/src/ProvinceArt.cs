@@ -459,8 +459,8 @@ public static partial class Art
             }
             case "clay":
             {
-                s.Ellipse(64, 64, 52, 40, C(160, 92, 66, 230), 0.5f);
-                for (int i = 0; i < 7; i++) { float x = 64 + r.R(-36, 36), y = 64 + r.R(-26, 26); s.Line(x, y, x + r.R(-14, 14), y + r.R(-10, 10), 1.6f, C(110, 60, 42)); }
+                for (int i = 0; i < 5; i++) s.Ellipse(64 + r.R(-16, 16), 64 + r.R(-12, 12), r.R(22, 34), r.R(16, 24), C(138, 92, 70, 120), 0.3f, r.R(0, 3));
+                for (int i = 0; i < 6; i++) { float x = 64 + r.R(-30, 30), y = 64 + r.R(-20, 20); s.Line(x, y, x + r.R(-12, 12), y + r.R(-8, 8), 1.4f, C(96, 62, 46, 160)); }
                 break;
             }
             case "ore_copper":

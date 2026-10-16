@@ -571,7 +571,7 @@ public static class ProvinceGenerator
         }
 
         // 물가 낮추기는 바다 · 호수 띠 근처만(강은 골짜기로 따로)
-        private bool NearStill(int i) => _shoreDist[i] < 16 && _waterDepthTiles.Length > 0 && StillWaterNear(i);
+        private bool NearStill(int i) => _shoreDist[i] < 16 && StillWaterNear(i);
 
         private bool StillWaterNear(int i)
         {
@@ -610,9 +610,15 @@ public static class ProvinceGenerator
         private double Slope(int i)
         {
             int x = i % S, y = i / S;
-            int xa = Math.Max(0, x - 2), xb = Math.Min(S - 1, x + 2), ya = Math.Max(0, y - 2), yb = Math.Min(S - 1, y + 2);
-            double hx = (_h[y * S + xb] - _h[y * S + xa]) / Math.Max(1, xb - xa);
-            double hy = (_h[yb * S + x] - _h[ya * S + x]) / Math.Max(1, yb - ya);
+            // 육각형 밖(높이 없음)은 이 타일 높이로 본다
+            double H(int xx, int yy)
+            {
+                xx = Math.Clamp(xx, 0, S - 1); yy = Math.Clamp(yy, 0, S - 1);
+                int j = yy * S + xx;
+                return HexFrame.Inside[j] ? _h[j] : _h[i];
+            }
+            double hx = (H(x + 2, y) - H(x - 2, y)) / 4;
+            double hy = (H(x, y + 2) - H(x, y - 2)) / 4;
             return Math.Sqrt(hx * hx + hy * hy);
         }
 
@@ -658,9 +664,10 @@ public static class ProvinceGenerator
                     return g1 > 0.35 ? Ground.Soil : g1 < -0.7 ? Ground.Sand : Ground.Grass;
                 default:
                 {
-                    double grass = Math.Clamp((_precip[i] - 150) / 600, 0.45, 0.92);
-                    if (b is Biome.Boreal or Biome.Temperate or Biome.Rainforest) grass -= 0.15; // 숲 바닥은 흙이 드러난 곳이 많다
-                    return g1 * 0.5 + 0.5 > grass ? Ground.Soil : Ground.Grass;
+                    // 풀밭 비율: 비가 많을수록 풀이 덮는다(마른 초원 60% ~ 젖은 땅 95%). 숲 바닥은 흙이 조금 더 드러난다.
+                    double grass = Math.Clamp((_precip[i] - 100) / 500, 0.6, 0.95);
+                    if (b is Biome.Boreal or Biome.Temperate or Biome.Rainforest) grass -= 0.12;
+                    return g1 > (grass - 0.5) * 1.1 ? Ground.Soil : Ground.Grass;
                 }
             }
         }

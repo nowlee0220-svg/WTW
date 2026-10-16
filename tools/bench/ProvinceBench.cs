@@ -17,8 +17,6 @@ static class ProvinceBench
         var sevens = new List<double>();
         var sevensParallel = new List<double>();
         var rows = new List<ProvinceKindRow>();
-        long before = GC.GetTotalMemory(true);
-        var keep = new List<ProvinceMap>();
         for (int i = 0; i < seeds; i++)
         {
             ulong seed = firstSeed + (ulong)i;
@@ -30,7 +28,6 @@ static class ProvinceBench
                 var sw = Stopwatch.StartNew();
                 var m = ProvinceGenerator.Generate(p, c);
                 singles.Add(sw.Elapsed.TotalSeconds);
-                if (keep.Count < 20) keep.Add(m);
                 var placed = ProvinceLayout.Around(p, c, nb => !p.IsOcean(nb));
                 sw.Restart();
                 foreach (var pl in placed) ProvinceGenerator.Generate(p, pl.Cell);
@@ -51,9 +48,14 @@ static class ProvinceBench
                 });
             }
         }
+        // 메모리: 같은 행성에서 지도 20개를 만들어 들고 있을 때 늘어난 관리 메모리 ÷ 20
+        var mp = PlanetCache.Get(firstSeed, new PlanetSettings(land, ClimateBias.Normal), null);
+        var cells = Enumerable.Range(0, mp.CellCount).Where(mp.IsLand).Take(20).ToList();
+        long before = GC.GetTotalMemory(true);
+        var keep = cells.Select(c => ProvinceGenerator.Generate(mp, c)).ToList();
         long after = GC.GetTotalMemory(true);
         GC.KeepAlive(keep);
-        double perMap = (after - before) / (double)Math.Max(1, keep.Count);
+        double perMap = (after - before) / (double)keep.Count;
         var res = new ProvinceBenchResult
         {
             Runs = singles.Count,

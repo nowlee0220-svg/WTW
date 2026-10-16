@@ -102,6 +102,25 @@ public class ProvinceTests : IClassFixture<ProvinceFixture>
         Assert.NotEqual(ProvinceGenerator.Generate(other, oc).Fingerprint, ProvinceGenerator.Generate(_p, oc).Fingerprint);
     }
 
+    /// <summary>
+    /// 지방 지도 지문 고정값. CI(다른 컴퓨터)에서도 같아야 통과 — 기계마다 같은 지도인지 확인.
+    /// 생성 규칙을 일부러 바꾸면 이 값도 고친다(실수로 바뀐 것을 잡기 위함).
+    /// </summary>
+    [Fact]
+    public void ProvincePin()
+    {
+        var pins = new (string Kind, int Cell, ulong Fp)[]
+        {
+            ("forest", 179, 0x440735064E94AC94UL), ("river", 399, 0x8229FEE4BE793DA0UL),
+            ("coast", 40, 0x314910EE194727E0UL), ("pentagon", 1, 0x50E2345CDECC7CA1UL),
+        };
+        foreach (var (kind, cell, fp) in pins)
+        {
+            Assert.Equal(cell, Find(kind));
+            Assert.Equal(fp, ProvinceGenerator.Generate(_p, cell).Fingerprint);
+        }
+    }
+
     [Fact]
     public void OutsideHexIsUnused_InsideIsGround()
     {

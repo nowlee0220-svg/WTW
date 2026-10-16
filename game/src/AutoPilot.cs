@@ -246,6 +246,7 @@ public sealed class AutoPilot
             case "river": FindTile(i => (m.Flags[i] & TileFlags.River) != 0); break;
             case "coast": FindTile(i => (m.Flags[i] & TileFlags.Sea) != 0); break;
             case "edge": fx = 75; fy = 14; found = true; break;
+            case "blocked": FindTile(i => m.Ground[i] == Ground.Cliff); break;
         }
         if (_hover || _focus == "object")
         {

@@ -314,13 +314,16 @@ public partial class ProvinceView : Node2D
 
     private static ArrayMesh MakeHexMesh()
     {
-        // 육각형 = 가운데 + 꼭짓점 6개, UV 는 150×150 사각형 기준(0~1)
+        // 육각형 = 가운데 + 꼭짓점 6개, UV 는 150×150 사각형 기준(0~1).
+        // 0.5 타일 더 크게 그려 이어 붙인 지방 사이에 틈(검은 실선)이 생기지 않게 한다(셰이더는 안쪽 타일로 색을 채운다).
         var verts = new Vector2[7];
         var uvs = new Vector2[7];
         verts[0] = Vector2.Zero; uvs[0] = new Vector2(0.5f, 0.5f);
         for (int s = 0; s < 6; s++)
         {
-            var hx = (float)HexFrame.HX[s]; var hy = (float)HexFrame.HY[s];
+            const float grow = (float)((HexFrame.R + 0.5) / HexFrame.R);
+            var hx = (float)(HexFrame.Center + (HexFrame.HX[s] - HexFrame.Center) * grow);
+            var hy = (float)(HexFrame.Center + (HexFrame.HY[s] - HexFrame.Center) * grow);
             verts[s + 1] = new Vector2(hx - (float)HexFrame.Center, hy - (float)HexFrame.Center) * TilePx;
             uvs[s + 1] = new Vector2(hx / HexFrame.Size, hy / HexFrame.Size);
         }
@@ -399,12 +402,10 @@ public partial class ProvinceView : Node2D
     private void ApplyCamera()
     {
         _cam.Zoom = new Vector2(_zoom, _zoom);
-        var vp = GetViewportRect().Size / _zoom / 2;
-        // 밝은 범위 밖으로 너무 나가지 않게(가운데가 범위 안)
+        // 밝은 범위 밖으로 너무 나가지 않게(화면 가운데가 범위 안)
         var pos = _cam.Position;
         pos.X = Math.Clamp(pos.X, _bounds.Position.X, _bounds.End.X);
         pos.Y = Math.Clamp(pos.Y, _bounds.Position.Y, _bounds.End.Y);
-        _ = vp;
         _cam.Position = pos;
     }
 
