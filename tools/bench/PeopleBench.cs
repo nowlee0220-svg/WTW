@@ -32,6 +32,7 @@ public static class PeopleBench
             case "seeds": Seeds(I("seeds", 20), I("people", 10), I("years", 50), Sx("passion", "on"), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "cap": Cap(I("people", 500), I("years", 100), (ulong)I("seed", 1), I("per", 25), I("cap", 500)); break;
             case "nosource": NoSource(I("seeds", 20), I("cells", 5), I("people", 5), I("years", 3), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
+            case "water": WaterBench.Run(I("seeds", 20), I("cells", 30), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "one": One(I("people", 10), I("years", 5), (ulong)I("seed", 1), Sx("cell", "home"), o.ContainsKey("family"), I("cap", 300)); break;
             default: Console.WriteLine("모드: seeds | cap | one"); break;
         }

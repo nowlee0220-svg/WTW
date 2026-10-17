@@ -66,4 +66,10 @@ public enum TileFlags : byte
     Hidden = 8,
     /// <summary>화산(산 · 분화구 둘레).</summary>
     Volcano = 16,
+    /// <summary>(E3b) 개울: 지방 안의 작은 물줄기(이웃 지방과 경계에서 이어진다).</summary>
+    Stream = 32,
+    /// <summary>(E3b) 샘 · 웅덩이 · 고인 물(지방 안쪽, 경계에 닿지 않는다). 샘이면 Stream 도 함께(샘에서 개울이 흘러나간다).</summary>
+    Pool = 64,
+    /// <summary>(E3b) 샘이 솟는 자리.</summary>
+    Spring = 128,
 }
