@@ -154,4 +154,18 @@ public static class Hangul
     public static string Eun(string w) => J(w, "은", "는");
     public static string Eul(string w) => J(w, "을", "를");
     public static string Gwa(string w) => J(w, "과", "와");
+    /// <summary>"…이라고" / "…라고".</summary>
+    public static string Rago(string w) => J(w, "이라고", "라고");
+    /// <summary>"…으로" / "…로" (ㄹ 받침도 "로").</summary>
+    public static string Ro(string w) => w + (HasFinal(w) && !EndsWithRieul(w) ? "으로" : "로");
+    private static bool EndsWithRieul(string w)
+    {
+        for (int i = w.Length - 1; i >= 0; i--)
+        {
+            char c = w[i];
+            if (c is '\'' or ')' or ' ' or '(') continue;
+            return c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28 == 8;
+        }
+        return false;
+    }
 }

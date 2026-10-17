@@ -163,21 +163,30 @@ public static class ProvinceReport
 
     private static ProvinceFact Water(Planet.Planet p, ProvinceMap m)
     {
-        int fresh = 0, salt = 0, river = 0, pond = 0;
+        int fresh = 0, salt = 0, river = 0, pond = 0, stream = 0, spring = 0;
         for (int i = 0; i < HexFrame.TileCount; i++)
         {
             if (!HexFrame.Inside[i] || !GroundInfo.IsWater(m.Ground[i])) continue;
             if ((m.Flags[i] & TileFlags.Sea) != 0) salt++;
-            else { fresh++; if ((m.Flags[i] & TileFlags.River) != 0) river++; else pond++; }
+            else
+            {
+                fresh++;
+                if ((m.Flags[i] & TileFlags.River) != 0) river++;
+                else if ((m.Flags[i] & TileFlags.Spring) != 0) spring++;
+                else if ((m.Flags[i] & TileFlags.Stream) != 0) stream++;
+                else pond++;
+            }
         }
         var parts = new List<string>();
         int c = m.Cell;
         if (p.RiverSize[c] > 0) parts.Add($"{PlanetNames.RiverName(p.RiverSize[c])}(민물)");
         if ((p.Flags[c] & CellFlags.LakeShore) != 0) parts.Add("호수(민물)");
+        if (stream > 0) parts.Add("개울(민물)");
+        if (spring > 0) parts.Add("샘(민물)");
         if (pond > 0 && (p.Flags[c] & CellFlags.LakeShore) == 0) parts.Add("웅덩이(민물)");
         if (salt > 0) parts.Add("바다(짠물)");
         string v = parts.Count == 0 ? $"없음 — 바다까지 {p.SeaDistance[c]}칸" : string.Join(" · ", parts);
-        string why = $"민물 {fresh:N0} 타일 · 짠물 {salt:N0} 타일. 강 · 호수 · 웅덩이의 물은 빗물이 모인 민물이라 마실 수 있고, 바다는 소금이 녹은 짠물이라 마실 수 없다(대신 소금 · 물고기)." +
+        string why = $"민물 {fresh:N0} 타일 · 짠물 {salt:N0} 타일. 강 · 호수 · 개울 · 샘 · 웅덩이의 물은 빗물이 모인 민물이라 마실 수 있고, 바다는 소금이 녹은 짠물이라 마실 수 없다(대신 소금 · 물고기)." +
                      (parts.Count == 0 ? " 이 지방에는 물이 없어 사람이 살려면 물가까지 가야 한다." : "");
         return new("물", v, why);
     }

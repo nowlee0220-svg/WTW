@@ -67,6 +67,13 @@ public partial class Main : Node
         _province.PersonHover += id => { _hoverPerson = id; _hoverTimer = 0; if (id < 0) _personHover.Hide2(); else _card.Visible = false; };
         _province.PersonClicked += OpenCard;
         _province.SpawnClicked += OnSpawnClicked;
+        _province.FollowCrossed += cell =>
+        {
+            // [따라가기] 하던 사람이 경계를 넘었다: 밝은 범위도 그 지방으로(카메라는 그 사람을 계속 본다)
+            _province.Recenter(cell);
+            if (_globe.Planet is not null) _hud.SetProvinceMode(true, ProvinceTitle(cell), _neighborsPref);
+        };
+        _province.LandName = c => _snap?.LandLabel(c);
 
         _map = new MapView { Visible = false }; // E0 의 점 시험 화면 — 개발용(F12)
         AddChild(_map);
@@ -143,6 +150,12 @@ public partial class Main : Node
         {
             var w = GameWorld.Create(seed, config);
             w.EnsurePlanet(Progress);
+            if (_auto.PreRunYears is int years) // 자동 확인용(같은 조건이면 저장해 둔 것을 다시 쓴다)
+            {
+                string cache = ProjectSettings.GlobalizePath($"user://prerun-{seed}-{years}-{_auto.PreHomes}-{_auto.PreFamilies}.wtw");
+                if (File.Exists(cache)) { w = SaveGame.LoadFile(cache); w.EnsurePlanet(Progress); GD.Print($"PRERUN cached {cache}"); }
+                else { AutoPilot.PreRun(w, years, _auto.PreFamilies, Progress, _auto.PreHomes); Directory.CreateDirectory(Path.GetDirectoryName(cache)!); SaveGame.SaveFile(w, cache); }
+            }
             return w;
         });
     }
@@ -230,6 +243,7 @@ public partial class Main : Node
 
     private void SetMode(MapMode mode, int? resource)
     {
+        _langTimer = 0;
         _globe.SetMode(mode, resource);
         _hud.SetMode(mode);
         _legend.Show(mode, _globe.Resource);
@@ -246,7 +260,7 @@ public partial class Main : Node
         _legend.Visible = false;
         _globe.Visible = false;
         _province.Open(p, c, _neighborsPref);
-        _hud.SetProvinceMode(true, TileDescriber.ProvinceName(p, c), _neighborsPref);
+        _hud.SetProvinceMode(true, ProvinceTitle(c), _neighborsPref);
         _auto.OnProvinceOpened();
     }
 
@@ -276,7 +290,16 @@ public partial class Main : Node
         _infoTimer = 0.5;
         var m = _province.MapOf(_province.Center);
         if (m is null) return;
-        _info.Show($"지방 정보 — {TileDescriber.ProvinceName(p, m.Cell)}", ProvinceReport.Describe(p, m, _host.RenderTick + ShowTickOffset));
+        var facts = ProvinceReport.Describe(p, m, _host.RenderTick + ShowTickOffset);
+        if (_snap is not null && _snap.LandNames.TryGetValue(m.Cell, out var names) && names.Length > 0)
+        {
+            var list = facts.ToList();
+            list.Insert(0, new ProvinceFact("이름", $"{names[0].Word} — 뜻: {names[0].Meaning}",
+                $"{Hangul.I(names[0].Namer)} 자기 말({names[0].LangId}번 말)로 지은 이름 — {names[0].Reason}. 지어낸 말이라 뜻을 함께 적는다." +
+                (names.Length > 1 ? " 다른 무리는 이 땅을 다르게 부른다: " + string.Join(", ", names.Skip(1).Select(n => $"'{n.Word}'({n.Meaning})")) + "." : "")));
+            facts = list;
+        }
+        _info.Show($"지방 정보 — {_snap?.LandLabel(m.Cell) ?? TileDescriber.ProvinceName(p, m.Cell)}", facts); // 이름이 있으면 이름만(위 막대와 겹치지 않게)
     }
 
     /// <summary>지방 화면의 자원 보기: 바위 · 광맥 · 돌만 밝게 + 범례(이 화면에 있는 것만).</summary>
@@ -331,7 +354,7 @@ public partial class Main : Node
     {
         _neighborsPref = neighbors;
         _province.SetNeighbors(neighbors);
-        if (_globe.Planet is { } p && _province.IsOpen) _hud.SetProvinceMode(true, TileDescriber.ProvinceName(p, _province.Center), neighbors);
+        if (_globe.Planet is not null && _province.IsOpen) _hud.SetProvinceMode(true, ProvinceTitle(_province.Center), neighbors);
     }
 
     private void OnTileHover(int cell, int x, int y)
@@ -444,7 +467,94 @@ public partial class Main : Node
     private void OnCellSelected(int c)
     {
         if (c < 0 || _globe.Planet is null) { _panel.Visible = false; return; }
-        _panel.ShowCell(_globe.Planet, c);
+        _langTimer = 0;
+        _panel.ShowCell(_globe.Planet, c, CellExtras(c), _snap?.LandLabel(c) is { } ll ? $"{ll} — 칸 {c}" : null);
+    }
+
+    // ───────── (E3b) 지명 · 말 · 옮겨 가는 방향 ─────────
+
+    private WorldSnapshot? _snap;
+    private double _langTimer, _moveTimer;
+
+    /// <summary>"타레(빠른 물) · 칸 42331 …" — 이름이 없으면 칸 이름만.</summary>
+    private string ProvinceTitle(int c)
+    {
+        var p = _globe.Planet!;
+        string baseName = TileDescriber.ProvinceName(p, c);
+        return _snap?.LandLabel(c) is { } ll ? $"{ll} · {baseName}" : baseName;
+    }
+
+    /// <summary>지구본 칸 정보 맨 앞: 땅 이름 · 사는 사람 · 쓰는 말(언어 지도에서는 어디까지 통하나).</summary>
+    private List<(string, string)> CellExtras(int c)
+    {
+        var l = new List<(string, string)>();
+        var snap = _snap;
+        if (snap is null) return l;
+        if (snap.LandNames.TryGetValue(c, out var names) && names.Length > 0)
+        {
+            l.Add(("땅 이름", $"{names[0].Word} — 뜻: {names[0].Meaning} ({names[0].Reason}, {names[0].Namer}의 말로)"));
+            if (names.Length > 1) l.Add(("다른 이름", string.Join(" · ", names.Skip(1).Select(n => $"{n.Word}({n.Meaning}) — {n.LangId}번 말" + (snap.LanguageOf(n.LangId) is null ? "(이제 쓰는 사람이 없음)" : "")))));
+        }
+        foreach (var (cell, lang, speakers, alive) in snap.CellLanguages)
+        {
+            if (cell != c) continue;
+            var lv = snap.LanguageOf(lang);
+            l.Add(("사는 사람", $"{alive}명"));
+            l.Add(("쓰는 말", $"{lv?.Label ?? $"말 {lang}"} — {speakers}명이 씀"));
+            if (_globe.Mode == MapMode.Language && lv is not null)
+            {
+                var reach = snap.CellLanguages.Where(x => x.Cell != c).Select(x => (x.Cell, U: snap.LanguageOf(x.LangId) is { } o ? Understand(lv, o) : 0)).OrderByDescending(x => x.U).Take(6).ToList();
+                if (reach.Count > 0) l.Add(("통하는 곳", string.Join(" · ", reach.Select(x => $"{snap.LandLabel(x.Cell) ?? $"칸 {x.Cell}"} {x.U}%"))));
+            }
+        }
+        if (l.Count == 0 && snap.OpenedCells.Contains(c)) l.Add(("사는 사람", "지금은 아무도 없다(전에 사람이 살았던 땅)"));
+        return l;
+    }
+
+    private readonly Dictionary<(int, int, int, int), int> _understandCache = new();
+
+    private int Understand(LanguageView a, LanguageView b)
+    {
+        var key = (a.Id, a.Lang.Changes * 1000 + a.Lang.Sounds.Sum(), b.Id, b.Lang.Changes * 1000 + b.Lang.Sounds.Sum());
+        if (!_understandCache.TryGetValue(key, out int u)) { if (_understandCache.Count > 20_000) _understandCache.Clear(); u = a.Understanding(b); _understandCache[key] = u; }
+        return u;
+    }
+
+    /// <summary>언어 지도 색 · 옮겨 가는 화살표(가끔 다시 셈).</summary>
+    private void UpdateGlobeExtras(WorldSnapshot snap, double delta)
+    {
+        _moveTimer -= delta;
+        if (_moveTimer <= 0 && _globe.Visible)
+        {
+            _moveTimer = 0.5;
+            // 최근 3년(120일) 동안 옮겨 간 방향: (칸 → 이웃 칸) 횟수
+            long since = snap.Now - 120 * Wtw.Sim.Time.GameTime.TicksPerDay;
+            var count = new Dictionary<(int, int), int>();
+            foreach (var cr in snap.RecentCrossings) if (cr.Tick >= since) count[(cr.From, cr.To)] = count.GetValueOrDefault((cr.From, cr.To)) + 1;
+            _globe.SetMoves(count.OrderBy(kv => kv.Key).Select(kv => (kv.Key.Item1, kv.Key.Item2, Math.Min(1f, kv.Value / 6f))));
+        }
+        if (_globe.Mode != MapMode.Language) return;
+        _langTimer -= delta;
+        if (_langTimer > 0) return;
+        _langTimer = 1.0;
+        var colors = new Dictionary<int, Color>();
+        LanguageView? focus = null;
+        int sel = _globe.Selected;
+        foreach (var x in snap.CellLanguages) if (x.Cell == sel) focus = snap.LanguageOf(x.LangId);
+        foreach (var (cell, lang, _, _) in snap.CellLanguages)
+        {
+            var lv = snap.LanguageOf(lang);
+            if (lv is null) continue;
+            var own = MapModes.LanguageColor(lv.Root, lv.Id, lv.Depth);
+            if (focus is null) colors[cell] = own;
+            else
+            {
+                int u = Understand(focus, lv);
+                colors[cell] = new Color(0.12f, 0.12f, 0.14f).Lerp(MapModes.LanguageColor(focus.Root, focus.Id, focus.Depth).Lightened(0.25f), u / 100f);
+            }
+        }
+        _globe.SetLanguageColors(colors);
+        if (_panel.Visible && sel >= 0 && !_province.IsOpen) _panel.ShowCell(_globe.Planet!, sel, CellExtras(sel), snap.LandLabel(sel) is { } ll ? $"{ll} — 칸 {sel}" : null);
     }
 
     // ───────── 프레임 ─────────
@@ -458,8 +568,10 @@ public partial class Main : Node
         if (snap.Planet is not null) _globe.SetPlanet(snap.Planet);
         if (_card.Visible) _card.Follow(GetViewport().GetMousePosition());
         _province.SetTime(_host.RenderTick + ShowTickOffset);
+        _snap = snap;
         _province.SetPeople(snap, _host.RenderTick);
         _globe.SetPeople(snap.CellPeople, snap.OpenedCells);
+        UpdateGlobeExtras(snap, delta);
         UpdatePeopleUi(snap, delta);
         UpdateProvinceInfo(delta);
         _map.Visible = _devDots;

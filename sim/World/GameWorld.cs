@@ -103,7 +103,9 @@ public sealed class GameWorld
         {
             bool hasEvent = Scheduler.TryPeek(out var next);
             long eventTick = hasEvent ? next.Tick : long.MaxValue;
-            if (NextDayBoundary <= targetTick && NextDayBoundary <= eventTick)
+            long crossTick = People.CrossTick;
+            // 같은 시각이면: 하루 경계 → 예약 → 지방 넘겨주기
+            if (NextDayBoundary <= targetTick && NextDayBoundary <= eventTick && NextDayBoundary <= crossTick)
             {
                 Now = NextDayBoundary;
                 NextDayBoundary += GameTime.TicksPerDay;
@@ -112,12 +114,18 @@ public sealed class GameWorld
                 DayBoundary?.Invoke(this, GameTime.DayIndex(Now));
                 continue;
             }
-            if (eventTick <= targetTick)
+            if (eventTick <= targetTick && eventTick <= crossTick)
             {
                 var ev = Scheduler.Pop();
                 Now = ev.Tick;
                 Dispatch(ev);
                 EventsProcessed++;
+                continue;
+            }
+            if (crossTick <= targetTick)
+            {
+                Now = crossTick;
+                People.DoCrossings();
                 continue;
             }
             break;

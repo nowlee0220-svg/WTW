@@ -41,6 +41,9 @@ public static class TileDescriber
         else if (g is Ground.Rock or Ground.Gravel && rockName.Length > 0) ground += $" ({rockName})";
         if ((m.Flags[i] & TileFlags.River) != 0) ground += $" ({PlanetNames.RiverName(Math.Max(1, (int)p.RiverSize[m.Cell]))})";
         else if ((m.Flags[i] & TileFlags.Sea) != 0) ground += " (바다)";
+        else if ((m.Flags[i] & TileFlags.Spring) != 0 && GroundInfo.IsWater(g)) ground += " (샘)";
+        else if ((m.Flags[i] & TileFlags.Stream) != 0 && GroundInfo.IsWater(g)) ground += " (개울)";
+        else if ((m.Flags[i] & TileFlags.Pool) != 0 && GroundInfo.IsWater(g)) ground += " (웅덩이)";
         else if (GroundInfo.IsWater(g)) ground += p.IsLand(m.Cell) && m.Biome[i] == Biome.Wetland ? " (웅덩이)" : " (호수)";
         string biome = m.Biome[i] == Biome.None ? "" : PlanetNames.Of(m.Biome[i]);
 

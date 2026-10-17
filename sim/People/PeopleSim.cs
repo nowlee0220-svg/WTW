@@ -9,7 +9,7 @@ namespace Wtw.Sim.People;
 /// <summary>알림(아이가 태어남 · 죽음 · 짝 · 정신 붕괴 …). Seq 는 1 부터 차례로.</summary>
 public sealed record WorldEvent(long Seq, long Tick, WorldEventKind Kind, int Person, int Other, int Cell, string Text);
 
-public enum WorldEventKind : byte { Spawn = 0, Birth, Death, Pair, Break }
+public enum WorldEventKind : byte { Spawn = 0, Birth, Death, Pair, Break, LandNamed, Moved, Language }
 
 /// <summary>측정용 셈(저장하지 않는다 — 결과에 영향 없음).</summary>
 public sealed class PeopleStats
@@ -19,6 +19,11 @@ public sealed class PeopleStats
     public long GatherXpPassion, GatherXpPlain, GatherActsPassion, GatherActsPlain;
     /// <summary>목마름으로 죽었는데 그 사람이 닿을 수 있는 곳(지방 안 이어진 땅)에 민물이 없었다 · 굶어 죽었는데 먹을 것이 없었다.</summary>
     public long NoWaterDeaths, NoFoodDeaths;
+    /// <summary>(E3b) 경계를 넘은 횟수 · 잠든 지방이 깨어난 횟수 · 옮겨 간 까닭별 횟수(Why 값).</summary>
+    public long Crossings, Wakes, CrossBatches;
+    /// <summary>(E3b) 말이 갈라진 횟수 · 낱말이 새로 바뀐 횟수.</summary>
+    public long LanguageSplits, WordChanges;
+    public readonly long[] MoveWhy = new long[64];
     /// <summary>물 · 먹을 것을 찾아간 방법별 횟수: [0 보임, 1 기억, 2 따라감, 3 찾아다님].</summary>
     public readonly long[] FindHow = new long[4];
 }
@@ -98,6 +103,14 @@ public sealed partial class PeopleSim
         {
             life = new ProvinceLife(_w.Planet, _w.Province(cell), Data);
             Provinces.Add(cell, life);
+            if (Dormant.Remove(cell, out var d))
+            {
+                // 깨어남: 바뀐 것을 되살린다. 딴 몫은 딴 시각부터 흐른 시간만큼 저절로 다시 열려 있다.
+                foreach (var (tile, st) in d.Stocks) life.Stocks[tile] = st;
+                foreach (int t in d.Revealed) life.Revealed.Add(t);
+                life.People.AddRange(d.People);
+                Stats.Wakes++;
+            }
         }
         return _lastLife = life;
     }
@@ -109,7 +122,9 @@ public sealed partial class PeopleSim
         _all.Add(p);
         _byId.Add(p.Id, p);
         if (!p.Dead) AliveCount++;
-        Life(p.Cell).People.Add(p);
+        if (!p.Dead || Provinces.ContainsKey(p.Cell)) Life(p.Cell).People.Add(p);
+        else if (Dormant.TryGetValue(p.Cell, out var d)) d.People.Add(p);
+        else Dormant[p.Cell] = new DormantProvince(p.Cell, Array.Empty<(int, TileStock)>(), Array.Empty<int>(), new List<Person> { p });
     }
 
     // ───────── 능력 ─────────

@@ -16,6 +16,9 @@ namespace Wtw.Sim.Provinces;
 ///   3. 잡음은 지방마다가 아니라 행성 전체에 하나(행성 위의 점에서 뽑는다) → 어느 쪽 지방에서 봐도 같은 무늬.
 ///   4. 강이 변을 건너는 자리는 두 칸 번호로 정한 공유 시드에서 → 어느 쪽을 먼저 만들어도 같은 자리, 변에 수직으로 건넌다.
 ///   5. 바다 · 호수 쪽 변은 물. 물 띠는 옆 변도 물이면 이어지고, 옆 변이 땅이면 꼭짓점에서 0 으로 줄어 이웃의 물 띠와 만난다.
+///   6. (E3b) 개울: 땅 칸끼리 맞댄 변마다 "개울이 건너는가 · 어디서 · 어느 쪽으로"를 두 칸의 값(번호 · 강수 · 기온 · 높이)으로만 정한다
+///      → 어느 쪽 지방에서 정해도 같다. 높은 칸에서 낮은 칸으로 흐르고, 지방 안에서는 들어온 개울을 모아 나가는 변으로 보낸다.
+///      샘 · 웅덩이는 지방 안쪽(변에서 10 타일 이상)에만 두어 이음매에 닿지 않는다.
 /// 결정론: 사칙연산 · 제곱근 · Floor 만 쓰고(삼각함수 없음), 결과는 정수(땅 종류 · 높이 m · 오브젝트 번호)로 저장한다.
 /// 난수는 지방 시드(타일 해시)와 (세계 시드, "province.…") 스트림에서만.
 /// </summary>
@@ -74,6 +77,35 @@ public static class ProvinceGenerator
 
     private static double HalfWidth(int size) => size switch { 1 => 0.85, 2 => 1.6, _ => 2.6 };
 
+    /// <summary>
+    /// 땅의 축축함(mm): 연 강수에 "덜 마르는 정도"(추울수록 덜 증발)를 곱한 값. 툰드라 · 침엽수림은 비가 적어도 축축하고, 더운 사바나 · 사막은 마른다.
+    /// </summary>
+    public static double Moisture(Planet.Planet p, int c)
+    {
+        double t = p.Temp10[c] * 0.1;
+        return p.PrecipMm[c] / (0.45 + Math.Max(0, t) / 25);
+    }
+
+    public static bool Higher(Planet.Planet p, int a, int b) => p.Elevation[a] != p.Elevation[b] ? p.Elevation[a] > p.Elevation[b] : a < b;
+
+    /// <summary>
+    /// 두 땅 칸이 맞댄 변을 개울이 건너는가 — 건너면 변 위의 자리(0~1, 행성 꼭짓점 번호가 작은 쪽에서 잼), 아니면 null.
+    /// 두 칸의 값만 쓰므로(순서 무관) 어느 쪽 지방에서 물어도 같다. 강이 건너는 변이면 강을 피한 자리.
+    /// </summary>
+    public static double? StreamAcross(Planet.Planet p, int a, int b)
+    {
+        int lo = Math.Min(a, b), hi = Math.Max(a, b);
+        ulong h = StableHash.Combine(StableHash.Combine(p.Seed, (ulong)lo, (ulong)hi), 0x57EA);
+        double m = (Moisture(p, a) + Moisture(p, b)) / 2;
+        double rough = (Roughness(p.Terrain[a]) + Roughness(p.Terrain[b])) / 2;
+        double q = Math.Clamp((m - 300) / 1200, 0, 0.6) * (1 - 0.6 * rough);
+        if ((h >> 11) * (1.0 / (1UL << 53)) >= q) return null;
+        double u = 0.14 + 0.72 * ((h >> 8) & 0xFFFF) / 65535.0;
+        bool river = (p.RiverSize[a] > 0 && p.Downstream[a] == b) || (p.RiverSize[b] > 0 && p.Downstream[b] == a);
+        if (river && u > 0.2 && u < 0.8) u = u < 0.5 ? u - 0.3 + 0.12 : u + 0.3 - 0.12; // 강(0.32~0.68)을 피해 변 끝 쪽으로
+        return Math.Clamp(u, 0.1, 0.9);
+    }
+
     public static ProvinceMap Generate(Planet.Planet p, int cell) => Generate(p, cell, ObjectCatalog.Default);
 
     public static ProvinceMap Generate(Planet.Planet p, int cell, ObjectCatalog catalog) => Generate(p, cell, catalog, RockCatalog.Default);
@@ -114,6 +146,10 @@ public static class ProvinceGenerator
         private readonly byte[] _riverSize = new byte[N];
         private readonly float[] _waterDepthTiles = new float[N];
         private readonly bool[] _water = new bool[N], _sea = new bool[N];
+        // (E3b) 작은 물
+        private readonly float[] _streamD = new float[N]; // 개울 가장자리까지 부호 거리(음수 = 개울 안)
+        private readonly byte[] _poolRing = new byte[N];  // 웅덩이 둘레: 1 = 습지가 될 곳 · 2 = 오아시스 풀밭
+        private readonly Pcg32 _wrng;                       // 작은 물 전용 난수(다른 생성 단계의 난수 순서를 흔들지 않게)
 
         public Builder(Planet.Planet p, int c, ProvinceMap m, Noises n, ObjectCatalog cat, RockCatalog rocks)
         {
@@ -122,11 +158,13 @@ public static class ProvinceGenerator
             _waterCell = p.IsWater(c);
             _isVolcano = Volcanoes.IsVolcano(p, c);
             _res = new float[ResourceKinds.Count * N];
+            _wrng = new Pcg32(m.Seed, 0x5851F42D4C957F2DUL);
         }
 
         public void Run()
         {
             Array.Fill(_riverD, float.MaxValue);
+            Array.Fill(_streamD, float.MaxValue);
             Fields();
             if (_waterCell) WaterCell();
             else
@@ -134,6 +172,7 @@ public static class ProvinceGenerator
                 Heights();
                 Water();
                 Rivers();
+                SmallWater();
                 Blocked();
                 Shore();
                 Grounds();
@@ -530,6 +569,205 @@ public static class ProvinceGenerator
                 }
         }
 
+        // ───────── 4-1. (E3b) 작은 물: 개울 · 샘 · 웅덩이 · 늪 ─────────
+
+        private void SmallWater()
+        {
+            var p = _p;
+            double moist = Moisture(p, _c), rough = Roughness(p.Terrain[_c]);
+            // 1. 경계를 건너는 개울: 들어오는 것(이웃이 더 높음)과 나가는 것(이웃이 더 낮음)
+            var ins = new List<(double X, double Y, int Slot)>();
+            var outs = new List<(double X, double Y, int Slot)>();
+            for (int s = 0; s < 6; s++)
+            {
+                int nb = _m.SlotCell[s];
+                if (nb < 0 || s == _m.BlockedSlot || !p.IsLand(nb)) continue;
+                if (StreamAcross(p, _c, nb) is not { } u) continue;
+                int ta = _m.SlotCornerTri[(s + 5) % 6], tb = _m.SlotCornerTri[s];
+                var (qx, qy) = HexFrame.EdgePoint(s, ta < tb ? u : 1 - u);
+                _crossings.Add((qx, qy));
+                if (Higher(p, nb, _c)) ins.Add((qx, qy, s)); else outs.Add((qx, qy, s));
+            }
+            // 들어온 개울만 있고 나갈 땅 변이 없으면 바다 · 호수 쪽 변으로 흘려보낸다(그쪽은 물이라 이음매가 없다)
+            if (ins.Count > 0 && outs.Count == 0)
+                for (int s = 0; s < 6; s++)
+                {
+                    int nb = _m.SlotCell[s];
+                    if (nb < 0 || s == _m.BlockedSlot || !p.IsWater(nb)) continue;
+                    var (qx, qy) = HexFrame.EdgePoint(s, 0.3 + 0.4 * _wrng.NextDouble());
+                    outs.Add((qx, qy, s));
+                    break;
+                }
+            if (ins.Count > 0 || outs.Count > 0)
+            {
+                // 모이는 곳: 나가는 변 쪽으로 조금 치우친 지방 안쪽
+                double mx = HexFrame.Center, my = HexFrame.Center;
+                if (outs.Count > 0) { mx += (outs[0].X - mx) * 0.3; my += (outs[0].Y - my) * 0.3; }
+                (mx, my) = Around(mx, my, _wrng.NextDouble(), 4 + 10 * _wrng.NextDouble());
+                foreach (var (x, y, s) in ins) { var pts = StreamEdgePath(s, x, y, mx, my); pts.Reverse(); StampStream(pts); }
+                foreach (var (x, y, s) in outs) StampStream(StreamEdgePath(s, x, y, mx, my));
+                if (outs.Count == 0) StampPool(mx, my, 2.5 + 2.5 * _wrng.NextDouble(), moist, true); // 흘러갈 곳이 없으면 고여 웅덩이 · 늪
+                else if (ins.Count == 0)
+                {
+                    // 나가기만 하면 지방 안의 샘에서 시작한다
+                    _m.Flags[ProvinceMap.Index(Math.Clamp((int)mx, 0, S - 1), Math.Clamp((int)my, 0, S - 1))] |= TileFlags.Spring;
+                    StampPool(mx, my, 1.2, moist, false);
+                }
+            }
+            // 2. 샘 · 웅덩이(지방 안쪽): 비(와 추위로 덜 마르는 정도)가 많을수록 많다. 웅덩이는 낮은 곳에 고이고, 샘은 비탈에서 솟아 낮은 쪽으로 흐른다.
+            double lambda = Math.Clamp((moist - 150) / 300, 0, 4) * (1 - 0.8 * rough);
+            int count = Poisson(lambda);
+            bool desert = p.Biome[_c] == Biome.Desert;
+            if (count == 0 && desert && _wrng.NextDouble() < 0.12) count = 1; // 사막의 드문 오아시스
+            for (int k = 0; k < count; k++)
+            {
+                int start = -1;
+                for (int tries = 0; tries < 40 && start < 0; tries++)
+                {
+                    int i = _wrng.NextInt(N);
+                    if (HexFrame.Inside[i] && HexFrame.BorderDistance(i) >= 14 && !_water[i] && _riverD[i] > 4 && _streamD[i] > 3 && _volc[i] < 0.5) start = i;
+                }
+                if (start < 0) continue;
+                bool spring = !desert && _wrng.NextDouble() < 0.4;
+                if (spring)
+                {
+                    var trail = Downhill(start, 40);
+                    if (trail.Count >= 6)
+                    {
+                        _m.Flags[start] |= TileFlags.Spring;
+                        StampPool(start % S + 0.5, start / S + 0.5, 1.2, moist, false);
+                        var pts = new List<(double X, double Y)>();
+                        for (int q = 0; q < trail.Count; q += 2) pts.Add((trail[q] % S + 0.5, trail[q] / S + 0.5));
+                        StampStream(Chaikin(pts, 0, 2));
+                        int end = trail[^1];
+                        StampPool(end % S + 0.5, end / S + 0.5, 1.5 + 1.5 * _wrng.NextDouble(), moist, false);
+                        continue;
+                    }
+                }
+                var down = Downhill(start, 25);
+                int at = down.Count > 0 ? down[^1] : start;
+                StampPool(at % S + 0.5, at / S + 0.5, desert ? 3 + _wrng.NextDouble() : 1.5 + 2.2 * _wrng.NextDouble(), moist, desert);
+            }
+        }
+
+        private int Poisson(double lambda)
+        {
+            if (lambda <= 0) return 0;
+            // 곱셈 방법(지수 함수는 표 대신 급수 — Math.Exp 는 기계마다 끝자리가 같다고 보장되지 않으므로 직접 셈)
+            double limit = ExpNeg(lambda), prod = _wrng.NextDouble();
+            int n = 0;
+            while (prod > limit && n < 12) { prod *= _wrng.NextDouble(); n++; }
+            return n;
+        }
+
+        private static double ExpNeg(double x)
+        {
+            // e^−x = (e^−x/16)^16, e^−y 는 테일러 급수(y ≤ 0.25)
+            double y = x / 16, term = 1, sum = 1;
+            for (int k = 1; k < 12; k++) { term *= -y / k; sum += term; }
+            for (int k = 0; k < 4; k++) sum *= sum;
+            return sum;
+        }
+
+        /// <summary>가장 가파르게 내려가는 길(8방향). 물 · 변 근처 · 평평한 곳(더 낮은 이웃이 없음)에서 멈춘다.</summary>
+        private List<int> Downhill(int start, int maxSteps)
+        {
+            var list = new List<int>();
+            int cur = start;
+            for (int k = 0; k < maxSteps; k++)
+            {
+                int cx = cur % S, cy = cur / S, best = -1;
+                float bh = _h[cur];
+                for (int dy = -1; dy <= 1; dy++)
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        if (dx == 0 && dy == 0) continue;
+                        int nx = cx + dx, ny = cy + dy;
+                        if ((uint)nx >= S || (uint)ny >= S) continue;
+                        int j = ny * S + nx;
+                        if (!HexFrame.Inside[j] || HexFrame.BorderDistance(j) < 10) continue;
+                        if (_h[j] < bh) { bh = _h[j]; best = j; }
+                    }
+                if (best < 0) break;
+                cur = best;
+                list.Add(cur);
+                if (_water[cur] || _streamD[cur] < 0) break;
+            }
+            return list;
+        }
+
+        /// <summary>개울의 한 갈래(모이는 곳 → 변): 강처럼 변을 수직으로 건너고(변 밖 4 타일까지) 안쪽은 구불구불.</summary>
+        private List<(double X, double Y)> StreamEdgePath(int s, double qx, double qy, double mx, double my)
+        {
+            double nx = HexFrame.NX[s], ny = HexFrame.NY[s];
+            var inner = (qx - nx * 10, qy - ny * 10);
+            (double, double) J(double t)
+            {
+                double dx = inner.Item1 - mx, dy = inner.Item2 - my, len = Math.Sqrt(dx * dx + dy * dy);
+                double off = len < 1e-9 ? 0 : (_wrng.NextDouble() * 2 - 1) * len * 0.25;
+                return len < 1e-9 ? (0, 0) : (-dy / len * off, dx / len * off);
+            }
+            var pts = new List<(double X, double Y)> { (mx, my) };
+            pts.Add(Inset(Lerp((mx, my), inner, 0.33, J(0.33)), 12));
+            pts.Add(Inset(Lerp((mx, my), inner, 0.66, J(0.66)), 12));
+            pts.Add(inner);
+            pts.Add((qx - nx * 4, qy - ny * 4));
+            pts.Add((qx, qy));
+            pts.Add((qx + nx * 4, qy + ny * 4));
+            return Chaikin(pts, 3, 3);
+        }
+
+        private const double StreamHalf = 0.55;
+
+        private void StampStream(List<(double X, double Y)> pts)
+        {
+            for (int k = 1; k < pts.Count; k++)
+            {
+                var a = pts[k - 1]; var b = pts[k];
+                double reach = StreamHalf + 5;
+                int x0 = Math.Max(0, (int)Math.Floor(Math.Min(a.X, b.X) - reach)), x1 = Math.Min(S - 1, (int)Math.Ceiling(Math.Max(a.X, b.X) + reach));
+                int y0 = Math.Max(0, (int)Math.Floor(Math.Min(a.Y, b.Y) - reach)), y1 = Math.Min(S - 1, (int)Math.Ceiling(Math.Max(a.Y, b.Y) + reach));
+                double dx = b.X - a.X, dy = b.Y - a.Y, l2 = dx * dx + dy * dy;
+                for (int y = y0; y <= y1; y++)
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        int i = y * S + x;
+                        if (!HexFrame.Inside[i]) continue;
+                        double px = x + 0.5, py = y + 0.5;
+                        double t = l2 > 0 ? Math.Clamp(((px - a.X) * dx + (py - a.Y) * dy) / l2, 0, 1) : 0;
+                        double ex = a.X + dx * t - px, ey = a.Y + dy * t - py;
+                        double d = Math.Sqrt(ex * ex + ey * ey) - StreamHalf;
+                        if (d < _streamD[i]) _streamD[i] = (float)d;
+                    }
+            }
+        }
+
+        /// <summary>둥근(조금 일그러진) 웅덩이. 축축한 땅이면 둘레가 습지, 오아시스면 둘레가 풀밭.</summary>
+        private void StampPool(double cx, double cy, double r, double moist, bool ring)
+        {
+            int reach = (int)Math.Ceiling(r + 4);
+            int x0 = (int)cx, y0 = (int)cy;
+            bool oasis = _p.Biome[_c] == Biome.Desert;
+            for (int dy = -reach; dy <= reach; dy++)
+                for (int dx = -reach; dx <= reach; dx++)
+                {
+                    int x = x0 + dx, y = y0 + dy;
+                    if ((uint)x >= S || (uint)y >= S) continue;
+                    int i = y * S + x;
+                    if (!HexFrame.Inside[i] || HexFrame.BorderDistance(i) < 6 || _riverD[i] < 0) continue;
+                    double ddx = x + 0.5 - cx, ddy = y + 0.5 - cy;
+                    double d = Math.Sqrt(ddx * ddx + ddy * ddy) * (1 + 0.25 * Noise(_n.Marsh, i, 3, 1, 11.3));
+                    if (d <= r)
+                    {
+                        if (!_water[i] || _waterDepthTiles[i] < r - d) _waterDepthTiles[i] = (float)Math.Max(0.3, r - d);
+                        _water[i] = true;
+                        _m.Flags[i] |= TileFlags.Pool;
+                    }
+                    else if (oasis && d <= r + 4) _poolRing[i] = 2;
+                    else if ((ring || moist > 650) && d <= r + 2.5) _poolRing[i] = 1;
+                }
+        }
+
         // ───────── 5. 오각형의 막힌 변 ─────────
 
         private void Blocked()
@@ -544,7 +782,8 @@ public static class ProvinceGenerator
                 if (d < cliff)
                 {
                     _m.Ground[i] = Ground.Cliff;
-                    _water[i] = false; _riverD[i] = float.MaxValue;
+                    _water[i] = false; _riverD[i] = float.MaxValue; _streamD[i] = float.MaxValue;
+                    _m.Flags[i] &= ~(TileFlags.Pool | TileFlags.Spring);
                     _h[i] += (float)(60 + 120 * (1 - d / cliff));
                 }
             }
@@ -561,6 +800,14 @@ public static class ProvinceGenerator
             {
                 if (!HexFrame.Inside[i] || _m.Ground[i] == Ground.Cliff) continue;
                 if (_riverD[i] < 0) { _water[i] = true; _m.Flags[i] |= TileFlags.River; }
+                else if (_streamD[i] < 0 && !_water[i]) { _water[i] = true; _m.Flags[i] |= TileFlags.Stream; }
+                if (_streamD[i] < 4 && _riverD[i] >= 0)
+                {
+                    // 개울가도 조금 낮게(작은 골짜기). 변 근처에서는 개울이 건너는 곳만 양쪽이 같은 모양이라 그대로.
+                    double fade = Math.Max(Smooth(1, 10, HexFrame.BorderDistance(i)), NearCrossing(i));
+                    _h[i] -= (float)((2 + 12 * _rough[i]) * fade * Smooth(4, -0.5, _streamD[i]));
+                    if (_h[i] < 1) _h[i] = 1;
+                }
                 // 강가는 골짜기로 낮게 (변 근처에서도 양쪽이 같은 모양)
                 if (_riverD[i] < 8)
                 {
@@ -683,6 +930,8 @@ public static class ProvinceGenerator
                 return t < 0 ? Ground.Soil : Ground.Mud;
             }
             if (nearSea && _h[i] < 18 && g2 > -0.4 && t >= 2) return Ground.Sand;
+            if (_poolRing[i] == 1 && t >= 0 && g2 > -0.35) return Ground.Marsh;   // 비가 많은 곳의 웅덩이 둘레는 습지
+            if (_poolRing[i] == 2) return g2 > 0.3 ? Ground.Soil : Ground.Grass;  // 오아시스 둘레는 풀밭
             switch (b)
             {
                 case Biome.Desert:
@@ -755,7 +1004,7 @@ public static class ProvinceGenerator
             {
                 if (!HexFrame.Inside[i]) continue;
                 var g = _m.Ground[i];
-                if (_water[i] || g == Ground.Cliff || GroundInfo.IsWater(g) || _riverD[i] < 1.5) continue;
+                if (_water[i] || g == Ground.Cliff || GroundInfo.IsWater(g) || _riverD[i] < 1.5 || _streamD[i] < 1 || _poolRing[i] != 0) continue;
                 double ro = _rough[i];
                 // 산이 많으면 큰 덩어리, 평야는 작은 무리. 행성 전체의 잡음 · 섞은 거칠기라 이웃 지방과 이어진다.
                 double big = Noise(_n.StoneBig, i, 22, 3), small = Noise(_n.StoneSmall, i, 5, 2);
@@ -789,8 +1038,8 @@ public static class ProvinceGenerator
                 if (d < Crater) rise -= 280 * (1 - d / Crater); // 분화구는 꼭대기에서 오목하게
                 _h[i] += (float)rise;
                 _m.Height[i] = (short)Math.Clamp(Math.Round(_h[i]), -32000, 32000);
-                _water[i] = false; _riverD[i] = float.MaxValue;
-                _m.Flags[i] &= ~TileFlags.River;
+                _water[i] = false; _riverD[i] = float.MaxValue; _streamD[i] = float.MaxValue;
+                _m.Flags[i] &= ~(TileFlags.River | TileFlags.Stream | TileFlags.Pool | TileFlags.Spring);
                 if (d < Crater) _m.Ground[i] = Ground.Crater;
                 else if (d < Cone) _m.Ground[i] = Ground.Stone;
                 else if (_m.Ground[i] != Ground.Stone) _m.Ground[i] = Unit(TileHash(i, 11)) < 0.35 ? Ground.Gravel : Ground.Rock;

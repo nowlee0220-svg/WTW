@@ -309,6 +309,7 @@ public partial class GlobeView : Node3D
         if (_markerLayer is null || _planet is null) return;
         _markerLayer.Visible = Visible;
         if (!Visible) return;
+        UpdateArrows();
         var camDir = _cam.Position.Normalized();
         foreach (var (box, l, c) in _markers)
         {
@@ -323,6 +324,62 @@ public partial class GlobeView : Node3D
         }
     }
 
+    // ───────── (E3b) 언어 지도 · 옮겨 가는 방향 ─────────
+
+    private Dictionary<int, Color> _langColors = new();
+
+    /// <summary>언어 지도: 사람 사는 칸의 색(말의 색, 또는 고른 말이 통하는 정도). 언어 모드일 때만 다시 칠한다.</summary>
+    public void SetLanguageColors(Dictionary<int, Color> colors)
+    {
+        _langColors = colors;
+        if (_mode == MapMode.Language) Recolor();
+    }
+
+    private readonly List<(int From, int To, float Strength)> _moves = new();
+    private readonly List<Line2D> _arrows = new();
+
+    /// <summary>최근에 옮겨 간 방향(칸 → 이웃 칸, 세기 0~1). 지구본 위에 작은 화살표로.</summary>
+    public void SetMoves(IEnumerable<(int From, int To, float Strength)> moves)
+    {
+        _moves.Clear();
+        _moves.AddRange(moves);
+    }
+
+    private void UpdateArrows()
+    {
+        if (_markerLayer is null || _planet is null) return;
+        var camDir = _cam.Position.Normalized();
+        int k = 0;
+        foreach (var (a, b, st) in _moves)
+        {
+            var na = ToGodot(_planet.X[a], _planet.Y[a], _planet.Z[a]);
+            var nb = ToGodot(_planet.X[b], _planet.Y[b], _planet.Z[b]);
+            if (na.Dot(camDir) < 0.2f || nb.Dot(camDir) < 0.2f) continue;
+            var pa = _cam.UnprojectPosition(na * (CellRadius(_planet, a) + 0.012f));
+            var pb = _cam.UnprojectPosition(nb * (CellRadius(_planet, b) + 0.012f));
+            var d = pb - pa;
+            float len = d.Length();
+            if (len < 6) continue;
+            var dir = d / len;
+            var s0 = pa + dir * len * 0.22f;
+            var e0 = pa + dir * len * 0.85f;
+            var side = new Vector2(-dir.Y, dir.X);
+            float head = Math.Clamp(len * 0.22f, 4, 10);
+            if (k == _arrows.Count)
+            {
+                var l = new Line2D { Width = 2.5f, JointMode = Line2D.LineJointMode.Round, BeginCapMode = Line2D.LineCapMode.Round, EndCapMode = Line2D.LineCapMode.Round };
+                _markerLayer.AddChild(l);
+                _arrows.Add(l);
+            }
+            var arrow = _arrows[k++];
+            arrow.Visible = true;
+            arrow.Points = new[] { s0, e0, e0 - dir * head + side * head * 0.6f, e0, e0 - dir * head - side * head * 0.6f };
+            arrow.DefaultColor = new Color(1f, 0.92f, 0.55f, 0.35f + 0.6f * st);
+            arrow.Width = 1.5f + 2.5f * st;
+        }
+        for (int i = k; i < _arrows.Count; i++) _arrows[i].Visible = false;
+    }
+
     private void Recolor()
     {
         var p = _planet;
@@ -330,7 +387,8 @@ public partial class GlobeView : Node3D
         for (int c = 0; c < p.CellCount; c++)
         {
             var col = MapModes.CellColor(p, c, _mode, _resource, _shade);
-            if (p.IsLand(c))
+            if (_mode == MapMode.Language && _langColors.TryGetValue(c, out var lc)) col = new Color(lc.R, lc.G, lc.B, 0.92f);
+            if (p.IsLand(c) && _mode != MapMode.Language)
             {
                 if (_opened.Contains(c)) col = col.Lightened(0.12f);
                 else { float g = col.R * 0.3f + col.G * 0.59f + col.B * 0.11f; col = col.Lerp(new Color(g, g, g, col.A), 0.22f).Darkened(0.12f); }

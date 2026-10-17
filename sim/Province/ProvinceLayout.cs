@@ -34,6 +34,19 @@ public static class ProvinceLayout
         return (((steps % 6) + 6) % 6) switch { 0 => (1, 0), 1 => (0.5, h), 2 => (-0.5, h), 3 => (-1, 0), 4 => (-0.5, -h), _ => (0.5, -h) };
     }
 
+    /// <summary>가운데 칸 center 의 자리(변) slot 너머 이웃의 배치(이웃이 없으면 null). Around 와 같은 셈.</summary>
+    public static Placed? Neighbor(Planet.Planet p, int center, int slot)
+    {
+        var (_, _, slotCell, _) = ProvinceGenerator.Slots(p, center);
+        int nb = slotCell[slot];
+        if (nb < 0) return null;
+        var (_, _, nbSlots, _) = ProvinceGenerator.Slots(p, nb);
+        int m = Array.IndexOf(nbSlots, center);
+        int steps = ((slot - m + 3) % 6 + 6) % 6;
+        double d = 2 * HexFrame.A;
+        return new Placed(nb, slot, HexFrame.NX[slot] * d, HexFrame.NY[slot] * d, steps);
+    }
+
     /// <summary>가운데 칸과 (넣을 것을 고른) 이웃들의 배치. 이웃은 가운데 지방의 자리 순서대로.</summary>
     public static List<Placed> Around(Planet.Planet p, int center, Func<int, bool> include)
     {

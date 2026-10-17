@@ -3,14 +3,14 @@ using Wtw.Sim.Planet;
 
 namespace Wtw.Game;
 
-public enum MapMode { Natural, Elevation, Biome, Temperature, Rain, Resource }
+public enum MapMode { Natural, Elevation, Biome, Temperature, Rain, Resource, Language }
 
 /// <summary>
 /// 지도 모드마다 칸 색과 범례. 화면 쪽 그림 공급(Art)과 같은 역할 — 색은 여기 한 곳에서만 정한다.
 /// </summary>
 public static class MapModes
 {
-    public static readonly MapMode[] All = { MapMode.Natural, MapMode.Elevation, MapMode.Biome, MapMode.Temperature, MapMode.Rain, MapMode.Resource };
+    public static readonly MapMode[] All = { MapMode.Natural, MapMode.Elevation, MapMode.Biome, MapMode.Temperature, MapMode.Rain, MapMode.Resource, MapMode.Language };
 
     public static string Name(MapMode m) => m switch
     {
@@ -19,6 +19,7 @@ public static class MapModes
         MapMode.Biome => "생물군계",
         MapMode.Temperature => "기온",
         MapMode.Rain => "강수",
+        MapMode.Language => "언어",
         _ => "자원",
     };
 
@@ -29,6 +30,7 @@ public static class MapModes
         MapMode.Biome => Key.E,
         MapMode.Temperature => Key.R,
         MapMode.Rain => Key.T,
+        MapMode.Language => Key.U,
         _ => Key.Y,
     };
 
@@ -163,6 +165,10 @@ public static class MapModes
                 col = Ramp(RainStops, p.PrecipMm[c]);
                 if (ocean || lake) col = col.Darkened(0.55f);
                 break;
+            case MapMode.Language:
+                // 사람이 사는 칸은 GlobeView 가 말의 색으로 덮는다. 나머지 땅은 흐린 회색.
+                col = ocean || lake ? Water(p, c).Darkened(0.35f) : C(70, 72, 68);
+                break;
             default:
                 int lv = p.Resource(c, resource);
                 col = ocean || lake ? C(22, 32, 48) : C(62, 64, 60);
@@ -216,10 +222,29 @@ public static class MapModes
                 for (int i = RainStops.Length - 1; i >= 0; i--) l.Add((RainStops[i].C, $"{RainStops[i].V:N0}mm"));
                 l.Add((Colors.Transparent, "(한 해 강수량)"));
                 break;
+            case MapMode.Language:
+                l.Add((Colors.Transparent, "사람이 사는 칸을 그 칸에서 가장 많이 쓰는 말의 색으로"));
+                l.Add((Colors.Transparent, "비슷한 말은 비슷한 색(사투리 = 같은 색의 옅고 짙음)"));
+                l.Add((Colors.Transparent, "사람 사는 칸을 누르면: 그 말이 어디까지 통하나(밝을수록 잘 통함)"));
+                l.Add((C(70, 72, 68), "아무도 살지 않는 땅"));
+                break;
             default:
                 l.Add((C(255, 220, 95), "많음")); l.Add((C(200, 160, 70), "있음")); l.Add((C(62, 64, 60), "없음"));
                 break;
         }
         return l;
+    }
+
+    /// <summary>
+    /// 말의 색: 뿌리(가장 먼 조상 말)마다 다른 빛깔(황금각으로 흩음), 갈라져 나온 말은 같은 빛깔에서 밝기 · 짙기만 조금씩 다르게.
+    /// </summary>
+    public static Color LanguageColor(int root, int id, int depth)
+    {
+        float hue = (root * 0.618034f) % 1f;
+        if (depth == 0) return Color.FromHsv(hue, 0.62f, 0.86f);
+        uint h = (uint)(id * 2654435761u);
+        float v = 0.62f + 0.32f * ((h >> 8) % 7) / 6f;
+        float sat = 0.42f + 0.4f * ((h >> 16) % 5) / 4f;
+        return Color.FromHsv((hue + ((h >> 4) % 5 - 2) * 0.012f + 1f) % 1f, sat, v);
     }
 }

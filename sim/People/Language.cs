@@ -99,6 +99,31 @@ public sealed class Language
     /// <summary>뜻 → 다른 시드(나중에 낱말이 바뀌거나 빌려 오면). 지금은 비어 있다.</summary>
     public readonly SortedDictionary<int, ulong> Overrides = new();
 
+    /// <summary>(E3b) 이 말에서 낱말이 새로 바뀐 횟수(정해진 순서대로 바꾼다).</summary>
+    public int Changes;
+    /// <summary>소리 무게 · 낱말이 바뀔 때마다 하나씩(낱말 기억 열쇠 — 저장 안 함).</summary>
+    public int Version;
+
+    /// <summary>
+    /// (E3b) 낱말 하나를 새로 바꾼다: 이 말만의 순서(시드 + 번호로 정함 — 갈라진 말은 다른 순서)에서 다음 뜻. 같은 낱말이 거듭 바뀔 수도 있다.
+    /// 바뀐 뜻을 돌려준다.
+    /// </summary>
+    public int ReplaceNextWord(IReadOnlyList<ConceptDef> concepts)
+    {
+        int n = concepts.Count;
+        // 순서: (시드, 번호)로 섞은 뜻 목록을 한 바퀴씩
+        int round = Changes / n, pos = Changes % n;
+        var order = new int[n];
+        for (int i = 0; i < n; i++) order[i] = i;
+        var rng = new Pcg32(StableHash.Combine(Seed, (ulong)Id, (ulong)round), 0xC4A6);
+        for (int i = n - 1; i > 0; i--) { int j = rng.NextInt(i + 1); (order[i], order[j]) = (order[j], order[i]); }
+        var c = concepts[order[pos]];
+        Overrides[c.Index] = StableHash.Combine(StableHash.Combine(Seed, (ulong)Id), (ulong)Changes + 1, StableHash.Of(c.Id));
+        Changes++;
+        Version++;
+        return c.Index;
+    }
+
     public ulong WordSeed(ConceptDef c) => Overrides.TryGetValue(c.Index, out var s) ? s : StableHash.Combine(Seed, StableHash.Of(c.Id));
 
     /// <summary>새 말: 소리마다 바탕 무게 × (0~3) — 몇몇 소리는 아예 안 쓴다.</summary>

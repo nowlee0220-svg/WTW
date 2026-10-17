@@ -72,6 +72,8 @@ public sealed class ProvinceLife
     /// 결과에는 영향이 없고(이미 빈 것이 확실한 묶음만 건너뛴다) 저장하지 않는다.
     /// </summary>
     private readonly long[] _foodReady = new long[Buckets * Buckets], _carryReady = new long[Buckets * Buckets];
+    /// <summary>(E3b) 살아 있는 사람이 없어진 시각(−1 = 있음). 잠들기 전 기다림 — 결과에 영향 없음(저장 안 함).</summary>
+    public long EmptySince = -1;
     public int FoodTiles { get; private set; }
     public int DrinkTiles { get; private set; }
     public int CaveTiles { get; private set; }

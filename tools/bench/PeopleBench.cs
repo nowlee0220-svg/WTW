@@ -32,6 +32,11 @@ public static class PeopleBench
             case "seeds": Seeds(I("seeds", 20), I("people", 10), I("years", 50), Sx("passion", "on"), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "cap": Cap(I("people", 500), I("years", 100), (ulong)I("seed", 1), I("per", 25), I("cap", 500)); break;
             case "nosource": NoSource(I("seeds", 20), I("cells", 5), I("people", 5), I("years", 3), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
+            case "water": WaterBench.Run(I("seeds", 20), I("cells", 30), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
+            case "spread": SpreadBench.Run(I("seeds", 20), I("people", 10), I("years", 100), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
+            case "drift": DriftBench.Run(I("langs", 200), Sx("k", "1,2,3,4")); break;
+            case "driftmodel": DriftModel.Run(I("langs", 200), Sx("k", "0.05,0.1,0.2"), Sx("r", "0.02,0.03,0.04"), I("t", 3)); break;
+            case "dialect": DialectBench.Run(I("seeds", 20), I("families", 3), I("years", 500), I("cap", 60), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "one": One(I("people", 10), I("years", 5), (ulong)I("seed", 1), Sx("cell", "home"), o.ContainsKey("family"), I("cap", 300)); break;
             default: Console.WriteLine("모드: seeds | cap | one"); break;
         }
@@ -186,6 +191,14 @@ public static class PeopleBench
         Console.WriteLine($"  죽음: " + string.Join(" · ", Enumerable.Range(1, 6).Select(c => $"{CauseNames[c]} {r.Deaths[c]}")));
         Console.WriteLine($"  메모리(관리 힙): 처음 {mem0 / 1048576.0:0} MB → 가장 클 때 {peakMem / 1048576.0:0} MB · 프로세스 {Process.GetCurrentProcess().PeakWorkingSet64 / 1048576.0:0} MB");
         Console.WriteLine($"  예약 {r.Events:N0} · 판단 {r.Decisions:N0} · 길 찾기 {r.Paths:N0} (실패 {r.PathFails:N0})");
+        if (_lastWorld is { } w)
+        {
+            var st = w.People.Stats;
+            double days = years * GameTime.DaysPerYear;
+            int awake = w.People.Provinces.Count, dormant = w.People.Dormant.Count;
+            Console.WriteLine($"  (E3b) 지방 넘기: 경계를 넘은 사람 {st.Crossings:N0}번(하루 {st.Crossings / days:0.0}번) · 넘겨주기가 일어난 시각 {st.CrossBatches:N0}번(하루 {st.CrossBatches / days:0.00}번) · 잠든 지방이 깨어남 {st.Wakes:N0}번");
+            Console.WriteLine($"  (E3b) 끝에 깨어 있는 지방 {awake}곳 · 잠든 지방 {dormant}곳 · 사람 사는 지방 {w.People.Provinces.Count(kv => kv.Value.People.Exists(q => !q.Dead))}곳 · 지도 기억 {Wtw.Sim.Provinces.ProvinceCache.Count}장 · 말 {w.People.All.Where(q => !q.Dead).Select(q => q.LangId).Distinct().Count()}개 · 이름 붙은 땅 {w.People.LandNames.Count}곳");
+        }
     }
 
     /// <summary>
@@ -193,7 +206,7 @@ public static class PeopleBench
     /// </summary>
     static void NoSource(int seeds, int cells, int people, int years, ulong first, int parallel, string? outPath)
     {
-        var rows = new (ulong Seed, int Spawned, int NoDrinkCells, int NoFoodCells, long[] Deaths, long NoWater, long NoFood, int Alive, long[] How, string Biomes)[seeds];
+        var rows = new (ulong Seed, int Spawned, int NoDrinkCells, int NoFoodCells, long[] Deaths, long NoWater, long NoFood, int Alive, long[] How, string Biomes, int MovedAlive, int NoWaterSpawned, int NoWaterSurvived, long Crossings)[seeds];
         Parallel.For(0, seeds, new ParallelOptions { MaxDegreeOfParallelism = parallel }, k =>
         {
             ulong seed = first + (ulong)k;
@@ -216,10 +229,14 @@ public static class PeopleBench
                 foreach (var (x, y) in spots) w.Apply(new Intervention(0, Intervention.Kinds.SpawnPerson, new long[] { cell, x, y }));
                 spawned += spots.Count;
             }
+            var home = w.People.All.ToDictionary(q => q.Id, q => q.Cell);
+            var dryStart = w.People.All.Where(q => !w.People.Life(q.Cell).HasDrinkFrom(q.Tile(0))).Select(q => q.Id).ToHashSet();
             long end = years * GameTime.TicksPerYear;
             for (long t = 0; t < end; t += GameTime.TicksPerDay) w.AdvanceTo(Math.Min(end, t + GameTime.TicksPerDay));
             var st = w.People.Stats;
-            rows[k] = (seed, spawned, noDrink, noFood, st.Deaths.ToArray(), st.NoWaterDeaths, st.NoFoodDeaths, w.People.AliveCount, st.FindHow.ToArray(), string.Join(", ", biomes));
+            int movedAlive = w.People.All.Count(q => !q.Dead && home.TryGetValue(q.Id, out int hc) && q.Cell != hc);
+            int drySurvived = w.People.All.Count(q => !q.Dead && dryStart.Contains(q.Id));
+            rows[k] = (seed, spawned, noDrink, noFood, st.Deaths.ToArray(), st.NoWaterDeaths, st.NoFoodDeaths, w.People.AliveCount, st.FindHow.ToArray(), string.Join(", ", biomes), movedAlive, dryStart.Count, drySurvived, st.Crossings);
         });
         var sb = new StringBuilder();
         sb.AppendLine($"## 아무 땅에나 뿌림: 시드 {seeds}개 × 땅 칸 {cells}곳(무작위) × {people}명 × {years}년");
@@ -233,6 +250,7 @@ public static class PeopleBench
         sb.AppendLine($"- 모두: 뿌린 사람 {sp}명 · 죽음 {dead}명 — 굶주림 {rows.Sum(r => r.Deaths[1])} · 목마름 {rows.Sum(r => r.Deaths[2])} · 추위 {rows.Sum(r => r.Deaths[3])} · 더위 {rows.Sum(r => r.Deaths[4])} · 늙음 · 병 {rows.Sum(r => r.Deaths[5] + r.Deaths[6])}");
         sb.AppendLine($"- **지방 안(닿을 수 있는 땅)에 물이 없어서 죽은 사람 {rows.Sum(r => r.NoWater)}명 · 먹을 것이 없어서 죽은 사람 {rows.Sum(r => r.NoFood)}명** (뿌린 사람의 {(rows.Sum(r => r.NoWater + r.NoFood)) * 100.0 / Math.Max(1, sp):0.0}%)");
         sb.AppendLine($"- 고른 칸 {seeds * cells}곳 중 물이 없는 칸 {rows.Sum(r => r.NoDrinkCells)} · 먹을 것이 없는 칸 {rows.Sum(r => r.NoFoodCells)}");
+        sb.AppendLine($"- (E3b) **처음 뿌린 사람 중 끝에 다른 지방에서 살아 있는 사람 {rows.Sum(r => r.MovedAlive)}명** · 물 없는 땅에 뿌린 사람 {rows.Sum(r => r.NoWaterSpawned)}명 중 살아 남은 사람 {rows.Sum(r => r.NoWaterSurvived)}명 · 경계를 넘은 횟수 {rows.Sum(r => r.Crossings)}");
         long[] how = new long[4]; foreach (var r in rows) for (int i = 0; i < 4; i++) how[i] += r.How[i];
         long ht = Math.Max(1, how.Sum());
         sb.AppendLine($"- 물 · 먹을 것을 찾아간 방법: 보임 {how[0] * 100 / ht}% · 기억 {how[1] * 100 / ht}% · 남을 따라감 {how[2] * 100 / ht}% · 찾아다님 {how[3] * 100 / ht}%");

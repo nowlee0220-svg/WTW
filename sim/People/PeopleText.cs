@@ -93,7 +93,35 @@ public sealed partial class PeopleSim
             Act.BreakArgue => $"{NameOf(p.Target)}에게 화풀이하는 중",
             Act.BreakLeave => p.Asleep ? "혼자 떠나 잠" : "혼자 떠나 있음",
             Act.EatCorpse => "시신을 먹는 중",
+            Act.Cross => CrossText(p),
             _ => "둘러보는 중",
+        };
+    }
+
+    /// <summary>(E3b) 경계를 넘으러 가는 사람: 어디로 · 무엇 때문에(실제로 고른 까닭 그대로).</summary>
+    private string CrossText(Person p)
+    {
+        var b = BorderOf(p.Cell, p.TargetB);
+        string land = b is null ? "이웃 땅" : LandNameFor(b.Nb, p.LangId)?.Word is { } wd ? $"이웃 땅 '{wd}'" : "이웃 땅";
+        if (!p.Walking) return $"경계를 넘는 중 — {Hangul.Ro(land)}";
+        bool water = p.Why is Why.Thirsty or Why.VeryThirsty, food = p.Why is Why.Hungry or Why.VeryHungry or Why.Starving;
+        if (water || food)
+            return p.How switch
+            {
+                0 => water ? $"경계 너머 보이는 물가로 — {Hangul.Ro(land)} 가는 중" : $"{Hangul.Ro(land)} 먹을 것을 따러 가는 중",
+                1 => water ? $"기억해 둔 물가가 있는 {Hangul.Ro(land)} 가는 중" : $"기억해 둔 열매 자리가 있는 {Hangul.Ro(land)} 가는 중",
+                2 => $"{Hangul.Eul(NameOf(p.HowArg))} 따라 {Hangul.Ro(land)} 가는 중",
+                _ => water ? $"물을 찾아 낮은 쪽, {Hangul.Ro(land)} 가는 중" : $"먹을 것을 찾아 푸른 쪽, {Hangul.Ro(land)} 가는 중",
+            };
+        return p.Why switch
+        {
+            Why.Scarce => $"먹을 것이 모자라 새 땅으로 옮겨 가는 중 — {Hangul.Ro(land)}",
+            Why.SeekMate => $"짝을 찾아 {Hangul.Ro(land)} 가는 중",
+            Why.Explore => $"{Hangul.Eul(land)} 둘러보러 가는 중",
+            Why.GoBack => $"살던 땅으로 돌아가는 중 — {land}",
+            Why.FollowFamily => $"가족을 따라 {Hangul.Ro(land)} 옮겨 가는 중",
+            Why.Break => $"혼자 떠나 {Hangul.Ro(land)} 가는 중",
+            _ => $"{Hangul.Ro(land)} 가는 중",
         };
     }
 
@@ -128,6 +156,11 @@ public sealed partial class PeopleSim
             Why.FamilyNear => "가족 · 친구 곁에서 자려고",
             Why.NoFood => "가 보니 다 따 가고 없어 다른 곳을 찾는다",
             Why.NoWater => "마실 물(민물)이 가까이 없어 찾아다닌다 — 바닷물은 못 마신다",
+            Why.Scarce => "며칠째 둘레에도 기억에도 딸 것이 없어서 — 이 땅의 먹을 것이 모자라다(사람이 많으면 빨리 줄어든다)",
+            Why.SeekMate => "짝이 될 만한 사람이 이 땅에 없어서",
+            Why.Explore => "궁금해서 — 경계 너머 땅이 보고 싶다(호기심)",
+            Why.GoBack => "이 땅에 혼자 남아 쓸쓸해서 — 사람이 있던 땅으로",
+            Why.FollowFamily => p.WhyArg > 0 && Get(p.WhyArg) is { } lead ? $"{Hangul.I(DisplayName(lead))} 떠나서 가족이 함께 간다" : "가족이 이웃 땅에 있어서",
             _ => "",
         } + HowText(p);
     }
@@ -135,6 +168,17 @@ public sealed partial class PeopleSim
     /// <summary>물 · 먹을 것을 어떻게 찾아가는지 덧붙임(실제로 하는 일과 같게).</summary>
     private string HowText(Person p)
     {
+        if (p.Act == Act.Cross && p.Walking && p.Why is Why.Thirsty or Why.VeryThirsty or Why.Hungry or Why.VeryHungry or Why.Starving)
+        {
+            bool wt = p.Why is Why.Thirsty or Why.VeryThirsty;
+            return p.How switch
+            {
+                0 => wt ? " — 이 땅엔 보이는 물가가 없고 경계 너머에 보인다" : "",
+                1 => wt ? " — 이 땅엔 아는 물가가 없어 전에 본 이웃 땅의 물가로" : " — 이 땅엔 아는 열매 자리가 없어 전에 본 이웃 땅으로",
+                2 => " — 아는 곳이 없어 남을 따라 경계를 넘는다",
+                _ => wt ? $" — 이 땅에서 {p.SearchMiss}번 찾아다녀도 물이 없어 이웃 땅으로(물은 낮은 곳에 고인다)" : $" — 이 땅에서 {p.SearchMiss}번 찾아다녀도 딸 것이 없어 이웃 땅으로",
+            };
+        }
         if (p.Act is not (Act.Eat or Act.Drink) || !p.Walking) return "";
         bool water = p.Act == Act.Drink;
         return p.How switch
@@ -174,7 +218,7 @@ public sealed partial class PeopleSim
             Id = p.Id, Cell = p.Cell, Name = DisplayName(p), NameMeaning = NameMeaning(p), Unnamed = p.Name.Length == 0, Female = p.Female, SexName = p.Female ? "여자" : "남자", Age = p.AgeYears(at), Stage = p.Stage(at),
             Alive = !p.Dead, Asleep = p.Asleep, Look = p.Look, Activity = ActivityText(p), Why = WhyText(p),
             Mood = p.Dead ? 0 : Mood(p), BreakThreshold = BreakThreshold(p),
-            Place = $"{PlanetNames.Of(_w.Planet.Biome[p.Cell])} 지방",
+            Place = $"{LandLabelOr(p.Cell, "이름 없는 땅")} · {PlanetNames.Of(_w.Planet.Biome[p.Cell])} 지방",
         };
         c.StageName = PeopleText.StageName(c.Stage, p.Female);
         c.MoodWord = PeopleText.MoodWord(c.Mood);
@@ -250,6 +294,7 @@ public sealed partial class PeopleSim
             int sp = Speakers(p.LangId);
             int acc = p.Accent.Sum(a => Math.Abs(a));
             c.Speech = $"{LanguageLabel(p.LangId)} — 지금 이 말을 쓰는 사람 {sp}명 · 아는 낱말 {lang.Known.Count}개 · 말씨 차이 {acc}";
+            if (lang.Parent >= 0) c.Speech += $" · 갈라져 나온 말(말 {lang.Parent})과 알아듣기 {LanguageUnderstanding(lang.Id, lang.Parent)}%";
             foreach (int k in lang.Known) c.Vocabulary.Add((WordOf(p, k), Lang.Concepts[k].Meaning));
         }
         c.Carry = p.Carry.Count == 0 ? "없음" : string.Join(", ", p.Carry.Select(x => $"{ItemName(x.Item)} {x.Count}"));
@@ -263,7 +308,7 @@ public sealed partial class PeopleSim
         BioKind.Spawned => $"{PlanetNames.Of(_w.Planet.Biome[p.Cell])} 지방에 뿌려졌다 (나이 {b.Param}). 아무것도 모른 채.",
         BioKind.Paired => $"{Hangul.Gwa(NameOf(b.Other))} 짝이 되었다",
         BioKind.ChildBorn => $"아이 {Hangul.I(NameOf(b.Other))} 태어났다",
-        BioKind.Died => $"{PeopleText.CauseName((DeathCause)b.Param)}(으)로 죽었다 (나이 {p.AgeYears(b.Tick)})",
+        BioKind.Died => $"{Hangul.Ro(PeopleText.CauseName((DeathCause)b.Param))} 죽었다 (나이 {p.AgeYears(b.Tick)})",
         BioKind.FamilyDied => $"가족 {Hangul.Eul(NameOf(b.Other))} 잃었다",
         BioKind.PartnerDied => $"짝 {Hangul.Eul(NameOf(b.Other))} 잃었다",
         BioKind.Break => b.Param switch { 1 => "무너져 화풀이를 했다", 2 => "무너져 혼자 떠났다", _ => "무너져 울며 헤맸다" },
@@ -275,6 +320,29 @@ public sealed partial class PeopleSim
         BioKind.Named => b.Param >= 0 ? $"{NameOf(b.Other)}의 말로 {Hangul.J("'" + p.Name + "'", "이라는", "라는")} 이름을 얻었다 — {NameOf(b.Param)}의 이름을 물려받음" : $"{Hangul.I(NameOf(b.Other))} 자기 말로 {Hangul.J("'" + p.Name + "'", "이라고", "라고")} 부르기 시작했다 (뜻: {string.Join(" ", p.NameConcepts.Where(x => (uint)x < Lang.Concepts.Count).Select(x => Lang.Concepts[x].Meaning))})",
         BioKind.LearnedSpeech => $"{NameOf(b.Other)}의 말을 배워 쓰기 시작했다",
         BioKind.FoundWater => "물가를 찾아냈다",
+        BioKind.Moved => MovedLine(p, b),
+        BioKind.NamedLand => LandNames.TryGetValue(b.Param, out var ln) && ln.Find(n => n.Namer == p.Id) is { } mine
+            ? $"머물던 땅을 {Hangul.Rago($"'{mine.Word}'")} 부르기 시작했다 (뜻: {LandMeaning(mine)} — {mine.Reason})" : "머물던 땅에 이름을 붙였다",
         _ => "",
     };
+
+    /// <summary>(E3b) "물을 찾아 이웃 땅 '타레'로 옮겨 갔다" — Other = 간 곳, Param = 까닭(Why) | 떠난 곳 &lt;&lt; 8.</summary>
+    private string MovedLine(Person p, BioEntry b)
+    {
+        var why = (Why)(b.Param & 0xFF);
+        string phrase = why switch
+        {
+            Why.Scarce => "먹을 것이 모자라",
+            Why.SeekMate => "짝을 찾아",
+            Why.Explore => "궁금해서",
+            Why.GoBack => "혼자 남아 쓸쓸해서",
+            Why.FollowFamily => "가족을 따라",
+            Why.Break => "무너져 혼자",
+            Why.Thirsty or Why.VeryThirsty => "물을 찾아",
+            Why.Hungry or Why.VeryHungry or Why.Starving => "먹을 것을 찾아",
+            _ => "",
+        };
+        string land = LandNameFor(b.Other, p.LangId)?.Word is { } w ? $"이웃 땅 '{w}'" : "이웃 땅";
+        return (phrase.Length > 0 ? phrase + " " : "") + $"{Hangul.Ro(land)} 옮겨 갔다";
+    }
 }

@@ -86,12 +86,15 @@ public partial class CellPanel : PanelContainer
         _whyToggle.Text = _whyOpen ? "자세히 보기 ▲" : "자세히 보기 ▼";
     }
 
-    public void ShowCell(Planet p, int c)
+    public void ShowCell(Planet p, int c, IEnumerable<(string Label, string Value)>? extra = null, string? title = null)
     {
         var r = CellDescriber.Describe(p, c);
         _enter.Visible = p.IsLand(c);
         _whyAvailable = true;
-        Fill(r.Title, r.Subtitle, r.Facts, r.Why);
+        var facts = new List<(string, string)>();
+        if (extra is not null) facts.AddRange(extra); // (E3b) 땅 이름 · 사는 사람 · 말 — 맨 앞에
+        facts.AddRange(r.Facts);
+        Fill(title ?? r.Title, r.Subtitle, facts, r.Why);
     }
 
     /// <summary>지방 화면의 타일 · 오브젝트 자세히(같은 자리).</summary>
