@@ -111,6 +111,7 @@ public sealed class AutoPilot
                 case "--card": _cardTab = int.Parse(v); break;
                 case "--hoverperson": _hoverPerson = true; break;
                 case "--follow": _follow = true; break;
+                case "--focustalk": _focusTalk = true; break;
                 case "--untilhour": _untilHour = int.Parse(v); break;
                 case "--globeafter": _globeAfter = double.Parse(v, inv); break;
                 case "--waitdays": _waitDays = double.Parse(v, inv); break;
@@ -383,6 +384,13 @@ public sealed class AutoPilot
                 if (adult < 0 && v.Stage >= Wtw.Sim.People.LifeStage.Adult && v.Carrier < 0) adult = v.Id;
             }
             int target = adult >= 0 ? adult : first;
+            if (_focusTalk)
+            {
+                int talker = -1;
+                for (int i = 0; i < snap.PeopleCount; i++) if (snap.People[i].Talking && snap.People[i].Say.Length > 0 && snap.People[i].Cell == pv.Center) { talker = snap.People[i].Id; break; }
+                if (talker < 0) { _peopleReady = false; return; } // 이야기하는 사람이 생길 때까지 기다린다
+                target = talker;
+            }
             if (_enter == "cave")
             {
                 // 동굴 안에 있는 사람을 화면 가운데로
@@ -424,6 +432,7 @@ public sealed class AutoPilot
     }
 
     private int _hoverTarget = -1;
+    private bool _focusTalk;
     private bool _cave;
     private int _speedAfter = 1;
 

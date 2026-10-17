@@ -71,7 +71,7 @@ public partial class Main : Node
         _map = new MapView { Visible = false }; // E0 의 점 시험 화면 — 개발용(F12)
         AddChild(_map);
 
-        var ui = new CanvasLayer();
+        var ui = new CanvasLayer { Layer = 2 }; // 지도 위 이름표 · 말풍선(층 1)보다 위
         AddChild(ui);
         _hud = new Hud { Theme = theme, Visible = false };
         ui.AddChild(_hud);

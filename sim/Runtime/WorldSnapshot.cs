@@ -85,7 +85,16 @@ public sealed class WorldSnapshot
             for (int i = 0; i < arr.Length; i++) arr[i] = i < People.Length ? People[i] : new PersonView();
             People = arr;
         }
-        for (int i = 0; i < PeopleCount; i++) People[i].Fill(all[i], w.Now);
+        for (int i = 0; i < PeopleCount; i++)
+        {
+            var p = all[i];
+            var v = People[i];
+            v.Fill(p, w.Now);
+            v.Name = w.People.DisplayName(p);
+            v.Named = p.Name.Length > 0;
+            if (v.Talking && p.TalkConcept >= 0) { v.Say = w.People.WordOf(p, p.TalkConcept); v.SayMeaning = w.People.Lang.Concepts[p.TalkConcept].Meaning; }
+            else { v.Say = ""; v.SayMeaning = ""; }
+        }
         var counts = new List<(int, int)>();
         var opened = new List<int>();
         foreach (var (cell, life) in w.People.Provinces)
@@ -128,7 +137,9 @@ public sealed class PersonView
     public int Id, Cell, Carrier, AgeYears;
     public long DeathTick;
     public string Name = "";
-    public bool Dead, Female, Asleep, Walking, Breaking, Talking, Eaten;
+    public bool Dead, Female, Asleep, Walking, Breaking, Talking, Eaten, Named;
+    /// <summary>말풍선: 그 사람의 말로 된 낱말과 뜻(이야기할 때만).</summary>
+    public string Say = "", SayMeaning = "";
     public LifeStage Stage;
     public Act Act;
     public Appearance Look;
@@ -137,7 +148,7 @@ public sealed class PersonView
 
     internal void Fill(Person p, long now)
     {
-        Id = p.Id; Cell = p.Cell; Carrier = p.Carrier; Name = p.Name;
+        Id = p.Id; Cell = p.Cell; Carrier = p.Carrier;
         DeathTick = p.DeathTick;
         Dead = p.Dead; Female = p.Female; Asleep = p.Asleep; Walking = p.Walking; Eaten = p.Eaten;
         long at = p.Dead ? p.DeathTick : now;

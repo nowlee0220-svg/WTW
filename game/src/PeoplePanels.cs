@@ -61,6 +61,7 @@ public partial class PersonHoverCard : PanelContainer
         box.AddThemeConstantOverride("separation", 1);
         _row.AddChild(box);
         box.AddChild(PeopleUi.L($"{c.Name}  ·  {c.StageName} {c.Age}살", UiTheme.FontSizeSmall + 3, UiTheme.Accent, bold: true));
+        box.AddChild(PeopleUi.L(c.Unnamed ? "아직 이름이 없다 — 생김새로 부른다" : $"이름의 뜻: {c.NameMeaning}", UiTheme.FontSizeSmall - 1, UiTheme.TextDim));
         box.AddChild(PeopleUi.L(c.Activity));
         if (c.Alive) box.AddChild(PeopleUi.L($"기분 {c.Mood} ({c.MoodWord})", UiTheme.FontSizeSmall, PeopleUi.MoodColor(c.Mood)));
         box.AddChild(PeopleUi.L("누르면 큰 카드", UiTheme.FontSizeSmall - 1, UiTheme.TextDim));
@@ -88,7 +89,7 @@ public partial class PersonHoverCard : PanelContainer
 /// </summary>
 public partial class PersonCardPanel : PanelContainer
 {
-    public const int Width = 500;
+    public const int Width = 440;
     public event Action? CloseRequested;
     public event Action<int>? FollowRequested;
     public event Action<int>? PersonRequested;
@@ -150,7 +151,8 @@ public partial class PersonCardPanel : PanelContainer
         _head.AddChild(PeopleUi.Face(c.Look, c.Female, c.Stage, 88));
         var hb = new VBoxContainer();
         _head.AddChild(hb);
-        hb.AddChild(PeopleUi.L(c.Name, UiTheme.FontSizeBig + 2, UiTheme.Accent, bold: true));
+        hb.AddChild(PeopleUi.L(c.Name, UiTheme.FontSizeBig + 2, UiTheme.Accent, bold: true, wrap: true));
+        hb.AddChild(PeopleUi.L(c.Unnamed ? "아직 이름이 없다 — 생김새로 부른다(함께 지내는 사람이 생기면 그 말로 이름을 지어 준다)" : $"이름의 뜻: {c.NameMeaning}", UiTheme.FontSizeSmall - 1, UiTheme.TextDim, wrap: true));
         hb.AddChild(PeopleUi.L($"{c.StageName} · {c.Age}살 · {c.Place}", UiTheme.FontSizeSmall + 1, UiTheme.TextDim));
         hb.AddChild(c.Alive ? PeopleUi.L($"기분 {c.Mood} — {c.MoodWord}", UiTheme.FontSizeSmall + 2, PeopleUi.MoodColor(c.Mood), bold: true) : PeopleUi.L("죽음", UiTheme.FontSizeSmall + 2, new Color(0.7f, 0.7f, 0.7f), bold: true));
         _follow.Disabled = !c.Alive;
@@ -172,6 +174,7 @@ public partial class PersonCardPanel : PanelContainer
         }
         p.AddChild(PeopleUi.L($"특성: {string.Join(" · ", c.Traits.Select(t => t.Name))}", wrap: true));
         p.AddChild(PeopleUi.L($"들고 있는 것: {c.Carry}", wrap: true));
+        if (c.Speech.Length > 0) p.AddChild(PeopleUi.L($"말: {c.Speech}", UiTheme.FontSizeSmall, UiTheme.TextDim, wrap: true));
         foreach (var r in c.Relations.Where(r => r.Kind is "짝" or "어머니" or "아버지").Take(3)) p.AddChild(PeopleUi.L($"{r.Kind}: {r.Name}{(r.Alive ? "" : " (죽음)")}", wrap: true));
 
         // ② 능력
@@ -249,14 +252,26 @@ public partial class PersonCardPanel : PanelContainer
             b.Pressed += () => PersonRequested?.Invoke(id);
             row.AddChild(b);
             row.AddChild(PeopleUi.L(r.Kind, UiTheme.FontSizeSmall + 1, UiTheme.Accent)); row.GetChild<Label>(1).CustomMinimumSize = new Vector2(70, 0);
-            row.AddChild(PeopleUi.L($"호감 {r.Opinion:+0;−0;0}" + (r.Grudge > 0 ? $" · 원한 {r.Grudge}" : "") + (r.Favor > 0 ? $" · 은혜 {r.Favor}" : ""), UiTheme.FontSizeSmall, r.Opinion >= 30 ? new Color(0.6f, 0.9f, 0.55f) : r.Opinion <= -20 || r.Grudge >= 20 ? new Color(1f, 0.55f, 0.45f) : UiTheme.TextDim, wrap: true));
+            row.AddChild(PeopleUi.L($"호감 {r.Opinion:+0;−0;0}" + (r.Grudge > 0 ? $" · 원한 {r.Grudge}" : "") + (r.Favor > 0 ? $" · 은혜 {r.Favor}" : "") + $" · 알아듣기 {r.Understand}%", UiTheme.FontSizeSmall, r.Opinion >= 30 ? new Color(0.6f, 0.9f, 0.55f) : r.Opinion <= -20 || r.Grudge >= 20 ? new Color(1f, 0.55f, 0.45f) : UiTheme.TextDim, wrap: true));
             p.AddChild(row);
         }
 
         // ⑥ 지식
         p = _pages[5]; Clear(p);
-        p.AddChild(PeopleUi.L("아직 아는 것이 없다.", UiTheme.FontSizeSmall + 3, null, bold: true));
+        p.AddChild(PeopleUi.L("만드는 법(조합식): 아직 아는 것이 없다.", UiTheme.FontSizeSmall + 2, null, bold: true, wrap: true));
         p.AddChild(PeopleUi.L("뿌려진 사람은 아무것도 모른다. 불 · 도구 · 토기 같은 조합식은 실험으로 알아내고(다음 단계), 가르치고 배워 퍼진다.", UiTheme.FontSizeSmall, UiTheme.TextDim, wrap: true));
+        p.AddChild(new HSeparator());
+        p.AddChild(PeopleUi.L("아는 낱말 (이 사람의 말 — 왼쪽이 그 말, 오른쪽이 뜻)", UiTheme.FontSizeSmall + 1, UiTheme.Accent, bold: true, wrap: true));
+        if (c.Speech.Length > 0) p.AddChild(PeopleUi.L(c.Speech, UiTheme.FontSizeSmall, UiTheme.TextDim, wrap: true));
+        var grid = new GridContainer { Columns = 4 };
+        grid.AddThemeConstantOverride("h_separation", 12);
+        foreach (var (word, meaning) in c.Vocabulary)
+        {
+            grid.AddChild(PeopleUi.L(word, UiTheme.FontSizeSmall + 1, null, bold: true));
+            grid.AddChild(PeopleUi.L(meaning, UiTheme.FontSizeSmall, UiTheme.TextDim));
+        }
+        p.AddChild(grid);
+        p.AddChild(PeopleUi.L("새로 알게 된 것에 낱말이 생기는 것은 다음 단계부터. 문법은 없고 소리와 낱말만 있다.", UiTheme.FontSizeSmall - 1, UiTheme.TextDim, wrap: true));
 
         // ⑦ 이야기
         p = _pages[6]; Clear(p);
@@ -268,12 +283,12 @@ public partial class PersonCardPanel : PanelContainer
 /// <summary>지방 화면의 사람 목록(이름 · 나이 · 지금 하는 일). 누르면 그 사람으로. 제목을 누르면 접힌다.</summary>
 public partial class PeopleListPanel : PanelContainer
 {
-    public const int Width = 420;
+    public const int Width = 360;
     public event Action<int>? PersonPicked;
     private Button _head = null!;
     private ScrollContainer _scroll = null!;
     private VBoxContainer _rows = null!;
-    private bool _collapsed;
+    private bool _collapsed = true; // 처음엔 접힌 채로(제목만)
     private string _sig = "";
 
     public override void _Ready()
@@ -291,11 +306,12 @@ public partial class PeopleListPanel : PanelContainer
         _head.AddThemeColorOverride("font_color", UiTheme.Accent);
         _head.Pressed += () => { _collapsed = !_collapsed; _scroll.Visible = !_collapsed; OffsetBottom = OffsetTop + (_collapsed ? 50 : 380); };
         box.AddChild(_head);
-        _scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, SizeFlagsVertical = SizeFlags.ExpandFill };
+        _scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, SizeFlagsVertical = SizeFlags.ExpandFill, Visible = false };
         box.AddChild(_scroll);
         _rows = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _rows.AddThemeConstantOverride("separation", 2);
         _scroll.AddChild(_rows);
+        OffsetBottom = OffsetTop + 50;
     }
 
     public void Fill(List<PersonRow> rows)

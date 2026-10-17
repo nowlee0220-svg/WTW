@@ -30,8 +30,30 @@ public partial class ProvinceView : Node2D
         public required ProvinceMap Map;
         public required Node2D Node;
         public required ShaderMaterial Ground;
-        public required MultiMeshInstance2D Objects;
+        public required ObjectSet Objects;
         public int[]? RevealedTiles;
+    }
+
+    /// <summary>
+    /// 한 지방의 오브젝트 그림. 낮은 것(돌 · 바닥)은 지방 노드 안에 한 덩어리, 키 큰 것(나무 · 덤불 · 풀)은 한 타일 높이 줄마다 나눠
+    /// 사람과 같은 앞뒤 정렬(YSort) 안에 둔다 → 나무 뒤를 지나는 사람은 가려지고, 앞을 지나면 나무를 가린다.
+    /// 사람 바로 앞의 키 큰 것은 반쯤 투명하게(숲에 묻히지 않게) — 그러려고 세상 좌표의 발 위치를 칸 묶음으로 기억한다.
+    /// </summary>
+    private sealed class ObjectSet
+    {
+        public required ShaderMaterial Mat;
+        public required MultiMeshInstance2D Flat;
+        public readonly List<MultiMeshInstance2D> Rows = new();
+        public readonly List<(MultiMesh Mm, int Index, Color Base, Vector2 Feet, float Height, float HalfW)> Tall = new();
+        public readonly Dictionary<long, List<int>> Hash = new();
+        public static long Key(int cx, int cy) => ((long)cx << 32) ^ (uint)cy;
+    }
+
+    private void FreeObjects(ObjectSet set)
+    {
+        set.Flat.GetParent()?.RemoveChild(set.Flat); set.Flat.QueueFree();
+        foreach (var r in set.Rows) { r.GetParent()?.RemoveChild(r); r.QueueFree(); }
+        set.Rows.Clear();
     }
 
     private Planet? _planet;
@@ -142,6 +164,8 @@ public partial class ProvinceView : Node2D
         _selected = _follow = -1;
         foreach (var n in _pool) n.Root.Visible = false;
         _selRing.Visible = false;
+        foreach (var m in _markers) m.Visible = false;
+        _overlay.Visible = false;
         _spawnTool = 0;
     }
 
@@ -162,8 +186,9 @@ public partial class ProvinceView : Node2D
 
     private void ClearShown()
     {
-        foreach (var s in _shown) { _world.RemoveChild(s.Node); s.Node.QueueFree(); }
+        foreach (var s in _shown) { FreeObjects(s.Objects); _world.RemoveChild(s.Node); s.Node.QueueFree(); }
         _shown.Clear();
+        _faded.Clear();
         foreach (var n in _labels.GetChildren()) { _labels.RemoveChild(n); n.QueueFree(); }
     }
 
@@ -247,8 +272,7 @@ public partial class ProvinceView : Node2D
         mat.SetShaderParameter("tile_px", TilePx);
         node.AddChild(new MeshInstance2D { Mesh = _hexMesh, Material = mat, TextureFilter = TextureFilterEnum.Linear });
 
-        var objects = BuildObjects(pl, m, node.Rotation);
-        node.AddChild(objects);
+        var objects = BuildObjects(pl, m, node);
         return new Shown { Place = pl, Map = m, Node = node, Ground = mat, Objects = objects };
     }
 
@@ -290,10 +314,9 @@ public partial class ProvinceView : Node2D
         foreach (var sh in _shown)
         {
             sh.Ground.SetShaderParameter("res_view", on ? 1f : 0f);
-            sh.Node.RemoveChild(sh.Objects);
-            sh.Objects.QueueFree();
-            sh.Objects = BuildObjects(sh.Place, sh.Map, sh.Node.Rotation);
-            sh.Node.AddChild(sh.Objects);
+            FreeObjects(sh.Objects);
+            _faded.Clear();
+            sh.Objects = BuildObjects(sh.Place, sh.Map, sh.Node);
         }
     }
 
@@ -354,30 +377,22 @@ public partial class ProvinceView : Node2D
         }
     }
 
-    private MultiMeshInstance2D BuildObjects(ProvinceLayout.Placed pl, ProvinceMap m, float rotation)
+    private ObjectSet BuildObjects(ProvinceLayout.Placed pl, ProvinceMap m, Node2D node)
     {
+        float rotation = node.Rotation;
+        var nodeXf = new Transform2D(rotation, node.Position);
         var sprites = Art.ObjectSprites;
-        var list = new List<(float SortY, int Tile)>();
+        var mat = new ShaderMaterial { Shader = _objectShader };
+        int atlasRows = Art.ObjectAtlas.GetHeight() / Art.AtlasCell;
+        mat.SetShaderParameter("atlas", Art.ObjectAtlas);
+        mat.SetShaderParameter("grid", new Vector2(Art.AtlasCols, atlasRows));
+        var unrotate = Transform2D.Identity.Rotated(-rotation);
+        // 오브젝트마다: 지방 안 변환 · 색 · 그림 칸
+        var flat = new List<(float SortY, Transform2D T, Color C, Color D)>();
+        var tall = new SortedDictionary<int, List<(float SortY, Transform2D T, Color C, Color D, float H, float HalfW)>>();
         for (int i = 0; i < HexFrame.TileCount; i++)
         {
             if (m.Object[i] == 0) continue;
-            var (_, ly) = pl.ToLayout(i % HexFrame.Size + 0.5, i / HexFrame.Size + 0.5);
-            list.Add(((float)ly, i));
-        }
-        list.Sort((a, b) => a.SortY != b.SortY ? a.SortY.CompareTo(b.SortY) : a.Tile.CompareTo(b.Tile)); // 아래쪽이 나중(앞)에
-        var mm = new MultiMesh
-        {
-            TransformFormat = MultiMesh.TransformFormatEnum.Transform2D,
-            UseColors = true,
-            UseCustomData = true,
-            Mesh = _spriteMesh,
-            InstanceCount = list.Count,
-        };
-        var unrotate = Transform2D.Identity.Rotated(-rotation);
-        int atlasRows = Art.ObjectAtlas.GetHeight() / Art.AtlasCell;
-        for (int k = 0; k < list.Count; k++)
-        {
-            int i = list[k].Tile;
             int o = m.Object[i] - 1;
             var sp = sprites[o];
             int v = m.Variant[i];
@@ -390,17 +405,48 @@ public partial class ProvinceView : Node2D
             var feet = sp.Upright ? new Vector2(0, 0.3f * TilePx) : new Vector2(0, 0.5f * scale);
             var basis = unrotate * Transform2D.Identity.Scaled(new Vector2(flip ? -scale : scale, scale));
             var t = new Transform2D(basis.X, basis.Y, local + unrotate.BasisXform(feet));
-            mm.SetInstanceTransform2D(k, t);
             float tint = 0.9f + 0.2f * ((v >> 3) & 7) / 7f;
             var col = new Color(tint, tint, tint * 0.97f, 1);
             if (_resView) col = Art.IsResourceObject(o) ? new Color(1.25f, 1.2f, 1.1f, 1) : new Color(0.35f, 0.35f, 0.35f, 0.3f);
-            mm.SetInstanceColor(k, col);
-            mm.SetInstanceCustomData(k, new Color(cell % Art.AtlasCols, cell / Art.AtlasCols, sp.Sway, (i * 0.618f) % 6.283f));
+            var data = new Color(cell % Art.AtlasCols, cell / Art.AtlasCols, sp.Sway, (i * 0.618f) % 6.283f);
+            if (sp.Upright && sp.Sway > 0)
+            {
+                var w = nodeXf * t; // 세상 좌표(사람과 같은 자리)
+                int row = Mathf.FloorToInt(w.Origin.Y / TilePx);
+                if (!tall.TryGetValue(row, out var lst)) tall[row] = lst = new();
+                lst.Add((w.Origin.Y, w, col, data, scale * 0.85f, scale * 0.32f));
+            }
+            else flat.Add(((float)pl.ToLayout(i % HexFrame.Size + 0.5, i / HexFrame.Size + 0.5).Y, t, col, data));
         }
-        var mat = new ShaderMaterial { Shader = _objectShader };
-        mat.SetShaderParameter("atlas", Art.ObjectAtlas);
-        mat.SetShaderParameter("grid", new Vector2(Art.AtlasCols, atlasRows));
-        return new MultiMeshInstance2D { Multimesh = mm, Material = mat, ZIndex = 1 };
+        flat.Sort((a, b) => a.SortY.CompareTo(b.SortY));
+        MultiMesh NewMm(int n) => new() { TransformFormat = MultiMesh.TransformFormatEnum.Transform2D, UseColors = true, UseCustomData = true, Mesh = _spriteMesh, InstanceCount = n };
+        var fm = NewMm(flat.Count);
+        for (int k = 0; k < flat.Count; k++) { fm.SetInstanceTransform2D(k, flat[k].T); fm.SetInstanceColor(k, flat[k].C); fm.SetInstanceCustomData(k, flat[k].D); }
+        var flatNode = new MultiMeshInstance2D { Multimesh = fm, Material = mat, ZIndex = 1 };
+        node.AddChild(flatNode);
+        var set = new ObjectSet { Mat = mat, Flat = flatNode };
+        foreach (var (row, lst) in tall)
+        {
+            lst.Sort((a, b) => a.SortY.CompareTo(b.SortY));
+            var mm = NewMm(lst.Count);
+            var origin = new Vector2(0, row * TilePx);
+            for (int k = 0; k < lst.Count; k++)
+            {
+                var (_, w, col, data, h, hw) = lst[k];
+                mm.SetInstanceTransform2D(k, new Transform2D(w.X, w.Y, w.Origin - origin));
+                mm.SetInstanceColor(k, col);
+                mm.SetInstanceCustomData(k, data);
+                int idx = set.Tall.Count;
+                set.Tall.Add((mm, k, col, w.Origin, h, hw));
+                long key = ObjectSet.Key(Mathf.FloorToInt(w.Origin.X / (2 * TilePx)), Mathf.FloorToInt(w.Origin.Y / (2 * TilePx)));
+                if (!set.Hash.TryGetValue(key, out var hl)) set.Hash[key] = hl = new();
+                hl.Add(idx);
+            }
+            var rn = new MultiMeshInstance2D { Multimesh = mm, Material = mat, Position = origin };
+            _peopleRoot.AddChild(rn);
+            set.Rows.Add(rn);
+        }
+        return set;
     }
 
     private static ArrayMesh MakeHexMesh()
@@ -543,7 +589,7 @@ public partial class ProvinceView : Node2D
             var tint = DaylightTint(ProvinceReport.SunAltitude(lat, h));
             var v = new Vector3(tint.R, tint.G, tint.B);
             sh.Ground.SetShaderParameter("daylight", v);
-            (sh.Objects.Material as ShaderMaterial)?.SetShaderParameter("daylight", v);
+            sh.Objects.Mat.SetShaderParameter("daylight", v);
         }
     }
 

@@ -10,14 +10,14 @@ namespace Wtw.Game;
 /// </summary>
 public partial class ProvinceInfoPanel : PanelContainer
 {
-    public const int Width = 420;
+    public const int Width = 340;
 
     private Button _head = null!;
     private ScrollContainer _scroll = null!;
     private VBoxContainer _rows = null!;
     private readonly List<(Label Label, Label Value, Label More, Label Why)> _lines = new();
     private readonly HashSet<string> _open = new();
-    private bool _collapsed;
+    private bool _collapsed = true; // 처음엔 접어 둔다(제목만) — 지도를 넓게
 
     public bool Collapsed => _collapsed;
 
@@ -63,10 +63,10 @@ public partial class ProvinceInfoPanel : PanelContainer
             {
                 var row = new HBoxContainer { MouseFilter = MouseFilterEnum.Stop, TooltipText = "눌러서 이유 보기 · 접기", MouseDefaultCursorShape = CursorShape.PointingHand };
                 row.AddThemeConstantOverride("separation", 8);
-                var l = new Label { Text = f.Label, CustomMinimumSize = new Vector2(104, 0), VerticalAlignment = VerticalAlignment.Top, MouseFilter = MouseFilterEnum.Ignore };
+                var l = new Label { Text = f.Label, CustomMinimumSize = new Vector2(92, 0), VerticalAlignment = VerticalAlignment.Top, MouseFilter = MouseFilterEnum.Ignore };
                 l.AddThemeColorOverride("font_color", UiTheme.TextDim);
                 l.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeSmall + 1);
-                var v = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(Width - 104 - 76, 0), MouseFilter = MouseFilterEnum.Ignore };
+                var v = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(Width - 92 - 64, 0), MouseFilter = MouseFilterEnum.Ignore };
                 v.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeSmall + 1);
                 var more = new Label { MouseFilter = MouseFilterEnum.Ignore, VerticalAlignment = VerticalAlignment.Top };
                 more.AddThemeColorOverride("font_color", UiTheme.Accent.Darkened(0.1f));

@@ -53,6 +53,130 @@ public partial class ProvinceView
         for (int k = 0; k < 24; k++) pts[k] = new Vector2(Mathf.Cos(k * Mathf.Tau / 24) * 0.55f, Mathf.Sin(k * Mathf.Tau / 24) * 0.22f) * TilePx;
         _selRing.Points = pts;
         AddChild(_selRing);
+        _markerRoot = new Node2D { ZIndex = 4 };
+        AddChild(_markerRoot);
+        _overlay = new CanvasLayer { Layer = 1, Visible = false };
+        AddChild(_overlay);
+        _overlayRoot = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
+        _overlayRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _overlay.AddChild(_overlayRoot);
+    }
+
+    // ── 숲에서도 보이게: 발밑 표시 · 앞을 가리는 나무 반투명 · 가까이 보면 이름표 · 말풍선 ──
+    private Node2D _markerRoot = null!;
+    private CanvasLayer _overlay = null!;
+    private Control _overlayRoot = null!;
+    private readonly List<Sprite2D> _markers = new();
+    private readonly List<Label> _nameLabels = new();
+    private readonly List<Label> _bubbles = new();
+    private readonly HashSet<(ObjectSet Set, int Index)> _faded = new();
+    private readonly HashSet<(ObjectSet Set, int Index)> _fadeNow = new();
+    public const float NameZoom = 0.9f, BubbleZoom = 0.45f;
+
+    private void UpdateVisibilityAids()
+    {
+        _overlay.Visible = IsOpen;
+        var xf = GetViewport().GetCanvasTransform();
+        int mk = 0, nl = 0, bb = 0;
+        _fadeNow.Clear();
+        foreach (var n in _pool)
+        {
+            if (!n.Visible || n.Id < 0 || !_indexOfId.TryGetValue(n.Id, out int vi)) continue;
+            var v = _snap!.People[vi];
+            bool carried = v.Carrier >= 0 && !v.Dead;
+            if (!v.Dead && !carried)
+            {
+                // 발밑 표시(나무 위에도 보이게 맨 위 층에)
+                if (mk == _markers.Count) { var m = new Sprite2D { Texture = Art.FootMarker, Material = _premul }; _markerRoot.AddChild(m); _markers.Add(m); }
+                var mark = _markers[mk++];
+                mark.Visible = true;
+                mark.Position = n.Feet;
+                mark.Scale = Vector2.One * (TilePx / 64f) * (v.Stage == Wtw.Sim.People.LifeStage.Child ? 0.75f : 1f);
+                mark.Modulate = v.Id == _selected ? new Color(1f, 0.85f, 0.3f, 0.95f) : v.Breaking ? new Color(0.6f, 0.65f, 1f, 0.85f) : new Color(1f, 1f, 1f, 0.7f);
+                // 앞을 가리는 키 큰 것들을 반투명하게
+                FadeAround(n.Feet, v.Stage == Wtw.Sim.People.LifeStage.Child ? 0.7f : 1f);
+            }
+            var screen = xf * n.Feet;
+            // 이름표(가까이 볼 때)
+            if (_zoom >= NameZoom && !carried)
+            {
+                if (nl == _nameLabels.Count) _nameLabels.Add(NewOverlayLabel(false));
+                var l = _nameLabels[nl++];
+                l.Text = v.Dead ? v.Name + " †" : v.Name;
+                l.Modulate = new Color(1, 1, 1, v.Dead ? 0.55f : 0.92f);
+                l.ResetSize();
+                l.Position = screen + new Vector2(-l.Size.X / 2, 6);
+                l.Visible = true;
+            }
+            // 말풍선: 그 말의 낱말(마우스를 올리면 뜻)
+            if (_zoom >= BubbleZoom && v.Say.Length > 0)
+            {
+                if (bb == _bubbles.Count) _bubbles.Add(NewOverlayLabel(true));
+                var b = _bubbles[bb++];
+                b.Text = v.Say;
+                b.TooltipText = $"뜻: {v.SayMeaning}  ({v.Name}의 말)";
+                b.ResetSize();
+                b.Position = screen + new Vector2(0.15f * TilePx * _zoom, -Art.PersonTiles * TilePx * _zoom - b.Size.Y - 2);
+                b.Visible = true;
+                n.Icon.Visible = n.Icon.Visible && n.Icon.Texture != Art.TalkBubble;
+            }
+        }
+        for (int k = mk; k < _markers.Count; k++) _markers[k].Visible = false;
+        for (int k = nl; k < _nameLabels.Count; k++) _nameLabels[k].Visible = false;
+        for (int k = bb; k < _bubbles.Count; k++) _bubbles[k].Visible = false;
+        // 반투명 바꾸기: 새로 가리는 것만 흐리게, 더는 안 가리는 것은 되돌린다
+        foreach (var f in _faded) if (!_fadeNow.Contains(f)) { var t = f.Set.Tall[f.Index]; t.Mm.SetInstanceColor(t.Index, t.Base); }
+        foreach (var f in _fadeNow) if (!_faded.Contains(f)) { var t = f.Set.Tall[f.Index]; var c = t.Base; c.A *= 0.32f; t.Mm.SetInstanceColor(t.Index, c); }
+        _faded.Clear();
+        foreach (var f in _fadeNow) _faded.Add(f);
+    }
+
+    /// <summary>사람(발 = feet) 앞에 서서 몸을 가리는 키 큰 오브젝트를 찾는다.</summary>
+    private void FadeAround(Vector2 feet, float size)
+    {
+        float bodyH = Art.PersonTiles * TilePx * size;
+        foreach (var sh in _shown)
+        {
+            var set = sh.Objects;
+            int cx0 = Mathf.FloorToInt((feet.X - 2 * TilePx) / (2 * TilePx)), cx1 = Mathf.FloorToInt((feet.X + 2 * TilePx) / (2 * TilePx));
+            int cy0 = Mathf.FloorToInt(feet.Y / (2 * TilePx)), cy1 = Mathf.FloorToInt((feet.Y + 4 * TilePx) / (2 * TilePx));
+            for (int cy = cy0; cy <= cy1; cy++)
+                for (int cx = cx0; cx <= cx1; cx++)
+                {
+                    if (!set.Hash.TryGetValue(ObjectSet.Key(cx, cy), out var list)) continue;
+                    foreach (int idx in list)
+                    {
+                        var t = set.Tall[idx];
+                        float dy = t.Feet.Y - feet.Y;
+                        if (dy <= 0 || dy > t.Height) continue;                 // 사람보다 뒤(위)거나 너무 앞
+                        if (Math.Abs(t.Feet.X - feet.X) > t.HalfW + 0.3f * TilePx) continue;
+                        if (t.Height - dy < 0.15f * bodyH) continue;            // 그림 꼭대기가 사람 발 근처까지 안 옴
+                        _fadeNow.Add((set, idx));
+                    }
+                }
+        }
+    }
+
+    private Label NewOverlayLabel(bool bubble)
+    {
+        var l = new Label { MouseFilter = bubble ? Control.MouseFilterEnum.Stop : Control.MouseFilterEnum.Ignore };
+        l.AddThemeFontOverride("font", bubble ? UiTheme.Bold : UiTheme.Regular);
+        l.AddThemeFontSizeOverride("font_size", bubble ? UiTheme.FontSizeSmall + 1 : UiTheme.FontSizeSmall - 1);
+        if (bubble)
+        {
+            l.AddThemeColorOverride("font_color", new Color(0.12f, 0.1f, 0.08f));
+            var box = UiTheme.Box(new Color(1f, 0.98f, 0.9f, 0.95f), 8, 7, 2);
+            box.BorderColor = new Color(0.15f, 0.12f, 0.1f); box.SetBorderWidthAll(1);
+            l.AddThemeStyleboxOverride("normal", box);
+        }
+        else
+        {
+            l.AddThemeColorOverride("font_color", Colors.White);
+            l.AddThemeColorOverride("font_outline_color", new Color(0, 0, 0, 0.85f));
+            l.AddThemeConstantOverride("outline_size", 5);
+        }
+        _overlayRoot.AddChild(l);
+        return l;
     }
 
     public void SetSpawnTool(int tool) { _spawnTool = tool; if (tool != 0) SetHoverPerson(-1); }
@@ -87,7 +211,14 @@ public partial class ProvinceView
     private void SetPeopleInner(WorldSnapshot snap, double tick)
     {
         _snap = snap; _peopleTick = tick;
-        if (!IsOpen || _shown.Count == 0) { foreach (var n in _pool) n.Root.Visible = false; _selRing.Visible = false; return; }
+        if (!IsOpen || _shown.Count == 0)
+        {
+            foreach (var n in _pool) n.Root.Visible = false;
+            _selRing.Visible = false;
+            foreach (var m in _markers) m.Visible = false;
+            _overlay.Visible = false;
+            return;
+        }
         ApplyRevealed(snap);
         _indexOfId.Clear();
         for (int i = 0; i < snap.PeopleCount; i++) _indexOfId[snap.People[i].Id] = i;
@@ -124,6 +255,7 @@ public partial class ProvinceView
         }
         else _selRing.Visible = false;
         if (_follow >= 0 && _byId.TryGetValue(_follow, out var fo) && fo.Visible && !_dragging) _cam.Position = _cam.Position.Lerp(fo.Feet - new Vector2(0, 0.8f * TilePx), 0.25f);
+        UpdateVisibilityAids();
         _ = used;
     }
 

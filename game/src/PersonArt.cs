@@ -230,7 +230,22 @@ public static partial class Art
         s.Circle(14, 16, 8, b); s.Line(22, 16, 54, 16, 4, b); s.Line(30, 8, 30, 24, 3, b); s.Line(40, 9, 40, 23, 3, b);
     });
 
-    private static ImageTexture? _marker;
+    private static ImageTexture? _marker, _foot;
+    /// <summary>발밑 표시(숲에서도 사람을 찾을 수 있게): 밝은 타원 고리.</summary>
+    public static Texture2D FootMarker => _foot ??= Make(64, 28, s =>
+    {
+        void Ring(float rx, float ry, float w, Color c)
+        {
+            const int n = 40;
+            for (int k = 0; k < n; k++)
+            {
+                float a0 = k * Mathf.Tau / n, a1 = (k + 1) * Mathf.Tau / n;
+                s.Line(32 + Mathf.Cos(a0) * rx, 14 + Mathf.Sin(a0) * ry, 32 + Mathf.Cos(a1) * rx, 14 + Mathf.Sin(a1) * ry, w, c);
+            }
+        }
+        Ring(23, 9, 5.5f, new Color(0, 0, 0, 0.5f));
+        Ring(23, 9, 2.8f, new Color(1, 1, 1, 1));
+    });
     /// <summary>지구본의 "사람이 사는 칸" 표시.</summary>
     public static Texture2D PeopleMarker => _marker ??= Make(44, 52, s =>
     {
