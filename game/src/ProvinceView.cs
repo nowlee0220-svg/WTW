@@ -140,6 +140,23 @@ public partial class ProvinceView : Node2D
         Load(keepCamera: false);
     }
 
+    /// <summary>(E3b) 땅 이름(없으면 null) — 가장자리 이름에 쓴다. Main 이 스냅샷에서.</summary>
+    public Func<int, string?>? LandName { get; set; }
+
+    /// <summary>
+    /// (E3b) 가운데 지방을 바꾼다(따라가던 사람이 경계를 넘었을 때). 확대는 그대로, 카메라는 다 그린 뒤 그 사람에게 바로 붙는다.
+    /// 이웃 지방은 맞댄 변이 가운데를 보도록 돌려 놓으므로, 새 가운데 지방은 돌아가 있지 않은 모습으로 바뀐다.
+    /// </summary>
+    public void Recenter(int cell)
+    {
+        if (_planet is null || _center < 0 || cell == _center) return;
+        _center = cell;
+        _snapToFollow = true;
+        Load(keepCamera: true);
+    }
+
+    private bool _snapToFollow;
+
     public void SetNeighbors(bool on)
     {
         if (_planet is null || _center < 0 || on == _neighbors) return;
@@ -508,7 +525,7 @@ public partial class ProvinceView : Node2D
         for (int s = 0; s < 6; s++)
         {
             int nb = slots[s];
-            string text = nb < 0 ? "막힌 쪽 — 절벽" : $"{TileDescriber.Direction(s)}: {TileDescriber.ProvinceName(p, nb)}";
+            string text = nb < 0 ? "막힌 쪽 — 절벽" : $"{TileDescriber.Direction(s)}: {(LandName?.Invoke(nb) is { } ln ? ln + " · " : "")}{TileDescriber.ProvinceName(p, nb)}";
             bool shownNb = ring && _shown.Any(x => x.Map.Cell == nb);
             // 이 지방만: 변 바로 바깥. 이웃까지: 보이는 이웃은 그 지방 바깥쪽 끝, 안 보이는 쪽(바다)은 변 바로 바깥
             double d = shownNb ? HexFrame.A * 3 + 6 : HexFrame.A + 8;

@@ -15,6 +15,8 @@ public partial class ProvinceView
     public event Action<int>? PersonHover;     // 사람 번호(−1 = 없음)
     public event Action<int>? PersonClicked;
     public event Action<int, int, int, bool>? SpawnClicked; // 칸, x, y, 가족인가
+    /// <summary>(E3b) 따라가던 사람이 가운데 지방 밖으로 넘어갔다(새 칸).</summary>
+    public event Action<int>? FollowCrossed;
 
     private sealed class PersonNode
     {
@@ -157,6 +159,53 @@ public partial class ProvinceView
         }
     }
 
+    // ── (E3b) 경계를 넘는 사람 표시: 밝은 범위 밖으로 나가면 가장자리에 "○○가 국경을 넘어감", 밖에서 들어오면 다른 테두리로 ──
+    private long _crossSeenTick = long.MinValue, _crossSeenEpoch = -1;
+    private int _crossSeenCount;
+    private readonly List<(Label L, Vector2 World, double Born)> _crossLabels = new();
+
+    private void UpdateCrossLabels(WorldSnapshot snap)
+    {
+        double now = Time.GetTicksMsec() / 1000.0;
+        if (snap.Epoch != _crossSeenEpoch) { _crossSeenEpoch = snap.Epoch; _crossSeenTick = snap.RecentCrossings.Length > 0 ? snap.RecentCrossings[^1].Tick : long.MinValue; _crossSeenCount = 0; }
+        int sameTick = 0;
+        foreach (var cr in snap.RecentCrossings)
+        {
+            if (cr.Tick < _crossSeenTick) continue;
+            if (cr.Tick == _crossSeenTick) { if (++sameTick <= _crossSeenCount) continue; }
+            Shown? from = null, to = null;
+            foreach (var s0 in _shown) { if (s0.Map.Cell == cr.From) from = s0; if (s0.Map.Cell == cr.To) to = s0; }
+            if (from is null == to is null) continue; // 둘 다 보이면(이웃까지) 사람이 그대로 보이고, 둘 다 안 보이면 상관없음
+            string name = _indexOfId.TryGetValue(cr.Person, out int vi) ? snap.People[vi].Name : "누군가";
+            bool leaving = from is not null;
+            var sh = leaving ? from! : to!;
+            int tile = leaving ? cr.FromTile : cr.ToTile;
+            var (lx, ly) = sh.Place.ToLayout(tile % HexFrame.Size + 0.5, tile / HexFrame.Size + 0.5);
+            string where = LandName?.Invoke(leaving ? cr.To : cr.From) is { } ln ? ln.Split('(')[0] : "이웃 땅";
+            var l = NewOverlayLabel(true);
+            l.MouseFilter = Control.MouseFilterEnum.Ignore;
+            l.Text = leaving ? $"{Hangul.I(name)} 국경을 넘어감 → {where}" : $"{Hangul.I(name)} 들어옴 ← {where}";
+            if (!leaving) { var box = UiTheme.Box(new Color(0.85f, 0.93f, 1f, 0.95f), 8, 7, 2); box.BorderColor = new Color(0.2f, 0.45f, 0.85f); box.SetBorderWidthAll(2); l.AddThemeStyleboxOverride("normal", box); }
+            _crossLabels.Add((l, new Vector2((float)lx, (float)ly) * TilePx, now));
+        }
+        if (snap.RecentCrossings.Length > 0)
+        {
+            long last = snap.RecentCrossings[^1].Tick;
+            int cnt = 0; foreach (var cr in snap.RecentCrossings) if (cr.Tick == last) cnt++;
+            if (last != _crossSeenTick) { _crossSeenTick = last; _crossSeenCount = cnt; } else _crossSeenCount = cnt;
+        }
+        var xf = GetViewport().GetCanvasTransform();
+        for (int i = _crossLabels.Count - 1; i >= 0; i--)
+        {
+            var (l, wpos, born) = _crossLabels[i];
+            double age = now - born;
+            if (age > 5 || !IsOpen) { l.QueueFree(); _crossLabels.RemoveAt(i); continue; }
+            l.ResetSize();
+            l.Position = xf * wpos + new Vector2(-l.Size.X / 2, -l.Size.Y - 18 - (float)age * 6);
+            l.Modulate = new Color(1, 1, 1, (float)Math.Min(1, (5 - age) / 1.5));
+        }
+    }
+
     private Label NewOverlayLabel(bool bubble)
     {
         var l = new Label { MouseFilter = bubble ? Control.MouseFilterEnum.Stop : Control.MouseFilterEnum.Ignore };
@@ -254,7 +303,16 @@ public partial class ProvinceView
             _selRing.Width = Math.Max(2f, 2.5f / _zoom);
         }
         else _selRing.Visible = false;
-        if (_follow >= 0 && _byId.TryGetValue(_follow, out var fo) && fo.Visible && !_dragging) _cam.Position = _cam.Position.Lerp(fo.Feet - new Vector2(0, 0.8f * TilePx), 0.25f);
+        if (_follow >= 0 && _byId.TryGetValue(_follow, out var fo) && fo.Visible && !_dragging)
+        {
+            var goal = fo.Feet - new Vector2(0, 0.8f * TilePx);
+            _cam.Position = _snapToFollow ? goal : _cam.Position.Lerp(goal, 0.25f);
+            _snapToFollow = false;
+        }
+        // (E3b) 따라가던 사람이 경계를 넘으면 밝은 범위도 그 지방으로
+        if (_follow >= 0 && _loading is null && _indexOfId.TryGetValue(_follow, out int fi) && snap.People[fi].Cell != _center && !snap.People[fi].Dead)
+            FollowCrossed?.Invoke(snap.People[fi].Cell);
+        UpdateCrossLabels(snap);
         UpdateVisibilityAids();
         _ = used;
     }

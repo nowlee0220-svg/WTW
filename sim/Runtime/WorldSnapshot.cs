@@ -40,6 +40,22 @@ public sealed class WorldSnapshot
     /// <summary>사람이 들어가 걷힌 타일(칸 → 타일 번호들). 바뀔 때만 새 배열.</summary>
     public Dictionary<int, int[]> Revealed = new();
 
+    // ── (E3b) 지방 넘기 · 지명 · 말 ──
+    /// <summary>최근에 경계를 넘은 일(오래된 것부터). 바뀔 때만 새 배열.</summary>
+    public Crossing[] RecentCrossings = Array.Empty<Crossing>();
+    /// <summary>땅 이름(칸 → 이름들, 처음 이름이 맨 앞). 바뀔 때만 새 사전.</summary>
+    public Dictionary<int, LandNameView[]> LandNames = new();
+    /// <summary>사람 사는 칸마다 가장 많이 쓰는 말과 그 말을 쓰는 사람 수, 그 칸 사람 수(칸 번호 순).</summary>
+    public (int Cell, int LangId, int Speakers, int Alive)[] CellLanguages = Array.Empty<(int, int, int, int)>();
+    /// <summary>지금 쓰이는 말들(사본 — 화면이 낱말 · 알아듣기를 셈할 수 있게). 바뀔 때만 새 배열.</summary>
+    public LanguageView[] Languages = Array.Empty<LanguageView>();
+    private long _langSig = -1, _nameSig = -1;
+
+    /// <summary>"타레(빠른 물)" — 이름이 없으면 null.</summary>
+    public string? LandLabel(int cell) => LandNames.TryGetValue(cell, out var l) && l.Length > 0 ? $"{l[0].Word}({l[0].Meaning})" : null;
+
+    public LanguageView? LanguageOf(int id) { foreach (var l in Languages) if (l.Id == id) return l; return null; }
+
     internal void Fill(GameWorld w, long epoch, double daysPerSecond, double load)
     {
         if (epoch != Epoch) Revealed = new();
@@ -106,11 +122,71 @@ public sealed class WorldSnapshot
         }
         foreach (var (cell, life) in w.People.Provinces)
             if (life.Revealed.Count > 0 && (!Revealed.TryGetValue(cell, out var old) || old.Length != life.Revealed.Count)) Revealed[cell] = life.Revealed.ToArray();
+        foreach (var (cell, d) in w.People.Dormant)
+            if (d.People.Count > 0 && !opened.Contains(cell)) opened.Add(cell);
+        opened.Sort();
+        foreach (var (cell, d) in w.People.Dormant)
+            if (d.Revealed.Length > 0 && (!Revealed.TryGetValue(cell, out var old) || old.Length != d.Revealed.Length)) Revealed[cell] = d.Revealed.ToArray();
         CellPeople = counts.ToArray();
         OpenedCells = opened.ToArray();
+        FillLanguages(w);
         var ev = w.People.Events;
         int n = Math.Min(30, ev.Count);
         if (RecentEvents.Length != n || (n > 0 && RecentEvents[^1].Seq != ev[^1].Seq)) RecentEvents = ev.Skip(ev.Count - n).ToArray();
+    }
+
+    private void FillLanguages(GameWorld w)
+    {
+        var ps = w.People;
+        var cr = ps.Crossings;
+        if (RecentCrossings.Length != cr.Count || (cr.Count > 0 && !RecentCrossings[^1].Equals(cr[^1]))) RecentCrossings = cr.ToArray();
+        // 땅 이름: 이름 수가 바뀔 때만
+        long nsig = 0; foreach (var (c, l) in ps.LandNames) nsig += c * 31 + l.Count;
+        if (nsig != _nameSig)
+        {
+            _nameSig = nsig;
+            var d = new Dictionary<int, LandNameView[]>();
+            foreach (var (c, l) in ps.LandNames)
+                d[c] = l.Select(n => new LandNameView(n.LangId, n.Word, ps.LandMeaning(n), n.Reason, n.Tick, ps.DisplayName(ps.Get(n.Namer)))).ToArray();
+            LandNames = d;
+        }
+        // 칸마다 가장 많이 쓰는 말
+        var cl = new List<(int, int, int, int)>();
+        var live = new SortedDictionary<int, int>();
+        foreach (var (cell, life) in ps.Provinces)
+        {
+            var cnt = new SortedDictionary<int, int>();
+            int alive = 0;
+            foreach (var p in life.People)
+            {
+                if (p.Dead) continue;
+                alive++;
+                cnt[p.LangId] = cnt.GetValueOrDefault(p.LangId) + 1;
+                live[p.LangId] = live.GetValueOrDefault(p.LangId) + 1;
+            }
+            if (alive == 0) continue;
+            var top = cnt.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key).First();
+            cl.Add((cell, top.Key, top.Value, alive));
+        }
+        CellLanguages = cl.ToArray();
+        long sig = live.Count;
+        foreach (var (id, n) in live) if (ps.Languages.TryGetValue(id, out var l)) sig = sig * 1_000_003 + id * 7919 + l.Version * 31 + n;
+        if (sig != _langSig)
+        {
+            _langSig = sig;
+            var arr = new List<LanguageView>();
+            foreach (var (id, n) in live)
+            {
+                if (!ps.Languages.TryGetValue(id, out var l)) continue;
+                var copy = new Language { Id = l.Id, Seed = l.Seed, Parent = l.Parent, Born = l.Born, Length = l.Length, Sounds = (int[])l.Sounds.Clone(), Changes = l.Changes };
+                foreach (int k in l.Known) copy.Known.Add(k);
+                foreach (var (k, v) in l.Overrides) copy.Overrides[k] = v;
+                int depth = 0; int cur = l.Parent;
+                while (cur >= 0 && ps.Languages.TryGetValue(cur, out var par) && depth < 1000) { depth++; cur = par.Parent; }
+                arr.Add(new LanguageView(id, l.Parent, ps.RootLanguage(id), depth, n, copy, ps.LanguageLabel(id)));
+            }
+            Languages = arr.ToArray();
+        }
     }
 
     /// <summary>점 i 의 tick 시점 위치(밀리타일, 실수). 출발이 tick 이하인 가장 최근 구간을 쓴다.</summary>
@@ -128,6 +204,28 @@ public sealed class WorldSnapshot
             }
         }
         x = y = 0;
+    }
+}
+
+/// <summary>땅 이름 하나(화면용 사본).</summary>
+public sealed record LandNameView(int LangId, string Word, string Meaning, string Reason, long Tick, string Namer);
+
+/// <summary>말 하나(화면용 사본): 번호 · 갈라져 나온 말 · 뿌리 · 몇 번 갈라졌나 · 쓰는 사람 수 · 말 자체(낱말 셈용 사본) · 이름.</summary>
+public sealed record LanguageView(int Id, int Parent, int Root, int Depth, int Speakers, Language Lang, string Label)
+{
+    /// <summary>다른 말과 얼마나 통하나(0~100) — 시뮬의 LanguageUnderstanding 과 같은 셈(말씨 없이).</summary>
+    public int Understanding(LanguageView other)
+    {
+        if (other.Id == Id) return 100;
+        var d = LanguageData.Default;
+        int sum = 0, n = 0;
+        foreach (var c in d.Concepts)
+        {
+            if (!c.Base) continue;
+            sum += Words.Similarity(Words.Word(Lang, null, c, d), Words.Word(other.Lang, null, c, d));
+            n++;
+        }
+        return n == 0 ? 0 : sum / n;
     }
 }
 

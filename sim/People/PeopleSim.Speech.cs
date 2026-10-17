@@ -211,7 +211,7 @@ public sealed partial class PeopleSim
     // ───────── 말이 닮아 감 ─────────
 
     /// <summary>이야기 한 번: 같은 말이면 말씨가 서로 닮아 가고, 다른 말이면 여러 번 뒤에 적은 쪽이 많은 쪽 말을 배운다. 그다음 이름이 없으면 지어 부른다.</summary>
-    private void Converge(Person p, Person q, Pcg32 rng)
+    internal void Converge(Person p, Person q, Pcg32 rng)
     {
         if (p.LangId == q.LangId)
         {

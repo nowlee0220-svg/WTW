@@ -218,7 +218,7 @@ public sealed partial class PeopleSim
             Id = p.Id, Cell = p.Cell, Name = DisplayName(p), NameMeaning = NameMeaning(p), Unnamed = p.Name.Length == 0, Female = p.Female, SexName = p.Female ? "여자" : "남자", Age = p.AgeYears(at), Stage = p.Stage(at),
             Alive = !p.Dead, Asleep = p.Asleep, Look = p.Look, Activity = ActivityText(p), Why = WhyText(p),
             Mood = p.Dead ? 0 : Mood(p), BreakThreshold = BreakThreshold(p),
-            Place = $"{PlanetNames.Of(_w.Planet.Biome[p.Cell])} 지방",
+            Place = $"{LandLabelOr(p.Cell, "이름 없는 땅")} · {PlanetNames.Of(_w.Planet.Biome[p.Cell])} 지방",
         };
         c.StageName = PeopleText.StageName(c.Stage, p.Female);
         c.MoodWord = PeopleText.MoodWord(c.Mood);
@@ -294,6 +294,7 @@ public sealed partial class PeopleSim
             int sp = Speakers(p.LangId);
             int acc = p.Accent.Sum(a => Math.Abs(a));
             c.Speech = $"{LanguageLabel(p.LangId)} — 지금 이 말을 쓰는 사람 {sp}명 · 아는 낱말 {lang.Known.Count}개 · 말씨 차이 {acc}";
+            if (lang.Parent >= 0) c.Speech += $" · 갈라져 나온 말(말 {lang.Parent})과 알아듣기 {LanguageUnderstanding(lang.Id, lang.Parent)}%";
             foreach (int k in lang.Known) c.Vocabulary.Add((WordOf(p, k), Lang.Concepts[k].Meaning));
         }
         c.Carry = p.Carry.Count == 0 ? "없음" : string.Join(", ", p.Carry.Select(x => $"{ItemName(x.Item)} {x.Count}"));
@@ -307,7 +308,7 @@ public sealed partial class PeopleSim
         BioKind.Spawned => $"{PlanetNames.Of(_w.Planet.Biome[p.Cell])} 지방에 뿌려졌다 (나이 {b.Param}). 아무것도 모른 채.",
         BioKind.Paired => $"{Hangul.Gwa(NameOf(b.Other))} 짝이 되었다",
         BioKind.ChildBorn => $"아이 {Hangul.I(NameOf(b.Other))} 태어났다",
-        BioKind.Died => $"{PeopleText.CauseName((DeathCause)b.Param)}(으)로 죽었다 (나이 {p.AgeYears(b.Tick)})",
+        BioKind.Died => $"{Hangul.Ro(PeopleText.CauseName((DeathCause)b.Param))} 죽었다 (나이 {p.AgeYears(b.Tick)})",
         BioKind.FamilyDied => $"가족 {Hangul.Eul(NameOf(b.Other))} 잃었다",
         BioKind.PartnerDied => $"짝 {Hangul.Eul(NameOf(b.Other))} 잃었다",
         BioKind.Break => b.Param switch { 1 => "무너져 화풀이를 했다", 2 => "무너져 혼자 떠났다", _ => "무너져 울며 헤맸다" },
@@ -319,6 +320,29 @@ public sealed partial class PeopleSim
         BioKind.Named => b.Param >= 0 ? $"{NameOf(b.Other)}의 말로 {Hangul.J("'" + p.Name + "'", "이라는", "라는")} 이름을 얻었다 — {NameOf(b.Param)}의 이름을 물려받음" : $"{Hangul.I(NameOf(b.Other))} 자기 말로 {Hangul.J("'" + p.Name + "'", "이라고", "라고")} 부르기 시작했다 (뜻: {string.Join(" ", p.NameConcepts.Where(x => (uint)x < Lang.Concepts.Count).Select(x => Lang.Concepts[x].Meaning))})",
         BioKind.LearnedSpeech => $"{NameOf(b.Other)}의 말을 배워 쓰기 시작했다",
         BioKind.FoundWater => "물가를 찾아냈다",
+        BioKind.Moved => MovedLine(p, b),
+        BioKind.NamedLand => LandNames.TryGetValue(b.Param, out var ln) && ln.Find(n => n.Namer == p.Id) is { } mine
+            ? $"머물던 땅을 {Hangul.Rago($"'{mine.Word}'")} 부르기 시작했다 (뜻: {LandMeaning(mine)} — {mine.Reason})" : "머물던 땅에 이름을 붙였다",
         _ => "",
     };
+
+    /// <summary>(E3b) "물을 찾아 이웃 땅 '타레'로 옮겨 갔다" — Other = 간 곳, Param = 까닭(Why) | 떠난 곳 &lt;&lt; 8.</summary>
+    private string MovedLine(Person p, BioEntry b)
+    {
+        var why = (Why)(b.Param & 0xFF);
+        string phrase = why switch
+        {
+            Why.Scarce => "먹을 것이 모자라",
+            Why.SeekMate => "짝을 찾아",
+            Why.Explore => "궁금해서",
+            Why.GoBack => "혼자 남아 쓸쓸해서",
+            Why.FollowFamily => "가족을 따라",
+            Why.Break => "무너져 혼자",
+            Why.Thirsty or Why.VeryThirsty => "물을 찾아",
+            Why.Hungry or Why.VeryHungry or Why.Starving => "먹을 것을 찾아",
+            _ => "",
+        };
+        string land = LandNameFor(b.Other, p.LangId)?.Word is { } w ? $"이웃 땅 '{w}'" : "이웃 땅";
+        return (phrase.Length > 0 ? phrase + " " : "") + $"{Hangul.Ro(land)} 옮겨 갔다";
+    }
 }

@@ -228,7 +228,7 @@ public sealed partial class PeopleSim
         p.SearchDir = b.InDir8;
         Stats.Crossings++;
         if (p.Why is Why.Scarce or Why.SeekMate or Why.Explore or Why.NoWater or Why.NoFood or Why.FollowFamily or Why.Break || !VisitedBefore(p, b.Nb))
-            AddBio(p, BioKind.Moved, from.Cell, (int)p.Why);
+            AddBio(p, BioKind.Moved, b.Nb, (int)p.Why | (from.Cell << 8));
         Crossings.Add(new Crossing(Now, p.Id, from.Cell, b.Nb, b.Slot, fromTile, entry, p.Why));
         if (Crossings.Count > CrossingsKept) Crossings.RemoveRange(0, Crossings.Count - CrossingsKept);
         _lastLife = null;

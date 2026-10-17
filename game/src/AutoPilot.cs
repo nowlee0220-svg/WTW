@@ -22,6 +22,9 @@ namespace Wtw.Game;
 ///   --card=0~6  첫 사람의 큰 카드를 그 슬롯으로   --hoverperson  첫 어른에 마우스   --follow  첫 사람 따라가기
 ///   --untilhour=H  4배속으로 돌리다 그 지방 시각 H시가 되면 1배속(밤 · 잠 확인)   --globeafter=초  그 시간 뒤 지구본으로 나와 사람 사는 칸을 본다
 ///   --waitdays=D  뿌린 뒤 D 일을 5배속으로 돌린 다음 찍는다
+///   (E3b) --prerun=Y  세계를 만들 때 따뜻한 땅에 가족 K 집(--prefamilies=K, 기본 3)을 뿌리고 Y 년을 미리 돌린다(화면 없이 — 퍼져 나간 모습 · 지명 · 말)
+///         --select=home  그 땅 칸을 고른다   --mode=lang  언어 지도   --enter=dry  물이 없고 이웃에 물이 있는 땅   --enter=spring  샘 · 개울이 있는 땅
+///         --focus=spring|stream|pool  그것을 화면 가운데로   --waitcross  누가 경계를 넘으러 가면 따라가고, 넘은 뒤 찍는다
 /// 프레임 시간 통계(평균 fps, 가장 긴 프레임)도 출력한다.
 /// </summary>
 public sealed class AutoPilot
@@ -47,6 +50,11 @@ public sealed class AutoPilot
     private int _families = 2;
     private bool _hoverPerson, _follow, _spawned, _peopleReady;
     private double? _globeAfter, _waitDays;
+    public int? PreRunYears;
+    public int PreFamilies = 3, PreHomes = 1;
+    private bool _waitCross;
+    private int _crossTarget = -1, _crossFrom = -1;
+    private double _sinceCross = -1;
     private double _sincePeople;
     private long _spawnTick;
     private bool _globeDone;
@@ -86,7 +94,7 @@ public sealed class AutoPilot
                 case "--land": Land = int.Parse(v); break;
                 case "--climate": Climate = v switch { "cold" => ClimateBias.Cold, "warm" => ClimateBias.Warm, _ => ClimateBias.Normal }; break;
                 case "--mode":
-                    Mode = v switch { "elev" => MapMode.Elevation, "biome" => MapMode.Biome, "temp" => MapMode.Temperature, "rain" => MapMode.Rain, "res" => MapMode.Resource, _ => MapMode.Natural };
+                    Mode = v switch { "elev" => MapMode.Elevation, "biome" => MapMode.Biome, "temp" => MapMode.Temperature, "rain" => MapMode.Rain, "res" => MapMode.Resource, "lang" => MapMode.Language, _ => MapMode.Natural };
                     break;
                 case "--res": Resource = Array.IndexOf(ResourceKinds.Ids, v) is int r && r >= 0 ? r : null; break;
                 case "--newworld": StayOnNewWorld = true; break;
@@ -115,6 +123,10 @@ public sealed class AutoPilot
                 case "--untilhour": _untilHour = int.Parse(v); break;
                 case "--globeafter": _globeAfter = double.Parse(v, inv); break;
                 case "--waitdays": _waitDays = double.Parse(v, inv); break;
+                case "--prerun": PreRunYears = int.Parse(v); break;
+                case "--prefamilies": PreFamilies = int.Parse(v); break;
+                case "--prehomes": PreHomes = int.Parse(v); break;
+                case "--waitcross": _waitCross = true; break;
             }
         }
     }
@@ -161,6 +173,7 @@ public sealed class AutoPilot
                 if (score > best) { best = score; cell = c; }
             }
         }
+        else if (_select == "home") cell = Wtw.Sim.People.PeopleSamples.Home(p);
         else cell = int.TryParse(_select, out int sc) ? sc : ProvinceSamples.Find(p, _select!);
         g.LookAtCell(cell, _zoom ?? 1.7f);
         g.Select(cell);
@@ -182,6 +195,8 @@ public sealed class AutoPilot
                 "home" => Wtw.Sim.People.PeopleSamples.Home(p),
                 "cold" => Wtw.Sim.People.PeopleSamples.Cold(p),
                 "cave" => CaveCell(p),
+                "dry" => DryCell(p),
+                "spring" => SpringCell(p),
                 _ => ProvinceSamples.Find(p, _enter),
             };
             if (cell < 0) { Finish(false, $"AUTOPILOT: {_enter} 칸이 없음"); return; }
@@ -203,7 +218,7 @@ public sealed class AutoPilot
             _maxFrame = Math.Max(_maxFrame, delta);
             _frameTimes.Add(delta);
         }
-        if (_elapsed > 120) { Finish(false, "AUTOPILOT 시간 초과 (세계가 만들어지지 않음?)"); return; }
+        if (_elapsed > (PreRunYears is int pr ? 120 + pr * 6 : 120) && !_ready) { Finish(false, "AUTOPILOT 시간 초과 (세계가 만들어지지 않음?)"); return; }
         if (_selftest) { if (_ready && snap is not null) { if (_people is not null && !_spawned) { if (_provinceReady) PeopleSteps(delta, snap); } else SelfTest(delta, snap); } }
         else if (_people is not null) { if (_provinceReady) PeopleSteps(delta, snap); }
 
@@ -284,6 +299,9 @@ public sealed class AutoPilot
             case "cave": FindTile(i => (m.Flags[i] & TileFlags.Roof) != 0); break;
             case "mouth": FindTile(i => (m.Flags[i] & TileFlags.Roof) != 0 && !m.IsHidden(i)); break;
             case "gravel": FindTile(i => m.Ground[i] == Ground.Gravel); break;
+            case "spring": FindTile(i => (m.Flags[i] & TileFlags.Spring) != 0); break;
+            case "stream": FindTile(i => (m.Flags[i] & TileFlags.Stream) != 0); break;
+            case "pool": FindTile(i => (m.Flags[i] & TileFlags.Pool) != 0 && (m.Flags[i] & TileFlags.Spring) == 0); break;
         }
         if ((_hover && _focus is null or "object" or "river" or "coast" or "edge") || _focus == "object")
         {
@@ -311,6 +329,109 @@ public sealed class AutoPilot
             _main.ShowTickOffset = ((lh - now) % 24 + 24) % 24 * Wtw.Sim.Time.GameTime.TicksPerHour;
         }
         GD.Print($"PROVINCE cell={pv.Center} neighbors={pv.Neighbors} shown={pv.ShownCount} gen_s={m.GenerationSeconds:F3} focus=({fx},{fy}) zoom={pv.Zoom:F3}");
+    }
+
+    // ───────── (E3b) ─────────
+
+    /// <summary>세계를 만든 직후(다른 스레드): 따뜻한 땅에 가족 K 집을 뿌리고 Y 년을 미리 돌린다. 개입 기록에 남으므로 저장 · 다시 돌리기와 같다.</summary>
+    public static void PreRun(Wtw.Sim.World.GameWorld w, int years, int families, Action<double, string> progress, int homes = 1)
+    {
+        var p = w.Planet;
+        var list = new List<int> { Wtw.Sim.People.PeopleSamples.Home(p) };
+        // 두 번째 땅부터: 앞의 땅들에서 8칸 이상 떨어진 따뜻한 땅(서로 떨어져 사는 무리)
+        foreach (int c in Wtw.Sim.People.PeopleSamples.Ranked(p, (pl, c) => pl.Biome[c] is Biome.Temperate or Biome.Rainforest or Biome.Grassland or Biome.Savanna && pl.RiverSize[c] > 0 ? pl.Temp10[c] : int.MinValue))
+        {
+            if (list.Count >= homes) break;
+            if (list.All(h => Hops(p, h, c, 8) >= 8)) list.Add(c);
+        }
+        foreach (int home in list)
+            foreach (var (x, y) in Wtw.Sim.People.PeopleSamples.SpawnSpots(w.People.Life(home), families))
+                w.Apply(new Wtw.Sim.World.Intervention(0, Wtw.Sim.World.Intervention.Kinds.SpawnFamily, new long[] { home, x, y }));
+        long end = years * GameTime.TicksPerYear;
+        for (long t = 0; t < end; t += GameTime.TicksPerDay)
+        {
+            w.AdvanceTo(Math.Min(end, t + GameTime.TicksPerDay));
+            if (t % GameTime.TicksPerYear == 0) progress(t / (double)end, $"미리 돌리는 중 {t / GameTime.TicksPerYear}/{years}년 (사람 {w.People.AliveCount})");
+        }
+        GD.Print($"PRERUN years={years} alive={w.People.AliveCount} inhabited={w.People.Provinces.Count(kv => kv.Value.People.Exists(q => !q.Dead))} opened={w.People.OpenedProvinces().Count()} crossings={w.People.Stats.Crossings} names={w.People.LandNames.Count} langs={w.People.All.Where(q => !q.Dead).Select(q => q.LangId).Distinct().Count()}");
+    }
+
+    /// <summary>a 에서 b 까지 칸 수(limit 넘으면 limit).</summary>
+    private static int Hops(Planet p, int a, int b, int limit)
+    {
+        var dist = new Dictionary<int, int> { [a] = 0 };
+        var q = new Queue<int>(); q.Enqueue(a);
+        while (q.Count > 0)
+        {
+            int c = q.Dequeue();
+            if (c == b) return dist[c];
+            if (dist[c] >= limit) continue;
+            foreach (int nb in p.Grid.Neighbors(c)) if (!dist.ContainsKey(nb)) { dist[nb] = dist[c] + 1; q.Enqueue(nb); }
+        }
+        return limit;
+    }
+
+    /// <summary>가운데 땅에 마실 물이 없고, 이웃 땅에는 있는 따뜻한 칸 — 사람이 물을 찾아 경계를 넘는 모습을 보려고.</summary>
+    private static int DryCell(Planet p)
+    {
+        foreach (int c in Wtw.Sim.People.PeopleSamples.Ranked(p, (pl, c) => pl.Biome[c] is Biome.Grassland or Biome.Savanna or Biome.Temperate && pl.RiverSize[c] == 0 && pl.Temp10[c] > 120 ? 100 - Math.Abs(pl.Temp10[c] - 200) / 5 : int.MinValue).Take(400))
+        {
+            var life = new Wtw.Sim.People.ProvinceLife(p, ProvinceCache.Get(p, c), Wtw.Sim.People.PeopleData.Default);
+            if (life.DrinkTiles > 0) continue;
+            foreach (int nb in p.Grid.Neighbors(c))
+                if (p.IsLand(nb) && new Wtw.Sim.People.ProvinceLife(p, ProvinceCache.Get(p, nb), Wtw.Sim.People.PeopleData.Default).DrinkTiles > 50) return c;
+        }
+        return Wtw.Sim.People.PeopleSamples.Home(p);
+    }
+
+    /// <summary>샘과 개울이 가운데 가까이 있는 따뜻한 칸.</summary>
+    private static int SpringCell(Planet p)
+    {
+        foreach (int c in Wtw.Sim.People.PeopleSamples.Ranked(p, (pl, c) => pl.Biome[c] is Biome.Temperate or Biome.Grassland or Biome.Rainforest && pl.RiverSize[c] == 0 ? 100 - Math.Abs(pl.Temp10[c] - 170) / 5 : int.MinValue).Take(300))
+        {
+            var m = ProvinceCache.Get(p, c);
+            int springs = 0, streams = 0;
+            for (int i = 0; i < HexFrame.TileCount; i++)
+            {
+                if ((m.Flags[i] & TileFlags.Spring) != 0 && HexFrame.BorderDistance(i) > 25) springs++;
+                if ((m.Flags[i] & TileFlags.Stream) != 0) streams++;
+            }
+            if (springs > 0 && streams > 60) return c;
+        }
+        return Wtw.Sim.People.PeopleSamples.Home(p);
+    }
+
+    private void WaitCross(WorldSnapshot snap, double delta)
+    {
+        var pv = _main.Province;
+        var host = _main.Host!;
+        if (_crossTarget < 0)
+        {
+            if (host.SpeedLevel != 3) host.SetSpeed(3);
+            for (int i = 0; i < snap.PeopleCount; i++)
+            {
+                var v = snap.People[i];
+                bool crossedJustNow = false;
+                foreach (var cr in snap.RecentCrossings) if (cr.Person == v.Id && cr.From == pv.Center && cr.Tick > host.RenderTick - Wtw.Sim.Time.GameTime.TicksPerHour) crossedJustNow = true;
+                if (!v.Dead && ((v.Act == Wtw.Sim.People.Act.Cross && v.Walking && v.Cell == pv.Center) || crossedJustNow))
+                {
+                    _crossTarget = v.Id; _crossFrom = pv.Center;
+                    host.SetSpeed(2);
+                    pv.Follow(v.Id);
+                    _main.OpenCardForTest(v.Id);
+                    GD.Print($"CROSS following {v.Id} ({v.Name}) from {v.Cell}");
+                    break;
+                }
+            }
+            return;
+        }
+        for (int i = 0; i < snap.PeopleCount; i++)
+        {
+            var v = snap.People[i];
+            if (v.Id != _crossTarget) continue;
+            if (_sinceCross < 0 && v.Cell != _crossFrom) { _sinceCross = 0; host.SetSpeed(1); GD.Print($"CROSS crossed {_crossFrom} → {v.Cell}"); }
+        }
+        if (_sinceCross >= 0) _sinceCross += delta;
     }
 
     // ───────── 사람(E3) ─────────
@@ -411,6 +532,13 @@ public sealed class AutoPilot
             if (_hoverPerson) { _hoverTarget = target; }
             _cave = _enter == "cave";
             GD.Print($"PEOPLE ready alive={snap.AliveCount} target={target} local_hour={ProvinceReport.LocalHour(p, pv.Center, host.RenderTick):F1}");
+            return;
+        }
+        if (_waitCross)
+        {
+            if (snap is not null) WaitCross(snap, delta);
+            if (_sinceCross >= _shotAfter) Finish(true, $"CROSS done target={_crossTarget}");
+            else if (_sincePeople > 300) Finish(false, "CROSS 시간 초과 — 아무도 경계를 넘지 않음");
             return;
         }
         if (_hoverTarget >= 0 && pv.PersonScreen(_hoverTarget) is { } sp)

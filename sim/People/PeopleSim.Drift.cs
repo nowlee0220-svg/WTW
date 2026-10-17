@@ -18,7 +18,7 @@ public sealed partial class PeopleSim
 {
     public const int SoundShiftPerMille = 60, WordChangePerMille = 19, SplitDrift = 5, SplitMinSpeakers = 3;
 
-    private void LanguageYear()
+    internal void LanguageYear()
     {
         var comm = new SortedDictionary<(int Lang, int Cell), List<Person>>();
         foreach (var p in _all)
