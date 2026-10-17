@@ -17,6 +17,10 @@ public sealed class PeopleStats
     public long Decisions, Events, Paths, PathFails, Talks, Arguments, Pairs, Births, Breaks, Conceptions, Illnesses;
     public readonly long[] Deaths = new long[8];
     public long GatherXpPassion, GatherXpPlain, GatherActsPassion, GatherActsPlain;
+    /// <summary>목마름으로 죽었는데 그 사람이 닿을 수 있는 곳(지방 안 이어진 땅)에 민물이 없었다 · 굶어 죽었는데 먹을 것이 없었다.</summary>
+    public long NoWaterDeaths, NoFoodDeaths;
+    /// <summary>물 · 먹을 것을 찾아간 방법별 횟수: [0 보임, 1 기억, 2 따라감, 3 찾아다님].</summary>
+    public readonly long[] FindHow = new long[4];
 }
 
 /// <summary>

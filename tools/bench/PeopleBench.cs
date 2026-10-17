@@ -31,6 +31,7 @@ public static class PeopleBench
         {
             case "seeds": Seeds(I("seeds", 20), I("people", 10), I("years", 50), Sx("passion", "on"), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "cap": Cap(I("people", 500), I("years", 100), (ulong)I("seed", 1), I("per", 25), I("cap", 500)); break;
+            case "nosource": NoSource(I("seeds", 20), I("cells", 5), I("people", 5), I("years", 3), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "one": One(I("people", 10), I("years", 5), (ulong)I("seed", 1), Sx("cell", "home"), o.ContainsKey("family"), I("cap", 300)); break;
             default: Console.WriteLine("모드: seeds | cap | one"); break;
         }
@@ -93,6 +94,7 @@ public static class PeopleBench
             if (day % GameTime.DaysPerYear == 0) run.PopByYear.Add(alive);
             perDay?.Invoke(world, day);
         };
+        _lastWorld = w;
         long end = years * GameTime.TicksPerYear;
         for (long t = 0; t < end; t += GameTime.TicksPerDay) w.AdvanceTo(Math.Min(end, t + GameTime.TicksPerDay));
         run.Seconds = sw.Elapsed.TotalSeconds;
@@ -113,6 +115,8 @@ public static class PeopleBench
         run.WithPassion = adults.Count > 0 ? withP.Count / (double)adults.Count : 0;
         return run;
     }
+
+    [ThreadStatic] private static GameWorld? _lastWorld;
 
     public static double Median(List<int> v) { if (v.Count == 0) return 0; var s = v.OrderBy(x => x).ToList(); return s.Count % 2 == 1 ? s[s.Count / 2] : (s[s.Count / 2 - 1] + s[s.Count / 2]) / 2.0; }
     public static double Median(IEnumerable<double> v) { var s = v.OrderBy(x => x).ToList(); if (s.Count == 0) return 0; return s.Count % 2 == 1 ? s[s.Count / 2] : (s[s.Count / 2 - 1] + s[s.Count / 2]) / 2.0; }
@@ -184,6 +188,58 @@ public static class PeopleBench
         Console.WriteLine($"  예약 {r.Events:N0} · 판단 {r.Decisions:N0} · 길 찾기 {r.Paths:N0} (실패 {r.PathFails:N0})");
     }
 
+    /// <summary>
+    /// 아무 땅에나 뿌렸을 때: 시드마다 땅 칸 K 곳(무작위, 결정론)에 N 명씩 Y 년 → 죽음 원인 · "지방(닿을 수 있는 땅) 안에 물 · 먹을 것이 없어서 죽은 사람" 수.
+    /// </summary>
+    static void NoSource(int seeds, int cells, int people, int years, ulong first, int parallel, string? outPath)
+    {
+        var rows = new (ulong Seed, int Spawned, int NoDrinkCells, int NoFoodCells, long[] Deaths, long NoWater, long NoFood, int Alive, long[] How, string Biomes)[seeds];
+        Parallel.For(0, seeds, new ParallelOptions { MaxDegreeOfParallelism = parallel }, k =>
+        {
+            ulong seed = first + (ulong)k;
+            var w = GameWorld.Create(seed, new WorldConfig { DotCount = 0 });
+            var p = w.Planet;
+            var land = Enumerable.Range(0, p.CellCount).Where(p.IsLand).ToList();
+            var rng = new Wtw.Sim.Core.Pcg32(seed, 99);
+            int noDrink = 0, noFood = 0, spawned = 0;
+            var biomes = new List<string>();
+            for (int i = 0; i < cells; i++)
+            {
+                int cell = land[rng.NextInt(land.Count)];
+                var life = w.People.Life(cell);
+                var spots = PeopleSamples.SpawnSpots(life, people);
+                if (spots.Count == 0) continue;
+                int t0 = spots[0].Y * 150 + spots[0].X;
+                if (!life.HasDrinkFrom(t0)) noDrink++;
+                if (!life.HasFoodFrom(t0)) noFood++;
+                biomes.Add(Wtw.Sim.Planet.PlanetNames.Of(p.Biome[cell]) + (life.HasDrinkFrom(t0) ? "" : "(물 없음)") + (life.HasFoodFrom(t0) ? "" : "(먹을 것 없음)"));
+                foreach (var (x, y) in spots) w.Apply(new Intervention(0, Intervention.Kinds.SpawnPerson, new long[] { cell, x, y }));
+                spawned += spots.Count;
+            }
+            long end = years * GameTime.TicksPerYear;
+            for (long t = 0; t < end; t += GameTime.TicksPerDay) w.AdvanceTo(Math.Min(end, t + GameTime.TicksPerDay));
+            var st = w.People.Stats;
+            rows[k] = (seed, spawned, noDrink, noFood, st.Deaths.ToArray(), st.NoWaterDeaths, st.NoFoodDeaths, w.People.AliveCount, st.FindHow.ToArray(), string.Join(", ", biomes));
+        });
+        var sb = new StringBuilder();
+        sb.AppendLine($"## 아무 땅에나 뿌림: 시드 {seeds}개 × 땅 칸 {cells}곳(무작위) × {people}명 × {years}년");
+        sb.AppendLine();
+        sb.AppendLine("| 시드 | 뿌림 | 물 없는 칸 | 먹을 것 없는 칸 | 끝에 살아 있음 | 굶주림 | 목마름 | 추위 | 더위 | 늙음 · 병 | 물이 지방에 없어 죽음 | 먹을 것이 지방에 없어 죽음 | 고른 칸 |");
+        sb.AppendLine("|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+        foreach (var r in rows)
+            sb.AppendLine($"| {r.Seed} | {r.Spawned} | {r.NoDrinkCells} | {r.NoFoodCells} | {r.Alive} | {r.Deaths[1]} | {r.Deaths[2]} | {r.Deaths[3]} | {r.Deaths[4]} | {r.Deaths[5] + r.Deaths[6]} | {r.NoWater} | {r.NoFood} | {r.Biomes} |");
+        long sp = rows.Sum(r => (long)r.Spawned), dead = rows.Sum(r => r.Deaths.Sum());
+        sb.AppendLine();
+        sb.AppendLine($"- 모두: 뿌린 사람 {sp}명 · 죽음 {dead}명 — 굶주림 {rows.Sum(r => r.Deaths[1])} · 목마름 {rows.Sum(r => r.Deaths[2])} · 추위 {rows.Sum(r => r.Deaths[3])} · 더위 {rows.Sum(r => r.Deaths[4])} · 늙음 · 병 {rows.Sum(r => r.Deaths[5] + r.Deaths[6])}");
+        sb.AppendLine($"- **지방 안(닿을 수 있는 땅)에 물이 없어서 죽은 사람 {rows.Sum(r => r.NoWater)}명 · 먹을 것이 없어서 죽은 사람 {rows.Sum(r => r.NoFood)}명** (뿌린 사람의 {(rows.Sum(r => r.NoWater + r.NoFood)) * 100.0 / Math.Max(1, sp):0.0}%)");
+        sb.AppendLine($"- 고른 칸 {seeds * cells}곳 중 물이 없는 칸 {rows.Sum(r => r.NoDrinkCells)} · 먹을 것이 없는 칸 {rows.Sum(r => r.NoFoodCells)}");
+        long[] how = new long[4]; foreach (var r in rows) for (int i = 0; i < 4; i++) how[i] += r.How[i];
+        long ht = Math.Max(1, how.Sum());
+        sb.AppendLine($"- 물 · 먹을 것을 찾아간 방법: 보임 {how[0] * 100 / ht}% · 기억 {how[1] * 100 / ht}% · 남을 따라감 {how[2] * 100 / ht}% · 찾아다님 {how[3] * 100 / ht}%");
+        Console.Write(sb.ToString());
+        if (outPath is not null) File.WriteAllText(outPath, sb.ToString());
+    }
+
     static void One(int people, int years, ulong seed, string where, bool family, int cap)
     {
         long seen = 0;
@@ -206,8 +262,19 @@ public static class PeopleBench
             var q0 = alive[0];
             Console.WriteLine($"{d}일 살아 있음 {alive.Count} · 기분 중앙값 {Median(alive.Select(q => w.People.Mood(q)).ToList())} · 배부름 {alive.Average(q => q.Food) / 1000:0} · 물 {alive.Average(q => q.Water) / 1000:0} · 잠 {alive.Average(q => q.Rest) / 1000:0} · 저체온 {alive.Average(q => q.Hypothermia) / 1000:0} · 영양실조 {alive.Average(q => q.Malnutrition) / 1000:0} | {q0.Name}: {w.People.ActivityText(q0)} — {w.People.WhyText(q0)}");
         });
+        if (_lastWorld is { } lw)
+        {
+            var ps = lw.People;
+            var langs = ps.All.Where(q => !q.Dead).GroupBy(q => q.LangId).Select(g => $"{ps.LanguageLabel(g.Key)}: {g.Count()}명").ToList();
+            Console.WriteLine("말: " + string.Join(" · ", langs));
+            foreach (var q in ps.All.Where(q => !q.Dead).Take(24))
+                Console.WriteLine($"  {ps.DisplayName(q)} ({ps.NameMeaning(q)}) · {ps.LanguageLabel(q.LangId)} · 물={ps.WordOf(q, ps.Lang.ConceptIndex("water"))} 너={ps.WordOf(q, ps.Lang.ConceptIndex("you"))} 나={ps.WordOf(q, ps.Lang.ConceptIndex("me"))} 해={ps.WordOf(q, ps.Lang.ConceptIndex("sun"))}");
+            var a = ps.All.Where(q => !q.Dead).ToList();
+            if (a.Count >= 2) Console.WriteLine($"  알아듣기: {ps.DisplayName(a[0])}↔{ps.DisplayName(a[1])} {ps.Understanding(a[0], a[1])}% · {ps.DisplayName(a[0])}↔{ps.DisplayName(a[^1])} {ps.Understanding(a[0], a[^1])}%");
+        }
         Console.WriteLine($"끝: 살아 있음 {r.Alive}/{r.Ever} · 태어남 {r.Births} · 짝 {r.Pairs} · 붕괴 {r.Breaks} · 이야기 {r.Talks} · 말다툼 {r.Arguments} · 기분 중앙값 {r.MoodMedian} · {r.Seconds:0.0}초 · 칸 {r.Cell}({r.Biome}) 먹을 것 {r.FoodSupply / 100_000.0:0}명분/일");
         Console.WriteLine("죽음: " + string.Join(" · ", Enumerable.Range(1, 6).Select(c => $"{CauseNames[c]} {r.Deaths[c]}")));
+        if (_lastWorld is { } lw2) Console.WriteLine($"찾아간 방법: 보임 {lw2.People.Stats.FindHow[0]} · 기억 {lw2.People.Stats.FindHow[1]} · 따라감 {lw2.People.Stats.FindHow[2]} · 찾아다님 {lw2.People.Stats.FindHow[3]} · 물 없어 죽음 {lw2.People.Stats.NoWaterDeaths} · 먹을 것 없어 죽음 {lw2.People.Stats.NoFoodDeaths}");
         Console.WriteLine($"예약 {r.Events:N0} · 판단 {r.Decisions:N0} · 길 {r.Paths:N0} 실패 {r.PathFails:N0} · 사람 하루당 {r.Seconds * 1e6 / Math.Max(1, r.PersonDays):0}µs");
     }
 }

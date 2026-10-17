@@ -8,6 +8,9 @@ namespace Wtw.Sim.People;
 public sealed class PersonCard
 {
     public int Id, Cell, Age, Mood, BreakThreshold;
+    public bool Unnamed;
+    public string NameMeaning = "", Speech = "";
+    public List<(string Word, string Meaning)> Vocabulary = new();
     public string Name = "", SexName = "", StageName = "", Activity = "", Why = "", MoodWord = "", Place = "";
     public bool Alive, Female, Asleep;
     public LifeStage Stage;
@@ -18,7 +21,7 @@ public sealed class PersonCard
     public List<(string Name, int Value, string Note)> Needs = new();
     public List<string> Body = new();
     public List<(string Name, int Mood, string Note)> Thoughts = new();
-    public List<(int Id, string Name, string Kind, int Opinion, int Grudge, int Favor, bool Alive)> Relations = new();
+    public List<(int Id, string Name, string Kind, int Opinion, int Grudge, int Favor, bool Alive, int Understand)> Relations = new();
     public List<string> Story = new();
     public string Carry = "";
 }
@@ -47,7 +50,7 @@ public static class PeopleText
 
 public sealed partial class PeopleSim
 {
-    private string NameOf(int id) => Get(id)?.Name ?? "누군가";
+    private string NameOf(int id) => DisplayName(Get(id));
 
     private string ItemName(int item) => item >= 0 && item < ObjectCatalog.Default.Items.Count ? ObjectCatalog.Default.Items[item].Name : "무언가";
 
@@ -61,8 +64,22 @@ public sealed partial class PeopleSim
         {
             Act.Dead => $"죽음 — {PeopleText.CauseName(p.Cause)}",
             Act.Carried => p.Carrier >= 0 ? $"{NameOf(p.Carrier)}의 품에 안겨 있음" : "혼자 남겨진 아기",
-            Act.Eat => w ? $"{Hangul.Eul(food)} 따러 가는 중" : $"{Hangul.Eul(food)} 따 먹는 중",
-            Act.Drink => w ? "물 마시러 가는 중" : "물 마시는 중",
+            Act.Eat when w => p.How switch
+            {
+                1 => $"기억해 둔 {food} 자리로 가는 중",
+                2 => $"{Hangul.Eul(NameOf(p.HowArg))} 따라 {Hangul.Eul(food)} 따러 가는 중",
+                3 => "먹을 것을 찾아 풀 · 나무가 짙은 쪽으로 가는 중",
+                _ => $"{Hangul.Eul(food)} 따러 가는 중",
+            },
+            Act.Eat => $"{Hangul.Eul(food)} 따 먹는 중",
+            Act.Drink when w => p.How switch
+            {
+                1 => "기억해 둔 물가로 가는 중",
+                2 => $"{Hangul.Eul(NameOf(p.HowArg))} 따라 물가로 가는 중",
+                3 => "물을 찾아 낮은 곳으로 가는 중",
+                _ => "보이는 물가로 가는 중",
+            },
+            Act.Drink => "물 마시는 중",
             Act.Sleep => w ? "잘 곳으로 가는 중" : $"자는 중 ({ProvinceLife.ShelterName(p.SleepShelter)}{(p.Huddle ? " · 곁에 사람" : "")})",
             Act.Collapse => "지쳐 쓰러져 잠",
             Act.Rest => "앉아 쉬는 중",
@@ -109,9 +126,23 @@ public sealed partial class PeopleSim
             Why.TalkedTo => $"{Hangul.I(NameOf(arg))} 말을 걸어와 하던 일을 멈췄다",
             Why.Break => $"기분이 너무 나빠 무너졌다 (기분 {arg} — 무너지는 기준 {BreakThreshold(p)})",
             Why.FamilyNear => "가족 · 친구 곁에서 자려고",
-            Why.NoFood => "가까운 곳에 먹을 것이 없어 찾아다닌다",
+            Why.NoFood => "가 보니 다 따 가고 없어 다른 곳을 찾는다",
             Why.NoWater => "마실 물(민물)이 가까이 없어 찾아다닌다 — 바닷물은 못 마신다",
             _ => "",
+        } + HowText(p);
+    }
+
+    /// <summary>물 · 먹을 것을 어떻게 찾아가는지 덧붙임(실제로 하는 일과 같게).</summary>
+    private string HowText(Person p)
+    {
+        if (p.Act is not (Act.Eat or Act.Drink) || !p.Walking) return "";
+        bool water = p.Act == Act.Drink;
+        return p.How switch
+        {
+            1 => water ? " — 아는 물가(전에 본 곳)로 간다" : " — 전에 열매를 본 자리로 간다",
+            2 => water ? $" — 아는 물가가 없어 {Hangul.Eul(NameOf(p.HowArg))} 따라간다" : $" — 아는 곳이 없어 {Hangul.Eul(NameOf(p.HowArg))} 따라간다",
+            3 => water ? " — 아는 물가가 없어 찾아다닌다(물은 낮은 곳에 고인다)" : " — 아는 열매 자리가 없어 초록이 짙은 쪽을 찾아다닌다",
+            _ => water ? " — 물가가 보인다" : "",
         };
     }
 
@@ -120,7 +151,7 @@ public sealed partial class PeopleSim
         var list = new List<PersonRow>();
         if (!Provinces.TryGetValue(cell, out var life)) return list;
         foreach (var p in life.People)
-            list.Add(new PersonRow(p.Id, p.Name, p.AgeYears(p.Dead ? p.DeathTick : Now), ActivityText(p), p.Dead ? 0 : Mood(p), !p.Dead, p.Cell, p.Female, p.Stage(p.Dead ? p.DeathTick : Now)));
+            list.Add(new PersonRow(p.Id, DisplayName(p), p.AgeYears(p.Dead ? p.DeathTick : Now), ActivityText(p), p.Dead ? 0 : Mood(p), !p.Dead, p.Cell, p.Female, p.Stage(p.Dead ? p.DeathTick : Now)));
         return list;
     }
 
@@ -140,7 +171,7 @@ public sealed partial class PeopleSim
     {
         var c = new PersonCard
         {
-            Id = p.Id, Cell = p.Cell, Name = p.Name, Female = p.Female, SexName = p.Female ? "여자" : "남자", Age = p.AgeYears(at), Stage = p.Stage(at),
+            Id = p.Id, Cell = p.Cell, Name = DisplayName(p), NameMeaning = NameMeaning(p), Unnamed = p.Name.Length == 0, Female = p.Female, SexName = p.Female ? "여자" : "남자", Age = p.AgeYears(at), Stage = p.Stage(at),
             Alive = !p.Dead, Asleep = p.Asleep, Look = p.Look, Activity = ActivityText(p), Why = WhyText(p),
             Mood = p.Dead ? 0 : Mood(p), BreakThreshold = BreakThreshold(p),
             Place = $"{PlanetNames.Of(_w.Planet.Biome[p.Cell])} 지방",
@@ -198,7 +229,7 @@ public sealed partial class PeopleSim
         {
             if (id < 0 || rels.Any(r => r.Id == id) || Get(id) is not { } q) return;
             var r = p.GetRelation(id);
-            rels.Add((id, q.Name, kind, r.Opinion, r.Grudge, r.Favor, !q.Dead, order));
+            rels.Add((id, DisplayName(q), kind, r.Opinion, r.Grudge, r.Favor, !q.Dead, order));
         }
         if (p.Partner >= 0) AddRel(p.Partner, "짝", 0);
         AddRel(p.Mother, "어머니", 1); AddRel(p.Father, "아버지", 1);
@@ -212,7 +243,15 @@ public sealed partial class PeopleSim
             else if (r.Talks > 0) AddRel(r.Other, "아는 사람", 6);
         }
         foreach (var r in rels.OrderBy(r => r.Order).ThenByDescending(r => Math.Abs(r.Opinion) + r.Grudge).ThenBy(r => r.Id).Take(30))
-            c.Relations.Add((r.Id, r.Name, r.Kind, r.Opinion, r.Grudge, r.Favor, r.Alive));
+            c.Relations.Add((r.Id, r.Name, r.Kind, r.Opinion, r.Grudge, r.Favor, r.Alive, Get(r.Id) is { } rq ? Understanding(p, rq) : 0));
+        // 말: 무리의 말 + 이 사람의 말씨. 아는 낱말(그 말로, 뜻과 함께)
+        if (Languages.TryGetValue(p.LangId, out var lang))
+        {
+            int sp = Speakers(p.LangId);
+            int acc = p.Accent.Sum(a => Math.Abs(a));
+            c.Speech = $"{LanguageLabel(p.LangId)} — 지금 이 말을 쓰는 사람 {sp}명 · 아는 낱말 {lang.Known.Count}개 · 말씨 차이 {acc}";
+            foreach (int k in lang.Known) c.Vocabulary.Add((WordOf(p, k), Lang.Concepts[k].Meaning));
+        }
         c.Carry = p.Carry.Count == 0 ? "없음" : string.Join(", ", p.Carry.Select(x => $"{ItemName(x.Item)} {x.Count}"));
         foreach (var b in p.Bio) c.Story.Add($"{PeopleText.Date(b.Tick)} — {BioLine(p, b)}");
         return c;
@@ -233,6 +272,9 @@ public sealed partial class PeopleSim
         BioKind.Adult => "어른이 되었다",
         BioKind.Ill => "병에 걸렸다",
         BioKind.Argument => $"{Hangul.Gwa(NameOf(b.Other))} 거듭 다투어 원한이 깊어졌다",
+        BioKind.Named => b.Param >= 0 ? $"{NameOf(b.Other)}의 말로 {Hangul.J("'" + p.Name + "'", "이라는", "라는")} 이름을 얻었다 — {NameOf(b.Param)}의 이름을 물려받음" : $"{Hangul.I(NameOf(b.Other))} 자기 말로 {Hangul.J("'" + p.Name + "'", "이라고", "라고")} 부르기 시작했다 (뜻: {string.Join(" ", p.NameConcepts.Where(x => (uint)x < Lang.Concepts.Count).Select(x => Lang.Concepts[x].Meaning))})",
+        BioKind.LearnedSpeech => $"{NameOf(b.Other)}의 말을 배워 쓰기 시작했다",
+        BioKind.FoundWater => "물가를 찾아냈다",
         _ => "",
     };
 }

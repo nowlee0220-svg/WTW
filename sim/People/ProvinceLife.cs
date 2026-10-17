@@ -135,7 +135,20 @@ public sealed class ProvinceLife
             if (sh >= 2) { _shelter[b].Add(i); if (sh == 3) CaveTiles++; }
         }
         Paths = new PathFinder(this);
+        // 이어진 땅마다 마실 물 · 먹을 것이 있나(측정: "지방 안에 없어서 죽은 사람")
+        int regions = 0; foreach (int r in Region) regions = Math.Max(regions, r + 1);
+        RegionHasDrink = new bool[regions]; RegionHasFood = new bool[regions];
+        for (int i = 0; i < HexFrame.TileCount; i++)
+        {
+            if (Region[i] < 0) continue;
+            if (Drink[i]) RegionHasDrink[Region[i]] = true;
+            if (_harvest[i] is { Food: true }) RegionHasFood[Region[i]] = true;
+        }
     }
+
+    public bool[] RegionHasDrink = Array.Empty<bool>(), RegionHasFood = Array.Empty<bool>();
+    public bool HasDrinkFrom(int tile) => (uint)tile < HexFrame.TileCount && Region[tile] >= 0 && RegionHasDrink[Region[tile]];
+    public bool HasFoodFrom(int tile) => (uint)tile < HexFrame.TileCount && Region[tile] >= 0 && RegionHasFood[Region[tile]];
 
     public static int Bk(int x, int y) => Math.Min(Buckets - 1, y / Bucket) * Buckets + Math.Min(Buckets - 1, x / Bucket);
 

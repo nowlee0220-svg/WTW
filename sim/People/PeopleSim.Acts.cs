@@ -86,6 +86,7 @@ public sealed partial class PeopleSim
         var rng = Rng(p.Cell);
         var stage = p.Stage(Now);
         if (stage == LifeStage.Baby) { SetWhy(p, Act.Carried, Why.Carried); p.Walking = false; return; }
+        Look(p);
         int here = p.Tile(Now);
         p.Position(Now, out int px, out int py);
         int hx = px / 1000, hy = py / 1000;
@@ -160,49 +161,6 @@ public sealed partial class PeopleSim
     }
 
     // ───────── 먹기 · 마시기 ─────────
-
-    private bool TryEat(Person p, Why why, int skipTile = -1)
-    {
-        var life = Life(p.Cell);
-        p.Position(Now, out int px, out int py);
-        int hx = px / 1000, hy = py / 1000;
-        if (p.Food <= 0 && p.HasTrait(T_cannibal))
-        {
-            Person? best = null; long bd = long.MaxValue;
-            foreach (var q in life.People)
-                if (q.Dead && !q.Eaten && q.Id != p.Id) { long d = ProvinceLife.D2(q.Tile(Now), hx, hy); if (d < bd && d < 40 * 40) { bd = d; best = q; } }
-            if (best is not null && WalkTo(p, best.Tile(Now))) { SetWhy(p, Act.EatCorpse, Why.Starving); p.Target = best.Id; return true; }
-        }
-        _claims.Clear();
-        foreach (var q in life.People)
-            if (q.Act == Act.Eat && q.Walking && !q.Dead && q.Id != p.Id) _claims[q.Target] = _claims.GetValueOrDefault(q.Target) + Math.Max(1, q.TargetB);
-        life.Claims = _claims;
-        int tile = life.NearestFood(hx, hy, Now, 70, skipTile);
-        if (tile < 0) tile = life.NearestFood(hx, hy, Now, 220, skipTile);
-        life.Claims = null;
-        if (tile < 0) { p.WhyArg = 0; return TryWander(p, Why.NoFood); }
-        if (!WalkTo(p, tile)) return false;
-        SetWhy(p, Act.Eat, why, p.Food / 1000);
-        p.Target = tile;
-        var hd = life.HarvestAt(tile)!;
-        p.TargetB = (int)Math.Clamp((Person.Full - p.Food) / Math.Max(1, hd.Nutrition), 1, 5);
-        return true;
-    }
-
-    private bool TryDrink(Person p, Why why)
-    {
-        var life = Life(p.Cell);
-        p.Position(Now, out int px, out int py);
-        int hx = px / 1000, hy = py / 1000;
-        int here = hy * S + hx;
-        int tile = life.Drink[here] ? here : life.NearestDrink(hx, hy, 220);
-        if (tile < 0) return TryWander(p, Why.NoWater);
-        if (tile == here) { SetWhy(p, Act.Drink, why, p.Water / 1000); p.Target = tile; DoStill(p, 150); return true; }
-        if (!WalkTo(p, tile)) return false;
-        SetWhy(p, Act.Drink, why, p.Water / 1000);
-        p.Target = tile;
-        return true;
-    }
 
     // ───────── 쉬기 · 둘러보기 · 줍기 · 추위 피하기 ─────────
 
@@ -391,9 +349,14 @@ public sealed partial class PeopleSim
         int here = p.Tile(Now);
         StandStill(p);
         if ((life.Map.Flags[here] & TileFlags.Roof) != 0) Discover(p, here);
+        if (p.Act is Act.Eat or Act.Drink) Look(p);
         var rng = Rng(p.Cell);
         switch (p.Act)
         {
+            case Act.Eat when p.How == 3:
+            case Act.Drink when p.How == 3:
+                Decide(p); // 찾아다니다 닿은 곳: 둘러보고 다시 판단(보이면 그리로)
+                return;
             case Act.Eat:
             {
                 var h = life.HarvestAt(p.Target);
@@ -401,6 +364,8 @@ public sealed partial class PeopleSim
                 if (h is null || stock <= 0)
                 {
                     if (p.Food <= 0) p.PassionPoints[PeopleData.Gathering] -= 10;
+                    p.KnownFood.Remove(p.Target);
+                    Look(p);
                     if (!TryEat(p, Why.NoFood, p.Target)) Decide(p);
                     return;
                 }
@@ -578,6 +543,8 @@ public sealed partial class PeopleSim
         SetWhy(q, Act.Talk, Why.TalkedTo, p.Id);
         q.Target = p.Id; q.TargetB = argue ? 2 : 0;
         p.TargetB = argue ? 3 : 1;
+        p.TalkConcept = argue ? C("danger") : TalkTopic(p, rng);
+        q.TalkConcept = argue ? C("you") : TalkTopic(q, rng);
         p.ActUntil = q.ActUntil = Now + dur;
         p.Walking = false;
         Schedule(p, PredictUrgent(p, Now, p.ActUntil, here));
@@ -613,7 +580,7 @@ public sealed partial class PeopleSim
             AddThought(q, rq.Opinion >= 40 ? H_goodTalk : H_talked, p.Id);
         }
         p.SetRelation(rp); q.SetRelation(rq);
-        if (!argue) TryPair(p, q, rng);
+        if (!argue) { Converge(p, q, rng); TryPair(p, q, rng); }
     }
 
     private int TalkDelta(Person speaker, Person listener, Pcg32 rng)
@@ -652,7 +619,7 @@ public sealed partial class PeopleSim
         AddThought(p, H_newPartner, q.Id); AddThought(q, H_newPartner, p.Id);
         AddBio(p, BioKind.Paired, q.Id); AddBio(q, BioKind.Paired, p.Id);
         Stats.Pairs++;
-        Notify(WorldEventKind.Pair, p, q.Id, $"{Hangul.Gwa(p.Name)} {Hangul.I(q.Name)} 짝이 되었습니다");
+        Notify(WorldEventKind.Pair, p, q.Id, $"{Hangul.Gwa(DisplayName(p))} {Hangul.I(DisplayName(q))} 짝이 되었습니다");
     }
 
     // ───────── 정신 붕괴 ─────────
@@ -677,7 +644,7 @@ public sealed partial class PeopleSim
             kind = "울며 헤매기";
         }
         AddBio(p, BioKind.Break, -1, p.Act == Act.BreakArgue ? 1 : p.Act == Act.BreakLeave ? 2 : 0);
-        Notify(WorldEventKind.Break, p, -1, $"{Hangul.I(p.Name)} 무너졌습니다 — {kind} (기분 {mood})");
+        Notify(WorldEventKind.Break, p, -1, $"{Hangul.I(DisplayName(p))} 무너졌습니다 — {kind} (기분 {mood})");
     }
 
     private bool TryArgueBreak(Person p)

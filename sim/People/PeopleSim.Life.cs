@@ -21,8 +21,8 @@ public sealed partial class PeopleSim
     {
         if (!CanSpawn(cell, x, y)) return null;
         var rng = Rng(cell);
-        var p = Make(cell, y * S + x, rng.NextInt(15, 41), rng.NextInt(2) == 0 ? Sex.Male : Sex.Female, null, null, rng);
-        Notify(WorldEventKind.Spawn, p, -1, $"{Hangul.I(p.Name)} 뿌려졌습니다");
+        var p = Make(cell, y * S + x, rng.NextInt(15, 41), rng.NextInt(2) == 0 ? Sex.Male : Sex.Female, null, null, rng, lang: NewLanguage());
+        Notify(WorldEventKind.Spawn, p, -1, $"{Hangul.I(DisplayName(p))} 뿌려졌습니다 (아직 이름이 없다)");
         return p;
     }
 
@@ -35,8 +35,9 @@ public sealed partial class PeopleSim
         int tile = y * S + x;
         int ageM = rng.NextInt(18, 36);
         int ageF = Math.Clamp(ageM + rng.NextInt(-5, 4), 17, 40);
-        var man = Make(cell, tile, ageM, Sex.Male, null, null, rng);
-        var woman = Make(cell, Beside(man, tile), ageF, Sex.Female, null, null, rng);
+        var lang = NewLanguage(); // 함께 살던 가족은 한 말을 쓴다
+        var man = Make(cell, tile, ageM, Sex.Male, null, null, rng, lang: lang);
+        var woman = Make(cell, Beside(man, tile), ageF, Sex.Female, null, null, rng, lang: lang);
         man.Partner = woman.Id; woman.Partner = man.Id;
         var rm = man.GetRelation(woman.Id); rm.Opinion = 50 + rng.NextInt(25); man.SetRelation(rm);
         var rw = woman.GetRelation(man.Id); rw.Opinion = 50 + rng.NextInt(25); woman.SetRelation(rw);
@@ -56,12 +57,16 @@ public sealed partial class PeopleSim
                 var r2 = c.GetRelation(par.Id); r2.Opinion = 60 + rng.NextInt(30); c.SetRelation(r2);
             }
         }
-        Notify(WorldEventKind.Spawn, man, woman.Id, $"{Hangul.I(man.Name)}네 가족 {list.Count}명이 뿌려졌습니다");
+        // 함께 지내던 가족은 서로 부르던 이름이 있다(그 말로, 생김새에서)
+        GiveName(man, woman, LookConcepts(man, rng), alternative: () => LookConcepts(man, rng));
+        GiveName(woman, man, LookConcepts(woman, rng), alternative: () => LookConcepts(woman, rng));
+        foreach (var c in list.Skip(2)) if (c.Name.Length == 0) NameNewborn(c, woman, rng);
+        Notify(WorldEventKind.Spawn, man, woman.Id, $"{Hangul.Gwa(DisplayName(man))} {DisplayName(woman)}의 가족 {list.Count}명이 뿌려졌습니다");
         return list;
     }
 
     /// <summary>사람 한 명을 만든다. mother/father 가 있으면 닮게(몸 · 능력 · 특성 조금).</summary>
-    internal Person Make(int cell, int tile, int ageYears, Sex sex, Person? mother, Person? father, Pcg32 rng, bool newborn = false)
+    internal Person Make(int cell, int tile, int ageYears, Sex sex, Person? mother, Person? father, Pcg32 rng, bool newborn = false, Language? lang = null)
     {
         var life = Life(cell);
         var p = new Person
@@ -71,7 +76,14 @@ public sealed partial class PeopleSim
             LastUpdate = Now, LastTalkTick = Now,
             BedShift = rng.NextInt(-2_500, 3_750), WakeShift = rng.NextInt(-1_250, 1_250),
         };
-        p.Name = NewName(rng);
+        // 말: 부모(엄마)의 말과 말씨를 이어받는다. 부모가 없으면 받은 말(뿌린 사람은 새 말).
+        if (mother is not null && mother.LangId >= 0)
+        {
+            p.LangId = mother.LangId;
+            for (int i = 0; i < p.Accent.Length; i++)
+                p.Accent[i] = father is not null && father.LangId == mother.LangId ? (sbyte)((mother.Accent[i] + father.Accent[i]) / 2) : mother.Accent[i];
+        }
+        else p.LangId = (lang ?? NewLanguage()).Id;
         var dad = father ?? mother;
         p.Look = mother is not null ? Inherit(mother.Look, dad!.Look, sex, rng) : RandomLook(sex, rng);
         for (int a = 0; a < PeopleData.AbilityCount; a++)
@@ -106,25 +118,6 @@ public sealed partial class PeopleSim
             Schedule(p, Now + 1 + rng.NextInt(600));
         }
         return p;
-    }
-
-    private string NewName(Pcg32 rng)
-    {
-        for (int tries = 0; ; tries++)
-        {
-            int len = rng.NextInt(100) < 72 ? 2 : 3;
-            var chars = new char[len];
-            for (int i = 0; i < len; i++)
-            {
-                string fin = i == len - 1 ? Data.Finals[rng.NextInt(Data.Finals.Length)] : (rng.NextInt(100) < 15 ? Data.Finals[rng.NextInt(Data.Finals.Length)] : "");
-                chars[i] = Hangul.Compose(Hangul.ChoIndex(Data.Initials[rng.NextInt(Data.Initials.Length)]), Hangul.JungIndex(Data.Vowels[rng.NextInt(Data.Vowels.Length)]), Hangul.JongIndex(fin));
-            }
-            var name = new string(chars);
-            if (tries > 20) return name;
-            bool used = false;
-            foreach (var q in _all) if (!q.Dead && q.Name == name) { used = true; break; }
-            if (!used) return name;
-        }
     }
 
     private static Appearance RandomLook(Sex sex, Pcg32 rng) => new(
@@ -247,6 +240,9 @@ public sealed partial class PeopleSim
         mother.Conceived = -1;
         mother.Position(Now, out int x, out int y);
         var baby = Make(mother.Cell, (y / 1000) * S + x / 1000, 0, rng.NextInt(2) == 0 ? Sex.Male : Sex.Female, mother, father, rng, newborn: true);
+        // 부모가 그 말로 뜻이 있는 이름을 짓는다(이름이 있는 쪽이 — 둘 다 없으면 엄마)
+        var namer = mother.Name.Length == 0 && father is { Dead: false, Name.Length: > 0 } && father.LangId == mother.LangId ? father : mother;
+        NameNewborn(baby, namer, rng);
         foreach (var par in new[] { mother, father })
         {
             if (par is null || par.Dead) continue;
@@ -255,7 +251,7 @@ public sealed partial class PeopleSim
             var r1 = par.GetRelation(baby.Id); r1.Opinion = 70; par.SetRelation(r1);
         }
         Stats.Births++;
-        Notify(WorldEventKind.Birth, baby, mother.Id, $"{Hangul.I(mother.Name)} 아이 {Hangul.Eul(baby.Name)} 낳았습니다");
+        Notify(WorldEventKind.Birth, baby, mother.Id, $"{Hangul.I(DisplayName(mother))} 아이 {Hangul.Eul(baby.Name)} 낳았습니다 — 이름의 뜻: {NameMeaning(baby)}");
     }
 
     private void ReassignCarrier(Person baby)
@@ -297,6 +293,9 @@ public sealed partial class PeopleSim
         p.Carrier = -1;
         AliveCount--;
         Stats.Deaths[(int)cause]++;
+        int deathTile = (y / 1000) * S + x / 1000;
+        if (cause == DeathCause.Thirst && !Life(p.Cell).HasDrinkFrom(deathTile)) Stats.NoWaterDeaths++;
+        if (cause == DeathCause.Starvation && !Life(p.Cell).HasFoodFrom(deathTile)) Stats.NoFoodDeaths++;
         AddBio(p, BioKind.Died, -1, (int)cause);
         foreach (var q in Life(p.Cell).People)
         {
@@ -307,6 +306,6 @@ public sealed partial class PeopleSim
         }
         foreach (var q in Life(p.Cell).People)
             if (!q.Dead && q.Carrier == p.Id) ReassignCarrier(q);
-        Notify(WorldEventKind.Death, p, -1, $"{Hangul.I(p.Name)} 죽었습니다 — {PeopleText.CauseName(cause)} (나이 {p.AgeYears(Now)})");
+        Notify(WorldEventKind.Death, p, -1, $"{Hangul.I(DisplayName(p))} 죽었습니다 — {PeopleText.CauseName(cause)} (나이 {p.AgeYears(Now)})");
     }
 }

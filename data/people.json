@@ -5,7 +5,7 @@
     "carry: 줍기만 하는 것(아직 쓸 데는 없음, 들고 다니기만). stock · regrow_days 는 foods 와 같다(regrow_days 0 = 다시 나지 않음).",
     "traits: 기획서 7-2 의 22개 그대로. abilities = 타고난 능력에 더하는 값(str 힘 · dex 손재주 · int 영리함 · soc 말재주 · nerve 담력). opposite = 같이 가질 수 없는 특성.",
     "thoughts: 생각(기분 조각). mood = 기분에 더하는 값, hours = 남아 있는 시간(0 = 지금 상태로만 정해지는 생각), stack = 같은 생각이 겹치는 최대 수.",
-    "names: 이름 소리 조각 — 첫소리 · 가운데 소리 · 끝소리(빈칸 = 받침 없음)를 이어 한 글자를 만들고, 두세 글자로 이름을 짓는다."
+    "이름은 이 파일이 아니라 사람들의 말(data/language.json)에서 나온다."
   ],
   "abilities": [
     { "id": "str",   "name": "힘" },
@@ -98,10 +98,5 @@
     { "id": "passion_work", "name": "좋아하는 일을 함",   "mood": 4,   "hours": 6,   "stack": 1 },
     { "id": "lazy_rest",    "name": "게으름 피움",        "mood": 3,   "hours": 6,   "stack": 1 },
     { "id": "alone_long",   "name": "혼자 너무 오래",     "mood": -10, "hours": 0 }
-  ],
-  "names": {
-    "initials": ["ㄱ", "ㄴ", "ㄷ", "ㄹ", "ㅁ", "ㅂ", "ㅅ", "ㅇ", "ㅈ", "ㅎ", "ㅋ", "ㅌ", "ㅍ"],
-    "vowels":   ["ㅏ", "ㅓ", "ㅗ", "ㅜ", "ㅡ", "ㅣ", "ㅐ", "ㅔ", "ㅑ", "ㅕ", "ㅛ", "ㅠ"],
-    "finals":   ["", "", "", "", "", "", "ㄴ", "ㄹ", "ㅁ", "ㅇ", "ㄱ"]
-  }
+  ]
 }

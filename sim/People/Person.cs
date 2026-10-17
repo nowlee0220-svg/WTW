@@ -39,7 +39,7 @@ public struct Relation
     public int Talks;    // 이야기한 횟수
 }
 
-public enum BioKind : byte { Born = 0, Spawned, Paired, ChildBorn, Died, FamilyDied, Break, CaveFound, Passion, Adult, Ill, PartnerDied, Starving, Argument }
+public enum BioKind : byte { Born = 0, Spawned, Paired, ChildBorn, Died, FamilyDied, Break, CaveFound, Passion, Adult, Ill, PartnerDied, Starving, Argument, Named, LearnedSpeech, FoundWater }
 
 public struct BioEntry
 {
@@ -58,7 +58,25 @@ public sealed class Person
     public const int History = 4;
 
     public int Id;
+    /// <summary>지은 이름(무리의 말로). 빈칸 = 아직 이름이 없다(뿌린 사람) — 화면엔 생김새로.</summary>
     public string Name = "";
+    /// <summary>이름의 뜻(뜻 번호들), 물려받은 이름이면 그 사람, 지어 준 사람.</summary>
+    public int[] NameConcepts = Array.Empty<int>();
+    public int NameFrom = -1, NamedBy = -1;
+    /// <summary>쓰는 말(Language 번호)과 사람마다 조금 다른 말씨(소리 무게에 더하는 작은 값).</summary>
+    public int LangId = -1;
+    public sbyte[] Accent = new sbyte[LanguageData.Default.SoundCount];
+    /// <summary>이야기할 때 말풍선에 띄울 뜻(−1 = 없음).</summary>
+    public int TalkConcept = -1;
+    /// <summary>한 번 본 물가 · 열매 자리(최근 것부터, 몇 개만 기억).</summary>
+    public readonly List<int> KnownWater = new();
+    public readonly List<int> KnownFood = new();
+    public const int WaterMemory = 6, FoodMemory = 10;
+    /// <summary>찾아다니기: 마지막으로 고른 방향(0~7, −1 = 없음).</summary>
+    public int SearchDir = -1;
+    /// <summary>물 · 먹을 것을 어떻게 찾아가나: 0 보임 · 1 기억 · 2 남을 따라감(HowArg = 그 사람) · 3 찾아다님(낮은 곳 · 초록 쪽).</summary>
+    public byte How;
+    public int HowArg = -1;
     public Sex Sex;
     public long BirthTick;
     public int Cell;

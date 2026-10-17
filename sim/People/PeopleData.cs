@@ -34,9 +34,6 @@ public sealed class PeopleData
     public IReadOnlyList<ThoughtDef> Thoughts { get; private init; } = Array.Empty<ThoughtDef>();
     /// <summary>[오브젝트 카탈로그 번호] → 딸 것 / 주울 것 (없으면 null).</summary>
     public HarvestDef?[] Harvest { get; private init; } = Array.Empty<HarvestDef?>();
-    public string[] Initials { get; private init; } = Array.Empty<string>();
-    public string[] Vowels { get; private init; } = Array.Empty<string>();
-    public string[] Finals { get; private init; } = Array.Empty<string>();
 
     public int TraitIndex(string id) { foreach (var t in Traits) if (t.Id == id) return t.Index; return -1; }
     public int ThoughtIndex(string id) { foreach (var t in Thoughts) if (t.Id == id) return t.Index; return -1; }
@@ -115,21 +112,12 @@ public sealed class PeopleData
         ReadHarvest("foods", true);
         ReadHarvest("carry", false);
 
-        string[] Arr(JsonElement names, string k) => names.TryGetProperty(k, out var a) ? a.EnumerateArray().Select(x => x.GetString() ?? "").ToArray() : Array.Empty<string>();
-        string[] ini = Array.Empty<string>(), vow = Array.Empty<string>(), fin = Array.Empty<string>();
-        if (root.TryGetProperty("names", out var ne)) { ini = Arr(ne, "initials"); vow = Arr(ne, "vowels"); fin = Arr(ne, "finals"); }
-        if (ini.Length == 0 || vow.Length == 0 || fin.Length == 0) problems.Add($"{File}: names 의 소리 조각이 비었습니다.");
-        foreach (var s in ini) if (Hangul.ChoIndex(s) < 0) problems.Add($"{File}: 첫소리 '{s}' 를 모릅니다.");
-        foreach (var s in vow) if (Hangul.JungIndex(s) < 0) problems.Add($"{File}: 가운데 소리 '{s}' 를 모릅니다.");
-        foreach (var s in fin) if (Hangul.JongIndex(s) < 0) problems.Add($"{File}: 끝소리 '{s}' 를 모릅니다.");
-
         foreach (var id in PeopleSim.RequiredThoughts) if (thoughts.All(t => t.Id != id)) problems.Add($"{File}: 꼭 있어야 하는 생각 '{id}' 가 없습니다.");
         foreach (var id in PeopleSim.RequiredTraits) if (traits.All(t => t.Id != id)) problems.Add($"{File}: 꼭 있어야 하는 특성 '{id}' 가 없습니다.");
         if (problems.Count > 0) throw new DataValidationException(problems);
         return new PeopleData
         {
             Abilities = abilities, Skills = skills, Traits = traits, Thoughts = thoughts, Harvest = harvest,
-            Initials = ini, Vowels = vow, Finals = fin,
         };
     }
 }
@@ -151,7 +139,11 @@ public static class Hangul
     public static bool HasFinal(string word)
     {
         if (string.IsNullOrEmpty(word)) return false;
-        char c = word[^1];
+        // 끝의 따옴표 · 괄호 · 빈칸은 건너뛰고 읽히는 마지막 글자로: "키 큰 여자 (2)" → "이"(받침 없음), "(3)" → "삼"(받침)
+        int k = word.Length - 1;
+        while (k > 0 && word[k] is ')' or '\'' or '"' or ' ' or '’' or '”') k--;
+        char c = word[k];
+        if (c >= '0' && c <= '9') return c is '0' or '1' or '3' or '6' or '7' or '8';
         if (c < 0xAC00 || c > 0xD7A3) return false;
         return (c - 0xAC00) % 28 != 0;
     }

@@ -15,11 +15,12 @@ namespace Wtw.Sim.Persistence;
 /// 지방 지도도 행성 + 칸으로 다시 만들므로 저장하지 않는다. 버전 3 부터 "바뀐 지방 목록" 자리가 있다(지금은 늘 0개 —
 /// 나무를 베는 것 같은 변화는 E3~ 에서 여기에 "바뀐 타일"만 넣는다).
 /// 버전 4(E3): 맨 끝에 사람 묶음 — 사람 상한 · 열정 켜짐, 알림, 사람이 사는 지방의 바뀐 것(딴 몫 · 걷힌 숨김), 사람 하나하나의 전부.
+/// 버전 5(E3 고침): 말(언어) · 이름의 뜻 · 말씨 · 기억해 둔 물가 · 열매 자리. 버전 4 파일은 지방마다 말 하나를 새로 만들어 읽는다.
 /// 버전 1(E0) · 2(E1) · 3(E2) 파일도 읽는다(행성 설정은 기본값, 사람 없음).
 /// </summary>
 public static class SaveGame
 {
-    public const int Version = 4;
+    public const int Version = 5;
     private static readonly byte[] Magic = "WTWS"u8.ToArray();
 
     public static byte[] ToBytes(GameWorld w)
@@ -124,6 +125,15 @@ public static class SaveGame
             bw.Write(life.Revealed.Count);
             foreach (int t in life.Revealed) bw.Write(t);
         }
+        bw.Write(ps.NextLanguageId);
+        bw.Write(ps.Languages.Count);
+        foreach (var (_, l) in ps.Languages)
+        {
+            bw.Write(l.Id); bw.Write(l.Seed); bw.Write(l.Parent); bw.Write(l.Born); bw.Write(l.Length);
+            bw.Write(l.Sounds.Length); foreach (int v in l.Sounds) bw.Write(v);
+            bw.Write(l.Known.Count); foreach (int k in l.Known) bw.Write(k);
+            bw.Write(l.Overrides.Count); foreach (var (k, v) in l.Overrides) { bw.Write(k); bw.Write(v); }
+        }
         bw.Write(ps.All.Count);
         foreach (var p in ps.All) WritePerson(bw, p);
     }
@@ -131,6 +141,12 @@ public static class SaveGame
     private static void WritePerson(BinaryWriter bw, Person p)
     {
         bw.Write(p.Id); bw.Write(p.Name); bw.Write((byte)p.Sex); bw.Write(p.BirthTick); bw.Write(p.Cell);
+        bw.Write(p.NameConcepts.Length); foreach (int c in p.NameConcepts) bw.Write(c);
+        bw.Write(p.NameFrom); bw.Write(p.NamedBy); bw.Write(p.LangId);
+        bw.Write(p.Accent.Length); foreach (sbyte a in p.Accent) bw.Write(a);
+        bw.Write(p.TalkConcept); bw.Write(p.SearchDir); bw.Write(p.How); bw.Write(p.HowArg);
+        bw.Write(p.KnownWater.Count); foreach (int t in p.KnownWater) bw.Write(t);
+        bw.Write(p.KnownFood.Count); foreach (int t in p.KnownFood) bw.Write(t);
         var l = p.Look;
         bw.Write(l.Skin); bw.Write(l.Hair); bw.Write(l.HairStyle); bw.Write(l.Build); bw.Write(l.Height); bw.Write(l.Face); bw.Write(l.Eyes); bw.Write(l.Beard);
         foreach (int v in p.BaseAbility) bw.Write(v);
@@ -161,7 +177,7 @@ public static class SaveGame
         }
     }
 
-    private static void ReadPeople(BinaryReader br, GameWorld w)
+    private static void ReadPeople(BinaryReader br, GameWorld w, int version)
     {
         var ps = w.People;
         ps.NextEventSeq = br.ReadInt64();
@@ -177,13 +193,50 @@ public static class SaveGame
             int nr = br.ReadInt32();
             for (int k = 0; k < nr; k++) life.Revealed.Add(br.ReadInt32());
         }
+        if (version >= 5)
+        {
+            ps.NextLanguageId = br.ReadInt32();
+            int nl = br.ReadInt32();
+            for (int i = 0; i < nl; i++)
+            {
+                var l = new Language { Id = br.ReadInt32(), Seed = br.ReadUInt64(), Parent = br.ReadInt32(), Born = br.ReadInt64(), Length = br.ReadInt32() };
+                l.Sounds = new int[br.ReadInt32()];
+                if (l.Sounds.Length != ps.Lang.SoundCount) throw new InvalidDataException("저장 파일의 말(소리 수)이 지금 데이터와 다릅니다.");
+                for (int k = 0; k < l.Sounds.Length; k++) l.Sounds[k] = br.ReadInt32();
+                int nk = br.ReadInt32(); for (int k = 0; k < nk; k++) l.Known.Add(br.ReadInt32());
+                int no = br.ReadInt32(); for (int k = 0; k < no; k++) l.Overrides[br.ReadInt32()] = br.ReadUInt64();
+                ps.AddLoadedLanguage(l);
+            }
+        }
         int count = br.ReadInt32();
-        for (int i = 0; i < count; i++) ps.AddLoaded(ReadPerson(br));
+        var byCellLang = new SortedDictionary<int, int>();
+        for (int i = 0; i < count; i++)
+        {
+            var p = ReadPerson(br, version);
+            if (version < 5) // 버전 4: 말이 없던 때 — 지방마다 말 하나
+            {
+                if (!byCellLang.TryGetValue(p.Cell, out int lid)) { lid = ps.NewLanguageForLoad(); byCellLang[p.Cell] = lid; }
+                p.LangId = lid;
+            }
+            ps.AddLoaded(p);
+        }
     }
 
-    private static Person ReadPerson(BinaryReader br)
+    private static Person ReadPerson(BinaryReader br, int version)
     {
         var p = new Person { Id = br.ReadInt32(), Name = br.ReadString(), Sex = (Sex)br.ReadByte(), BirthTick = br.ReadInt64(), Cell = br.ReadInt32() };
+        if (version >= 5)
+        {
+            p.NameConcepts = new int[br.ReadInt32()];
+            for (int k = 0; k < p.NameConcepts.Length; k++) p.NameConcepts[k] = br.ReadInt32();
+            p.NameFrom = br.ReadInt32(); p.NamedBy = br.ReadInt32(); p.LangId = br.ReadInt32();
+            int na = br.ReadInt32();
+            if (na != p.Accent.Length) throw new InvalidDataException("저장 파일의 말씨(소리 수)가 지금 데이터와 다릅니다.");
+            for (int k = 0; k < na; k++) p.Accent[k] = br.ReadSByte();
+            p.TalkConcept = br.ReadInt32(); p.SearchDir = br.ReadInt32(); p.How = br.ReadByte(); p.HowArg = br.ReadInt32();
+            int nw = br.ReadInt32(); for (int k = 0; k < nw; k++) p.KnownWater.Add(br.ReadInt32());
+            int nf = br.ReadInt32(); for (int k = 0; k < nf; k++) p.KnownFood.Add(br.ReadInt32());
+        }
         p.Look = new Appearance(br.ReadByte(), br.ReadByte(), br.ReadByte(), br.ReadByte(), br.ReadByte(), br.ReadByte(), br.ReadByte(), br.ReadByte());
         for (int k = 0; k < p.BaseAbility.Length; k++) p.BaseAbility[k] = br.ReadInt32();
         int nt = br.ReadInt32(); for (int k = 0; k < nt; k++) p.Traits.Add(br.ReadInt32());
@@ -288,7 +341,7 @@ public static class SaveGame
             for (int j = 0; j < vals.Length; j++) vals[j] = br.ReadInt64();
             w.AddLoadedIntervention(new Intervention(tick, kind, vals));
         }
-        if (version >= 4) ReadPeople(br, w);
+        if (version >= 4) ReadPeople(br, w, version);
         return w;
     }
 }
