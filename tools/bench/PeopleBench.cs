@@ -33,6 +33,10 @@ public static class PeopleBench
             case "cap": Cap(I("people", 500), I("years", 100), (ulong)I("seed", 1), I("per", 25), I("cap", 500)); break;
             case "nosource": NoSource(I("seeds", 20), I("cells", 5), I("people", 5), I("years", 3), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "water": WaterBench.Run(I("seeds", 20), I("cells", 30), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
+            case "spread": SpreadBench.Run(I("seeds", 20), I("people", 10), I("years", 100), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
+            case "drift": DriftBench.Run(I("langs", 200), Sx("k", "1,2,3,4")); break;
+            case "driftmodel": DriftModel.Run(I("langs", 200), Sx("k", "0.05,0.1,0.2"), Sx("r", "0.02,0.03,0.04"), I("t", 3)); break;
+            case "dialect": DialectBench.Run(I("seeds", 20), I("families", 3), I("years", 500), I("cap", 60), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "one": One(I("people", 10), I("years", 5), (ulong)I("seed", 1), Sx("cell", "home"), o.ContainsKey("family"), I("cap", 300)); break;
             default: Console.WriteLine("모드: seeds | cap | one"); break;
         }

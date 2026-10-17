@@ -16,7 +16,7 @@ public sealed partial class PeopleSim
     public LanguageData Lang { get; } = LanguageData.Default;
     public readonly SortedDictionary<int, Language> Languages = new();
     public int NextLanguageId { get; internal set; } = 1;
-    private readonly Dictionary<(int, ulong, int, int), string> _wordCache = new();
+    private readonly Dictionary<(int, int, ulong, int, int), string> _wordCache = new();
 
     public const int TalksToLearnSpeech = 4;
 
@@ -42,7 +42,7 @@ public sealed partial class PeopleSim
     public string WordOf(Person p, int concept, int minSyllables = 1)
     {
         if (!Languages.TryGetValue(p.LangId, out var lang) || (uint)concept >= Lang.Concepts.Count) return "…";
-        var key = (p.LangId, AccentHash(p.Accent), concept, minSyllables);
+        var key = (p.LangId, lang.Version, AccentHash(p.Accent), concept, minSyllables);
         if (!_wordCache.TryGetValue(key, out var w))
         {
             if (_wordCache.Count > 50_000) _wordCache.Clear();
@@ -260,6 +260,6 @@ public sealed partial class PeopleSim
     public string LanguageLabel(int langId)
     {
         if (!Languages.TryGetValue(langId, out var l)) return "말 없음";
-        return $"말 {langId}";
+        return l.Parent >= 0 ? $"말 {langId}(말 {l.Parent}에서 갈라짐)" : $"말 {langId}";
     }
 }

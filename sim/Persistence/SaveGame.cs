@@ -16,11 +16,13 @@ namespace Wtw.Sim.Persistence;
 /// 나무를 베는 것 같은 변화는 E3~ 에서 여기에 "바뀐 타일"만 넣는다).
 /// 버전 4(E3): 맨 끝에 사람 묶음 — 사람 상한 · 열정 켜짐, 알림, 사람이 사는 지방의 바뀐 것(딴 몫 · 걷힌 숨김), 사람 하나하나의 전부.
 /// 버전 5(E3 고침): 말(언어) · 이름의 뜻 · 말씨 · 기억해 둔 물가 · 열매 자리. 버전 4 파일은 지방마다 말 하나를 새로 만들어 읽는다.
+/// 버전 6(E3b): 지방 넘기 — 잠든 지방도 같은 목록에(깨어 있든 잠들었든 칸 번호 순), 넘겨주기 대기, 땅 이름, 사람의 옮겨 가기 상태,
+///   기억(칸 × 타일 수 + 타일). 버전 5 이하의 기억은 그 사람이 사는 지방의 타일로 읽는다.
 /// 버전 1(E0) · 2(E1) · 3(E2) 파일도 읽는다(행성 설정은 기본값, 사람 없음).
 /// </summary>
 public static class SaveGame
 {
-    public const int Version = 5;
+    public const int Version = 6;
     private static readonly byte[] Magic = "WTWS"u8.ToArray();
 
     public static byte[] ToBytes(GameWorld w)
@@ -116,14 +118,39 @@ public static class SaveGame
         bw.Write(ps.NextEventSeq);
         bw.Write(ps.Events.Count);
         foreach (var e in ps.Events) { bw.Write(e.Seq); bw.Write(e.Tick); bw.Write((byte)e.Kind); bw.Write(e.Person); bw.Write(e.Other); bw.Write(e.Cell); bw.Write(e.Text); }
-        bw.Write(ps.Provinces.Count);
-        foreach (var (cell, life) in ps.Provinces)
+        // 깨어 있든 잠들었든 같은 모양으로(칸 번호 순) — 잠든 상태는 결과에 영향이 없으므로 저장 바이트도 같게
+        var cells = ps.OpenedProvinces().ToList();
+        bw.Write(cells.Count);
+        foreach (int cell in cells)
         {
             bw.Write(cell);
-            bw.Write(life.Stocks.Count);
-            foreach (var (tile, st) in life.Stocks) { bw.Write(tile); bw.Write(st.Stock); bw.Write(st.Stamp); }
-            bw.Write(life.Revealed.Count);
-            foreach (int t in life.Revealed) bw.Write(t);
+            if (ps.Provinces.TryGetValue(cell, out var life))
+            {
+                bw.Write(life.Stocks.Count);
+                foreach (var (tile, st) in life.Stocks) { bw.Write(tile); bw.Write(st.Stock); bw.Write(st.Stamp); }
+                bw.Write(life.Revealed.Count);
+                foreach (int t in life.Revealed) bw.Write(t);
+            }
+            else
+            {
+                var d = ps.Dormant[cell];
+                bw.Write(d.Stocks.Length);
+                foreach (var (tile, st) in d.Stocks) { bw.Write(tile); bw.Write(st.Stock); bw.Write(st.Stamp); }
+                bw.Write(d.Revealed.Length);
+                foreach (int t in d.Revealed) bw.Write(t);
+            }
+        }
+        var (queue, at) = ps.CrossQueueForSave();
+        bw.Write(at); bw.Write(queue.Length); foreach (int id in queue) bw.Write(id);
+        bw.Write(ps.LandNames.Count);
+        foreach (var (cell, list) in ps.LandNames)
+        {
+            bw.Write(cell); bw.Write(list.Count);
+            foreach (var n in list)
+            {
+                bw.Write(n.LangId); bw.Write(n.Word); bw.Write(n.Concepts.Length); foreach (int c in n.Concepts) bw.Write(c);
+                bw.Write(n.Tick); bw.Write(n.Namer); bw.Write(n.Reason);
+            }
         }
         bw.Write(ps.NextLanguageId);
         bw.Write(ps.Languages.Count);
@@ -133,6 +160,7 @@ public static class SaveGame
             bw.Write(l.Sounds.Length); foreach (int v in l.Sounds) bw.Write(v);
             bw.Write(l.Known.Count); foreach (int k in l.Known) bw.Write(k);
             bw.Write(l.Overrides.Count); foreach (var (k, v) in l.Overrides) { bw.Write(k); bw.Write(v); }
+            bw.Write(l.Changes);
         }
         bw.Write(ps.All.Count);
         foreach (var p in ps.All) WritePerson(bw, p);
@@ -147,6 +175,7 @@ public static class SaveGame
         bw.Write(p.TalkConcept); bw.Write(p.SearchDir); bw.Write(p.How); bw.Write(p.HowArg);
         bw.Write(p.KnownWater.Count); foreach (int t in p.KnownWater) bw.Write(t);
         bw.Write(p.KnownFood.Count); foreach (int t in p.KnownFood) bw.Write(t);
+        bw.Write(p.FromCell); bw.Write(p.ArrivedTick); bw.Write(p.SearchMiss); bw.Write(p.Scarcity); bw.Write(p.LastMove); bw.Write((byte)p.MoveWhy); bw.Write(p.MoveTo);
         var l = p.Look;
         bw.Write(l.Skin); bw.Write(l.Hair); bw.Write(l.HairStyle); bw.Write(l.Build); bw.Write(l.Height); bw.Write(l.Face); bw.Write(l.Eyes); bw.Write(l.Beard);
         foreach (int v in p.BaseAbility) bw.Write(v);
@@ -187,11 +216,35 @@ public static class SaveGame
         int np = br.ReadInt32();
         for (int i = 0; i < np; i++)
         {
-            var life = ps.Life(br.ReadInt32());
+            // 모두 잠든 지방으로 읽고, 산 사람이 들어오면(AddLoaded) 깨어난다
+            int cell = br.ReadInt32();
             int ns = br.ReadInt32();
-            for (int k = 0; k < ns; k++) life.Stocks[br.ReadInt32()] = new TileStock { Stock = br.ReadInt32(), Stamp = br.ReadInt64() };
+            var stocks = new (int, TileStock)[ns];
+            for (int k = 0; k < ns; k++) stocks[k] = (br.ReadInt32(), new TileStock { Stock = br.ReadInt32(), Stamp = br.ReadInt64() });
             int nr = br.ReadInt32();
-            for (int k = 0; k < nr; k++) life.Revealed.Add(br.ReadInt32());
+            var rev = new int[nr];
+            for (int k = 0; k < nr; k++) rev[k] = br.ReadInt32();
+            ps.Dormant[cell] = new DormantProvince(cell, stocks, rev, new List<Person>());
+        }
+        if (version >= 6)
+        {
+            long at = br.ReadInt64();
+            int nq = br.ReadInt32();
+            var q = new int[nq];
+            for (int k = 0; k < nq; k++) q[k] = br.ReadInt32();
+            ps.LoadCrossQueue(q, at);
+            int nn = br.ReadInt32();
+            for (int i = 0; i < nn; i++)
+            {
+                int cell = br.ReadInt32(), cnt = br.ReadInt32();
+                for (int k = 0; k < cnt; k++)
+                {
+                    int lid = br.ReadInt32(); string word = br.ReadString();
+                    var cs = new int[br.ReadInt32()];
+                    for (int j = 0; j < cs.Length; j++) cs[j] = br.ReadInt32();
+                    ps.AddLoadedLandName(cell, new LandName(lid, word, cs, br.ReadInt64(), br.ReadInt32(), br.ReadString()));
+                }
+            }
         }
         if (version >= 5)
         {
@@ -205,6 +258,7 @@ public static class SaveGame
                 for (int k = 0; k < l.Sounds.Length; k++) l.Sounds[k] = br.ReadInt32();
                 int nk = br.ReadInt32(); for (int k = 0; k < nk; k++) l.Known.Add(br.ReadInt32());
                 int no = br.ReadInt32(); for (int k = 0; k < no; k++) l.Overrides[br.ReadInt32()] = br.ReadUInt64();
+                if (version >= 6) l.Changes = br.ReadInt32();
                 ps.AddLoadedLanguage(l);
             }
         }
@@ -236,6 +290,16 @@ public static class SaveGame
             p.TalkConcept = br.ReadInt32(); p.SearchDir = br.ReadInt32(); p.How = br.ReadByte(); p.HowArg = br.ReadInt32();
             int nw = br.ReadInt32(); for (int k = 0; k < nw; k++) p.KnownWater.Add(br.ReadInt32());
             int nf = br.ReadInt32(); for (int k = 0; k < nf; k++) p.KnownFood.Add(br.ReadInt32());
+            if (version < 6)
+            {
+                for (int k = 0; k < p.KnownWater.Count; k++) p.KnownWater[k] = Person.Place(p.Cell, p.KnownWater[k]);
+                for (int k = 0; k < p.KnownFood.Count; k++) p.KnownFood[k] = Person.Place(p.Cell, p.KnownFood[k]);
+            }
+            else
+            {
+                p.FromCell = br.ReadInt32(); p.ArrivedTick = br.ReadInt64(); p.SearchMiss = br.ReadInt32(); p.Scarcity = br.ReadInt32();
+                p.LastMove = br.ReadInt64(); p.MoveWhy = (Why)br.ReadByte(); p.MoveTo = br.ReadInt32();
+            }
         }
         p.Look = new Appearance(br.ReadByte(), br.ReadByte(), br.ReadByte(), br.ReadByte(), br.ReadByte(), br.ReadByte(), br.ReadByte(), br.ReadByte());
         for (int k = 0; k < p.BaseAbility.Length; k++) p.BaseAbility[k] = br.ReadInt32();

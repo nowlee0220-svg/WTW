@@ -9,6 +9,8 @@ public enum Act : byte
 {
     Idle = 0, Wander, Eat, Drink, Sleep, Rest, Talk, Warm, Gather, Follow, Carried,
     BreakWander, BreakArgue, BreakLeave, Collapse, EatCorpse, Dead,
+    /// <summary>(E3b) 지방 경계(Target = 경계 타일, TargetB = 변)로 걸어가 이웃 지방으로 넘어간다.</summary>
+    Cross,
 }
 
 public enum DeathCause : byte { None = 0, Starvation, Thirst, Cold, Heat, OldAge, Illness }
@@ -18,6 +20,8 @@ public enum Why : byte
 {
     None = 0, Spawned, Hungry, VeryHungry, Thirsty, VeryThirsty, Night, Exhausted, Cold, VeryCold, Hot, Lonely, Bored, Curious, Nothing,
     FollowParent, Carried, TalkedTo, WantsTalk, Break, Partner, FamilyNear, NoFood, NoWater, NoPath, Starving, Morning, Friend, WaitTalk,
+    // (E3b) 옮겨 가는 까닭
+    Scarce, SeekMate, Explore, GoBack, FollowFamily, FollowOther,
 }
 
 /// <summary>생김새(코드로 그리는 몸 — 부모를 닮는다). 값은 0~255.</summary>
@@ -39,7 +43,7 @@ public struct Relation
     public int Talks;    // 이야기한 횟수
 }
 
-public enum BioKind : byte { Born = 0, Spawned, Paired, ChildBorn, Died, FamilyDied, Break, CaveFound, Passion, Adult, Ill, PartnerDied, Starving, Argument, Named, LearnedSpeech, FoundWater }
+public enum BioKind : byte { Born = 0, Spawned, Paired, ChildBorn, Died, FamilyDied, Break, CaveFound, Passion, Adult, Ill, PartnerDied, Starving, Argument, Named, LearnedSpeech, FoundWater, Moved, NamedLand }
 
 public struct BioEntry
 {
@@ -68,7 +72,9 @@ public sealed class Person
     public sbyte[] Accent = new sbyte[LanguageData.Default.SoundCount];
     /// <summary>이야기할 때 말풍선에 띄울 뜻(−1 = 없음).</summary>
     public int TalkConcept = -1;
-    /// <summary>한 번 본 물가 · 열매 자리(최근 것부터, 몇 개만 기억).</summary>
+    /// <summary>
+    /// 한 번 본 물가 · 열매 자리(최근 것부터, 몇 개만 기억). (E3b) 값 = 칸 × 타일 수 + 타일(Place) — 이웃 지방의 물가도 기억한다.
+    /// </summary>
     public readonly List<int> KnownWater = new();
     public readonly List<int> KnownFood = new();
     public const int WaterMemory = 6, FoodMemory = 10;
@@ -77,6 +83,15 @@ public sealed class Person
     /// <summary>물 · 먹을 것을 어떻게 찾아가나: 0 보임 · 1 기억 · 2 남을 따라감(HowArg = 그 사람) · 3 찾아다님(낮은 곳 · 초록 쪽).</summary>
     public byte How;
     public int HowArg = -1;
+    /// <summary>(E3b) 바로 전에 살던 지방(−1 = 없음) · 지금 지방에 들어온 시각 · 찾아다녀도 못 찾은 횟수(찾으면 0) · 먹을 것이 모자란 날 셈 · 마지막으로 떠나기로 한 시각.</summary>
+    public int FromCell = -1;
+    public long ArrivedTick;
+    public int SearchMiss;
+    public int Scarcity;
+    public long LastMove = long.MinValue / 2;
+    /// <summary>(E3b) 옮겨 가려는 마음(하루 경계에서 정함): 까닭(None = 없음)과 가려는 칸(−1 = 아무 데나 — 갈 때 고른다).</summary>
+    public Why MoveWhy;
+    public int MoveTo = -1;
     public Sex Sex;
     public long BirthTick;
     public int Cell;
@@ -152,6 +167,11 @@ public sealed class Person
     public bool Female => Sex == Sex.Female;
     public long AgeTicks(long now) => now - BirthTick;
     public int AgeYears(long now) => (int)(AgeTicks(now) / Time.GameTime.TicksPerYear);
+
+    /// <summary>(E3b) 칸 + 타일 → 기억에 쓰는 값 하나(칸 51,842개 × 22,500 타일 &lt; 2³¹).</summary>
+    public static int Place(int cell, int tile) => cell * Provinces.HexFrame.TileCount + tile;
+    public static int PlaceCell(int place) => place / Provinces.HexFrame.TileCount;
+    public static int PlaceTile(int place) => place % Provinces.HexFrame.TileCount;
 
     public LifeStage Stage(long now)
     {

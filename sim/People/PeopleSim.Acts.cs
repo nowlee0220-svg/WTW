@@ -115,6 +115,9 @@ public sealed partial class PeopleSim
         if ((tod >= bed || tod < wake) && p.Rest < 95_000) { GoSleep(p, Why.Night); return; }
         if (p.Rest < 12_000) { GoSleep(p, Why.Exhausted); return; }
 
+        // (E3b) 떠나고 싶은 마음이 있으면 떠난다(집안과 함께)
+        if (p.MoveWhy != Why.None && TryMove(p)) return;
+
         // 아이는 어른을 따라다닌다
         if (stage == LifeStage.Child && Guardian(p) is { } g)
         {
@@ -364,7 +367,7 @@ public sealed partial class PeopleSim
                 if (h is null || stock <= 0)
                 {
                     if (p.Food <= 0) p.PassionPoints[PeopleData.Gathering] -= 10;
-                    p.KnownFood.Remove(p.Target);
+                    Forget(p.KnownFood, Person.Place(p.Cell, p.Target));
                     Look(p);
                     if (!TryEat(p, Why.NoFood, p.Target)) Decide(p);
                     return;
@@ -407,6 +410,9 @@ public sealed partial class PeopleSim
                 return;
             case Act.BreakLeave:
                 DoStill(p, Math.Max(600, p.BreakUntil - Now));
+                return;
+            case Act.Cross when here == p.Target:
+                ArriveAtBorder(p);
                 return;
             default:
                 Decide(p);
@@ -674,6 +680,12 @@ public sealed partial class PeopleSim
         var rng = Rng(p.Cell);
         p.Position(Now, out int px, out int py);
         int hx = px / 1000, hy = py / 1000, here = hy * S + hx;
+        // (E3b) 가끔은 아예 이웃 땅으로 떠난다
+        if (rng.NextInt(100) < 30 && PickNewLand(p, life, here) is { } nb)
+        {
+            int gi = NearestGate(nb, life, here, px, py);
+            if (gi >= 0 && StartCross(p, nb, gi, Why.Break, Mood(p))) { p.BreakUntil = Now + GameTime.TicksPerDay; Stats.MoveWhy[(int)Why.Break]++; return true; }
+        }
         for (int tries = 0; tries < 16; tries++)
         {
             int tx = rng.NextInt(10, S - 10), ty = rng.NextInt(10, S - 10);

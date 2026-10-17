@@ -162,7 +162,8 @@ public class PeopleTests
         foreach (var p in hungry.People.All) p.Food = 30_000;
         fed.AdvanceTo(GameTime.TicksPerDay * 14);
         hungry.AdvanceTo(GameTime.TicksPerDay * 14);
-        Assert.All(hungry.People.All, p => { Assert.True(p.Dead); Assert.Equal(DeathCause.Starvation, p.Cause); });
+        // (E3b) 먹을 것이 없는 땅에서는 굶어 죽거나, 찾아다니다 이웃 땅으로 떠난다 — 그 땅에 살아 남은 사람은 없다
+        Assert.All(hungry.People.All, p => Assert.True(p.Dead ? p.Cause == DeathCause.Starvation : p.Cell != cell, $"{p.Id}: 죽음 {p.Dead} · 칸 {p.Cell}"));
         Assert.Equal(3, fed.People.AliveCount);
         Assert.All(fed.People.All, p => Assert.Equal(0, p.Malnutrition));
     }

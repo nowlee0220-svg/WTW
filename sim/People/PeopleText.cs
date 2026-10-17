@@ -93,7 +93,35 @@ public sealed partial class PeopleSim
             Act.BreakArgue => $"{NameOf(p.Target)}에게 화풀이하는 중",
             Act.BreakLeave => p.Asleep ? "혼자 떠나 잠" : "혼자 떠나 있음",
             Act.EatCorpse => "시신을 먹는 중",
+            Act.Cross => CrossText(p),
             _ => "둘러보는 중",
+        };
+    }
+
+    /// <summary>(E3b) 경계를 넘으러 가는 사람: 어디로 · 무엇 때문에(실제로 고른 까닭 그대로).</summary>
+    private string CrossText(Person p)
+    {
+        var b = BorderOf(p.Cell, p.TargetB);
+        string land = b is null ? "이웃 땅" : LandNameFor(b.Nb, p.LangId)?.Word is { } wd ? $"이웃 땅 '{wd}'" : "이웃 땅";
+        if (!p.Walking) return $"경계를 넘는 중 — {Hangul.Ro(land)}";
+        bool water = p.Why is Why.Thirsty or Why.VeryThirsty, food = p.Why is Why.Hungry or Why.VeryHungry or Why.Starving;
+        if (water || food)
+            return p.How switch
+            {
+                0 => water ? $"경계 너머 보이는 물가로 — {Hangul.Ro(land)} 가는 중" : $"{Hangul.Ro(land)} 먹을 것을 따러 가는 중",
+                1 => water ? $"기억해 둔 물가가 있는 {Hangul.Ro(land)} 가는 중" : $"기억해 둔 열매 자리가 있는 {Hangul.Ro(land)} 가는 중",
+                2 => $"{Hangul.Eul(NameOf(p.HowArg))} 따라 {Hangul.Ro(land)} 가는 중",
+                _ => water ? $"물을 찾아 낮은 쪽, {Hangul.Ro(land)} 가는 중" : $"먹을 것을 찾아 푸른 쪽, {Hangul.Ro(land)} 가는 중",
+            };
+        return p.Why switch
+        {
+            Why.Scarce => $"먹을 것이 모자라 새 땅으로 옮겨 가는 중 — {Hangul.Ro(land)}",
+            Why.SeekMate => $"짝을 찾아 {Hangul.Ro(land)} 가는 중",
+            Why.Explore => $"{Hangul.Eul(land)} 둘러보러 가는 중",
+            Why.GoBack => $"살던 땅으로 돌아가는 중 — {land}",
+            Why.FollowFamily => $"가족을 따라 {Hangul.Ro(land)} 옮겨 가는 중",
+            Why.Break => $"혼자 떠나 {Hangul.Ro(land)} 가는 중",
+            _ => $"{Hangul.Ro(land)} 가는 중",
         };
     }
 
@@ -128,6 +156,11 @@ public sealed partial class PeopleSim
             Why.FamilyNear => "가족 · 친구 곁에서 자려고",
             Why.NoFood => "가 보니 다 따 가고 없어 다른 곳을 찾는다",
             Why.NoWater => "마실 물(민물)이 가까이 없어 찾아다닌다 — 바닷물은 못 마신다",
+            Why.Scarce => "며칠째 둘레에도 기억에도 딸 것이 없어서 — 이 땅의 먹을 것이 모자라다(사람이 많으면 빨리 줄어든다)",
+            Why.SeekMate => "짝이 될 만한 사람이 이 땅에 없어서",
+            Why.Explore => "궁금해서 — 경계 너머 땅이 보고 싶다(호기심)",
+            Why.GoBack => "이 땅에 혼자 남아 쓸쓸해서 — 사람이 있던 땅으로",
+            Why.FollowFamily => p.WhyArg > 0 && Get(p.WhyArg) is { } lead ? $"{Hangul.I(DisplayName(lead))} 떠나서 가족이 함께 간다" : "가족이 이웃 땅에 있어서",
             _ => "",
         } + HowText(p);
     }
@@ -135,6 +168,17 @@ public sealed partial class PeopleSim
     /// <summary>물 · 먹을 것을 어떻게 찾아가는지 덧붙임(실제로 하는 일과 같게).</summary>
     private string HowText(Person p)
     {
+        if (p.Act == Act.Cross && p.Walking && p.Why is Why.Thirsty or Why.VeryThirsty or Why.Hungry or Why.VeryHungry or Why.Starving)
+        {
+            bool wt = p.Why is Why.Thirsty or Why.VeryThirsty;
+            return p.How switch
+            {
+                0 => wt ? " — 이 땅엔 보이는 물가가 없고 경계 너머에 보인다" : "",
+                1 => wt ? " — 이 땅엔 아는 물가가 없어 전에 본 이웃 땅의 물가로" : " — 이 땅엔 아는 열매 자리가 없어 전에 본 이웃 땅으로",
+                2 => " — 아는 곳이 없어 남을 따라 경계를 넘는다",
+                _ => wt ? $" — 이 땅에서 {p.SearchMiss}번 찾아다녀도 물이 없어 이웃 땅으로(물은 낮은 곳에 고인다)" : $" — 이 땅에서 {p.SearchMiss}번 찾아다녀도 딸 것이 없어 이웃 땅으로",
+            };
+        }
         if (p.Act is not (Act.Eat or Act.Drink) || !p.Walking) return "";
         bool water = p.Act == Act.Drink;
         return p.How switch

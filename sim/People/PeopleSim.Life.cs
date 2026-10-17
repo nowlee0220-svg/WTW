@@ -210,9 +210,13 @@ public sealed partial class PeopleSim
             int g = PeopleData.Gathering;
             if (Now - p.LastGather > 3 * GameTime.TicksPerDay && p.SkillXp[g] > 0) p.SkillXp[g] = Math.Max(0, p.SkillXp[g] - p.SkillLevel(g) * 3);
             PurgeThoughts(p);
+            MoveIntent(p, rng);
             // 안아 줄 사람이 없는 아기
             if (p.Carrier >= 0 && Get(p.Carrier) is not { Dead: false }) ReassignCarrier(p);
         }
+        if (Now / GameTime.TicksPerDay % GameTime.DaysPerYear == 0) LanguageYear();
+        NameLands();
+        SleepEmptyProvinces();
     }
 
     // ───────── 아기 ─────────
