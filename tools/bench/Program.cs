@@ -13,6 +13,7 @@ using Wtw.Sim.World;
 //        [--planet] [--land 16000] [--parallel N] [--out result.json] [--baseline tools/bench/baseline.json] [--save-baseline]
 // 기준 파일은 잰 컴퓨터(코어 수 + CPU 이름)가 같을 때만 비교한다.
 
+if (args.Length > 0 && args[0] == "people") { PeopleBench.Main(args[1..]); return; }
 var opt = Options.Parse(args);
 var machine = MachineInfo.Current();
 Console.WriteLine($"컴퓨터: {machine}");

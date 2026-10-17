@@ -436,7 +436,7 @@ public class ProvinceTests : IClassFixture<ProvinceFixture>
         var remade = PlanetGenerator.Generate(loaded.Seed, loaded.Config.PlanetSettings);
         Assert.Equal(before, ProvinceGenerator.Generate(remade, c).Fingerprint);
         Assert.Equal(before, loaded.Province(c).Fingerprint);
-        Assert.Empty(loaded.ProvinceChanges);
+        Assert.Empty(loaded.People.Provinces);
     }
 
 }

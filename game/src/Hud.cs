@@ -17,6 +17,7 @@ public partial class Hud : Control
     public event Action<bool>? ScopeRequested;     // 지방 화면: false = 이 지방만, true = 이웃까지
     public event Action? ExitProvinceRequested;    // 지방 화면 → 지구본
     public event Action<bool>? ResourceViewRequested; // 지방 화면: 자원 보기 켜기/끄기
+    public event Action<int>? SpawnToolRequested;   // 지방 화면: 0 끔 · 1 사람 뿌리기 · 2 가족 뿌리기
 
     private Label _date = null!, _speed = null!, _metrics = null!, _notice = null!;
     private readonly Button[] _speedButtons = new Button[Speed.Max + 1];
@@ -27,6 +28,8 @@ public partial class Hud : Control
     private Label _provName = null!;
     private Button _scopeOne = null!, _scopeNb = null!, _resView = null!;
     private readonly List<Control> _globeOnly = new();
+    private readonly List<Control> _provinceOnly = new();
+    private Button _spawnOne = null!, _spawnFamily = null!;
 
     public override void _Ready()
     {
@@ -74,6 +77,13 @@ public partial class Hud : Control
             row.AddChild(b);
         }
         row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
+        // 지방 화면: 플레이어의 첫 권능 — 사람 뿌리기
+        _spawnOne = MakeButton("사람 뿌리기", () => SpawnToolRequested?.Invoke(_spawnOne.ButtonPressed ? 1 : 0), "누르고 땅을 누르면 그 자리에 한 명 (나이 15~40, 아무것도 모름). 걸을 수 있는 땅에만.");
+        _spawnFamily = MakeButton("가족 뿌리기", () => SpawnToolRequested?.Invoke(_spawnFamily.ButtonPressed ? 2 : 0), "누르고 땅을 누르면 짝 + 아이 0~2명 (2~4명)");
+        _spawnOne.ToggleMode = _spawnFamily.ToggleMode = true;
+        _spawnOne.Visible = _spawnFamily.Visible = false;
+        row.AddChild(_spawnOne); row.AddChild(_spawnFamily);
+        _provinceOnly.Add(_spawnOne); _provinceOnly.Add(_spawnFamily);
         foreach (var m in MapModes.All)
         {
             var mode = m;
@@ -148,11 +158,19 @@ public partial class Hud : Control
     {
         _provBar.Visible = on;
         foreach (var b in _globeOnly) b.Visible = !on;
+        foreach (var b in _provinceOnly) b.Visible = on;
+        if (!on) SetSpawnTool(0);
         _provName.Text = name;
         _scopeOne.SetPressedNoSignal(!neighbors);
         _scopeNb.SetPressedNoSignal(neighbors);
         _provBar.ResetSize();
         _provBar.Position = new Vector2((GetViewportRect().Size.X - _provBar.Size.X) / 2f, UiTheme.TopBarHeight + 10);
+    }
+
+    public void SetSpawnTool(int tool)
+    {
+        _spawnOne.SetPressedNoSignal(tool == 1);
+        _spawnFamily.SetPressedNoSignal(tool == 2);
     }
 
     public void SetMode(MapMode mode)
@@ -171,7 +189,7 @@ public partial class Hud : Control
         if (_metricsTimer <= 0)
         {
             _metricsTimer = 0.25;
-            string dots = snap.DotCount > 0 ? $"  ·  점 {snap.DotCount}개" : "";
+            string dots = (snap.DotCount > 0 ? $"  ·  점 {snap.DotCount}개" : "") + (snap.PeopleCount > 0 ? $"  ·  사람 {snap.AliveCount}명 (상한 {snap.PeopleCap})" : "");
             _metrics.Text = $"화면 {Engine.GetFramesPerSecond():0} fps  ·  시뮬 하루/초 {FormatRate(snap.SimDaysPerSecond)}  ·  시뮬 부하 {snap.SimLoad * 100:0}%{dots}  ·  시드 {snap.Seed} · 땅 {snap.Config.LandCells:N0} · 기후 {PlanetNames.Of(snap.Config.Climate)}";
         }
 

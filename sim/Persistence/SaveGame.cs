@@ -1,6 +1,7 @@
 using System.Text;
 using Wtw.Sim.Core;
 using Wtw.Sim.Movers;
+using Wtw.Sim.People;
 using Wtw.Sim.Planet;
 using Wtw.Sim.Scheduling;
 using Wtw.Sim.World;
@@ -13,11 +14,13 @@ namespace Wtw.Sim.Persistence;
 /// 나중에 칸이 바뀌게 되면(운석 등) "바뀐 칸 목록"만 덧붙인다 — 자리는 버전 2 에 이미 있다(지금은 늘 0개).
 /// 지방 지도도 행성 + 칸으로 다시 만들므로 저장하지 않는다. 버전 3 부터 "바뀐 지방 목록" 자리가 있다(지금은 늘 0개 —
 /// 나무를 베는 것 같은 변화는 E3~ 에서 여기에 "바뀐 타일"만 넣는다).
-/// 버전 1(E0) · 2(E1) 파일도 읽는다(행성 설정은 기본값).
+/// 버전 4(E3): 맨 끝에 사람 묶음 — 사람 상한 · 열정 켜짐, 알림, 사람이 사는 지방의 바뀐 것(딴 몫 · 걷힌 숨김), 사람 하나하나의 전부.
+/// 버전 5(E3 고침): 말(언어) · 이름의 뜻 · 말씨 · 기억해 둔 물가 · 열매 자리. 버전 4 파일은 지방마다 말 하나를 새로 만들어 읽는다.
+/// 버전 1(E0) · 2(E1) · 3(E2) 파일도 읽는다(행성 설정은 기본값, 사람 없음).
 /// </summary>
 public static class SaveGame
 {
-    public const int Version = 3;
+    public const int Version = 5;
     private static readonly byte[] Magic = "WTWS"u8.ToArray();
 
     public static byte[] ToBytes(GameWorld w)
@@ -60,8 +63,10 @@ public static class SaveGame
         bw.Write(w.Config.MapTiles);
         bw.Write(w.Config.LandCells);
         bw.Write((int)w.Config.Climate);
+        bw.Write(w.Config.PeopleCap);
+        bw.Write(w.Config.Passion);
         bw.Write(0); // 바뀐 행성 칸 수 (아직 없음)
-        bw.Write(w.ProvinceChanges.Count); // 바뀐 지방 수 (아직 늘 0 — E3~)
+        bw.Write(0); // (버전 3 의 자리 — 바뀐 지방은 버전 4 부터 맨 끝 사람 묶음에)
         bw.Write(w.Now);
         bw.Write(w.NextDayBoundary);
         bw.Write(w.DaysElapsed);
@@ -102,6 +107,168 @@ public static class SaveGame
             bw.Write(iv.Tick); bw.Write(iv.Kind); bw.Write(iv.Values.Length);
             foreach (var v in iv.Values) bw.Write(v);
         }
+        WritePeople(bw, w);
+    }
+
+    private static void WritePeople(BinaryWriter bw, GameWorld w)
+    {
+        var ps = w.People;
+        bw.Write(ps.NextEventSeq);
+        bw.Write(ps.Events.Count);
+        foreach (var e in ps.Events) { bw.Write(e.Seq); bw.Write(e.Tick); bw.Write((byte)e.Kind); bw.Write(e.Person); bw.Write(e.Other); bw.Write(e.Cell); bw.Write(e.Text); }
+        bw.Write(ps.Provinces.Count);
+        foreach (var (cell, life) in ps.Provinces)
+        {
+            bw.Write(cell);
+            bw.Write(life.Stocks.Count);
+            foreach (var (tile, st) in life.Stocks) { bw.Write(tile); bw.Write(st.Stock); bw.Write(st.Stamp); }
+            bw.Write(life.Revealed.Count);
+            foreach (int t in life.Revealed) bw.Write(t);
+        }
+        bw.Write(ps.NextLanguageId);
+        bw.Write(ps.Languages.Count);
+        foreach (var (_, l) in ps.Languages)
+        {
+            bw.Write(l.Id); bw.Write(l.Seed); bw.Write(l.Parent); bw.Write(l.Born); bw.Write(l.Length);
+            bw.Write(l.Sounds.Length); foreach (int v in l.Sounds) bw.Write(v);
+            bw.Write(l.Known.Count); foreach (int k in l.Known) bw.Write(k);
+            bw.Write(l.Overrides.Count); foreach (var (k, v) in l.Overrides) { bw.Write(k); bw.Write(v); }
+        }
+        bw.Write(ps.All.Count);
+        foreach (var p in ps.All) WritePerson(bw, p);
+    }
+
+    private static void WritePerson(BinaryWriter bw, Person p)
+    {
+        bw.Write(p.Id); bw.Write(p.Name); bw.Write((byte)p.Sex); bw.Write(p.BirthTick); bw.Write(p.Cell);
+        bw.Write(p.NameConcepts.Length); foreach (int c in p.NameConcepts) bw.Write(c);
+        bw.Write(p.NameFrom); bw.Write(p.NamedBy); bw.Write(p.LangId);
+        bw.Write(p.Accent.Length); foreach (sbyte a in p.Accent) bw.Write(a);
+        bw.Write(p.TalkConcept); bw.Write(p.SearchDir); bw.Write(p.How); bw.Write(p.HowArg);
+        bw.Write(p.KnownWater.Count); foreach (int t in p.KnownWater) bw.Write(t);
+        bw.Write(p.KnownFood.Count); foreach (int t in p.KnownFood) bw.Write(t);
+        var l = p.Look;
+        bw.Write(l.Skin); bw.Write(l.Hair); bw.Write(l.HairStyle); bw.Write(l.Build); bw.Write(l.Height); bw.Write(l.Face); bw.Write(l.Eyes); bw.Write(l.Beard);
+        foreach (int v in p.BaseAbility) bw.Write(v);
+        bw.Write(p.Traits.Count); foreach (int t in p.Traits) bw.Write(t);
+        foreach (int v in p.SkillXp) bw.Write(v);
+        foreach (byte v in p.Passion) bw.Write(v);
+        foreach (int v in p.PassionPoints) bw.Write(v);
+        bw.Write(p.Food); bw.Write(p.Water); bw.Write(p.Rest); bw.Write(p.Joy); bw.Write(p.Social);
+        bw.Write(p.Malnutrition); bw.Write(p.Dehydration); bw.Write(p.Hypothermia); bw.Write(p.Heatstroke); bw.Write(p.Health);
+        bw.Write(p.IllUntil); bw.Write(p.IllDamage); bw.Write(p.LastUpdate); bw.Write(p.LastTalkTick); bw.Write(p.LastGather);
+        bw.Write((byte)p.Act); bw.Write(p.Walking); bw.Write(p.ActUntil); bw.Write(p.Target); bw.Write(p.TargetB); bw.Write((byte)p.Why); bw.Write(p.WhyArg);
+        bw.Write(p.PendingHandle); bw.Write(p.Asleep); bw.Write(p.SleepShelter); bw.Write(p.SleptCold); bw.Write(p.Huddle);
+        bw.Write(p.Partner); bw.Write(p.Mother); bw.Write(p.Father); bw.Write(p.Carrier);
+        bw.Write(p.Children.Count); foreach (int c in p.Children) bw.Write(c);
+        bw.Write(p.Conceived); bw.Write(p.ChildFather);
+        bw.Write(p.Carry.Count); foreach (var (item, count) in p.Carry) { bw.Write(item); bw.Write(count); }
+        bw.Write(p.Thoughts.Count); foreach (var t in p.Thoughts) { bw.Write(t.Def); bw.Write(t.Until); bw.Write(t.Other); }
+        bw.Write(p.Relations.Count); foreach (var r in p.Relations) { bw.Write(r.Other); bw.Write(r.Opinion); bw.Write(r.Grudge); bw.Write(r.Favor); bw.Write(r.Talks); }
+        bw.Write(p.Bio.Count); foreach (var b in p.Bio) { bw.Write(b.Tick); bw.Write((byte)b.Kind); bw.Write(b.Other); bw.Write(b.Param); }
+        bw.Write(p.BreakUntil); bw.Write(p.Breaks); bw.Write(p.LastBreak); bw.Write(p.FoundCave);
+        bw.Write(p.Dead); bw.Write(p.DeathTick); bw.Write((byte)p.Cause); bw.Write(p.Eaten); bw.Write(p.BedShift); bw.Write(p.WakeShift);
+        bw.Write(p.MotionCount);
+        for (int k = p.MotionCount - 1; k >= 0; k--)
+        {
+            var m = p.MotionAgo(k);
+            bw.Write(m.Depart); bw.Write(m.Arrive); bw.Write(m.Count);
+            for (int i = 0; i < m.Count; i++) { bw.Write(m.X[i]); bw.Write(m.Y[i]); }
+        }
+    }
+
+    private static void ReadPeople(BinaryReader br, GameWorld w, int version)
+    {
+        var ps = w.People;
+        ps.NextEventSeq = br.ReadInt64();
+        int ne = br.ReadInt32();
+        for (int i = 0; i < ne; i++)
+            ps.AddLoadedEvent(new WorldEvent(br.ReadInt64(), br.ReadInt64(), (WorldEventKind)br.ReadByte(), br.ReadInt32(), br.ReadInt32(), br.ReadInt32(), br.ReadString()));
+        int np = br.ReadInt32();
+        for (int i = 0; i < np; i++)
+        {
+            var life = ps.Life(br.ReadInt32());
+            int ns = br.ReadInt32();
+            for (int k = 0; k < ns; k++) life.Stocks[br.ReadInt32()] = new TileStock { Stock = br.ReadInt32(), Stamp = br.ReadInt64() };
+            int nr = br.ReadInt32();
+            for (int k = 0; k < nr; k++) life.Revealed.Add(br.ReadInt32());
+        }
+        if (version >= 5)
+        {
+            ps.NextLanguageId = br.ReadInt32();
+            int nl = br.ReadInt32();
+            for (int i = 0; i < nl; i++)
+            {
+                var l = new Language { Id = br.ReadInt32(), Seed = br.ReadUInt64(), Parent = br.ReadInt32(), Born = br.ReadInt64(), Length = br.ReadInt32() };
+                l.Sounds = new int[br.ReadInt32()];
+                if (l.Sounds.Length != ps.Lang.SoundCount) throw new InvalidDataException("저장 파일의 말(소리 수)이 지금 데이터와 다릅니다.");
+                for (int k = 0; k < l.Sounds.Length; k++) l.Sounds[k] = br.ReadInt32();
+                int nk = br.ReadInt32(); for (int k = 0; k < nk; k++) l.Known.Add(br.ReadInt32());
+                int no = br.ReadInt32(); for (int k = 0; k < no; k++) l.Overrides[br.ReadInt32()] = br.ReadUInt64();
+                ps.AddLoadedLanguage(l);
+            }
+        }
+        int count = br.ReadInt32();
+        var byCellLang = new SortedDictionary<int, int>();
+        for (int i = 0; i < count; i++)
+        {
+            var p = ReadPerson(br, version);
+            if (version < 5) // 버전 4: 말이 없던 때 — 지방마다 말 하나
+            {
+                if (!byCellLang.TryGetValue(p.Cell, out int lid)) { lid = ps.NewLanguageForLoad(); byCellLang[p.Cell] = lid; }
+                p.LangId = lid;
+            }
+            ps.AddLoaded(p);
+        }
+    }
+
+    private static Person ReadPerson(BinaryReader br, int version)
+    {
+        var p = new Person { Id = br.ReadInt32(), Name = br.ReadString(), Sex = (Sex)br.ReadByte(), BirthTick = br.ReadInt64(), Cell = br.ReadInt32() };
+        if (version >= 5)
+        {
+            p.NameConcepts = new int[br.ReadInt32()];
+            for (int k = 0; k < p.NameConcepts.Length; k++) p.NameConcepts[k] = br.ReadInt32();
+            p.NameFrom = br.ReadInt32(); p.NamedBy = br.ReadInt32(); p.LangId = br.ReadInt32();
+            int na = br.ReadInt32();
+            if (na != p.Accent.Length) throw new InvalidDataException("저장 파일의 말씨(소리 수)가 지금 데이터와 다릅니다.");
+            for (int k = 0; k < na; k++) p.Accent[k] = br.ReadSByte();
+            p.TalkConcept = br.ReadInt32(); p.SearchDir = br.ReadInt32(); p.How = br.ReadByte(); p.HowArg = br.ReadInt32();
+            int nw = br.ReadInt32(); for (int k = 0; k < nw; k++) p.KnownWater.Add(br.ReadInt32());
+            int nf = br.ReadInt32(); for (int k = 0; k < nf; k++) p.KnownFood.Add(br.ReadInt32());
+        }
+        p.Look = new Appearance(br.ReadByte(), br.ReadByte(), br.ReadByte(), br.ReadByte(), br.ReadByte(), br.ReadByte(), br.ReadByte(), br.ReadByte());
+        for (int k = 0; k < p.BaseAbility.Length; k++) p.BaseAbility[k] = br.ReadInt32();
+        int nt = br.ReadInt32(); for (int k = 0; k < nt; k++) p.Traits.Add(br.ReadInt32());
+        for (int k = 0; k < p.SkillXp.Length; k++) p.SkillXp[k] = br.ReadInt32();
+        for (int k = 0; k < p.Passion.Length; k++) p.Passion[k] = br.ReadByte();
+        for (int k = 0; k < p.PassionPoints.Length; k++) p.PassionPoints[k] = br.ReadInt32();
+        p.Food = br.ReadInt32(); p.Water = br.ReadInt32(); p.Rest = br.ReadInt32(); p.Joy = br.ReadInt32(); p.Social = br.ReadInt32();
+        p.Malnutrition = br.ReadInt32(); p.Dehydration = br.ReadInt32(); p.Hypothermia = br.ReadInt32(); p.Heatstroke = br.ReadInt32(); p.Health = br.ReadInt32();
+        p.IllUntil = br.ReadInt64(); p.IllDamage = br.ReadInt32(); p.LastUpdate = br.ReadInt64(); p.LastTalkTick = br.ReadInt64(); p.LastGather = br.ReadInt64();
+        p.Act = (Act)br.ReadByte(); p.Walking = br.ReadBoolean(); p.ActUntil = br.ReadInt64(); p.Target = br.ReadInt32(); p.TargetB = br.ReadInt32(); p.Why = (Why)br.ReadByte(); p.WhyArg = br.ReadInt32();
+        p.PendingHandle = br.ReadInt64(); p.Asleep = br.ReadBoolean(); p.SleepShelter = br.ReadInt32(); p.SleptCold = br.ReadBoolean(); p.Huddle = br.ReadBoolean();
+        p.Partner = br.ReadInt32(); p.Mother = br.ReadInt32(); p.Father = br.ReadInt32(); p.Carrier = br.ReadInt32();
+        int nc = br.ReadInt32(); for (int k = 0; k < nc; k++) p.Children.Add(br.ReadInt32());
+        p.Conceived = br.ReadInt64(); p.ChildFather = br.ReadInt32();
+        int ny = br.ReadInt32(); for (int k = 0; k < ny; k++) p.Carry.Add((br.ReadInt32(), br.ReadInt32()));
+        int nth = br.ReadInt32(); for (int k = 0; k < nth; k++) p.Thoughts.Add(new ThoughtInst { Def = br.ReadInt32(), Until = br.ReadInt64(), Other = br.ReadInt32() });
+        int nrel = br.ReadInt32(); for (int k = 0; k < nrel; k++) p.Relations.Add(new Relation { Other = br.ReadInt32(), Opinion = br.ReadInt32(), Grudge = br.ReadInt32(), Favor = br.ReadInt32(), Talks = br.ReadInt32() });
+        int nb = br.ReadInt32(); for (int k = 0; k < nb; k++) p.Bio.Add(new BioEntry { Tick = br.ReadInt64(), Kind = (BioKind)br.ReadByte(), Other = br.ReadInt32(), Param = br.ReadInt32() });
+        p.BreakUntil = br.ReadInt64(); p.Breaks = br.ReadInt32(); p.LastBreak = br.ReadInt64(); p.FoundCave = br.ReadBoolean();
+        p.Dead = br.ReadBoolean(); p.DeathTick = br.ReadInt64(); p.Cause = (DeathCause)br.ReadByte(); p.Eaten = br.ReadBoolean(); p.BedShift = br.ReadInt32(); p.WakeShift = br.ReadInt32();
+        int nm = br.ReadInt32();
+        if (nm < 1 || nm > Person.History) throw new InvalidDataException("저장 파일이 손상되었습니다(사람 움직임).");
+        for (int k = 0; k < nm; k++)
+        {
+            long dep = br.ReadInt64(), arr = br.ReadInt64();
+            int n = br.ReadInt32();
+            if (n < 1 || n > 100_000) throw new InvalidDataException("저장 파일이 손상되었습니다(사람 길).");
+            var xs = new int[n]; var ys = new int[n];
+            for (int j = 0; j < n; j++) { xs[j] = br.ReadInt32(); ys[j] = br.ReadInt32(); }
+            p.NewMotion().Set(dep, arr, xs, ys, n);
+        }
+        return p;
     }
 
     private static GameWorld Read(BinaryReader br)
@@ -118,6 +285,11 @@ public static class SaveGame
             config = config with { LandCells = br.ReadInt32(), Climate = (ClimateBias)br.ReadInt32() };
             if (config.LandCells < PlanetSettings.MinLand || config.LandCells > PlanetSettings.MaxLand || !Enum.IsDefined(config.Climate))
                 throw new InvalidDataException("저장 파일이 손상되었습니다(행성 설정).");
+            if (version >= 4)
+            {
+                config = config with { PeopleCap = br.ReadInt32(), Passion = br.ReadBoolean() };
+                if (config.PeopleCap < WorldConfig.MinCap || config.PeopleCap > WorldConfig.MaxCap) throw new InvalidDataException("저장 파일이 손상되었습니다(사람 상한).");
+            }
             if (br.ReadInt32() != 0) throw new InvalidDataException("저장 파일이 손상되었습니다(바뀐 행성 칸).");
         }
         if (version >= 3 && br.ReadInt32() != 0) throw new InvalidDataException("저장 파일이 손상되었습니다(바뀐 지방).");
@@ -169,6 +341,7 @@ public static class SaveGame
             for (int j = 0; j < vals.Length; j++) vals[j] = br.ReadInt64();
             w.AddLoadedIntervention(new Intervention(tick, kind, vals));
         }
+        if (version >= 4) ReadPeople(br, w, version);
         return w;
     }
 }

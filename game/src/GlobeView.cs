@@ -98,6 +98,7 @@ public partial class GlobeView : Node3D
     {
         if (ReferenceEquals(p, _planet)) return;
         _planet = p;
+        _opened.Clear();
         _hover = _selected = -1;
         _walkStart = 0;
         BuildMesh(p);
@@ -260,6 +261,68 @@ public partial class GlobeView : Node3D
         Recolor();
     }
 
+    // ───────── 사람이 사는 칸(E3) ─────────
+
+    private readonly HashSet<int> _opened = new();
+    private (int Cell, int Alive)[] _peopleCells = Array.Empty<(int, int)>();
+    private CanvasLayer? _markerLayer;
+    private readonly List<(Control Box, Label Count, int Cell)> _markers = new();
+
+    /// <summary>사람이 사는 칸 표시(사람 모양 + 인원)와 열린 칸(한 번이라도 산 칸 — 밝게, 아직 아무도 안 산 땅은 살짝 흐릿하게).</summary>
+    public void SetPeople((int Cell, int Alive)[] cells, int[] opened)
+    {
+        if (opened.Length != _opened.Count || opened.Any(c => !_opened.Contains(c)))
+        {
+            _opened.Clear();
+            foreach (int c in opened) _opened.Add(c);
+            Recolor();
+        }
+        _peopleCells = cells;
+        if (_markerLayer is null) { _markerLayer = new CanvasLayer { Layer = 0 }; AddChild(_markerLayer); }
+        while (_markers.Count < cells.Length)
+        {
+            var box = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+            box.AddThemeConstantOverride("separation", 2);
+            box.AddChild(new TextureRect { Texture = Art.PeopleMarker, CustomMinimumSize = new Vector2(22, 26), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, MouseFilter = Control.MouseFilterEnum.Ignore, Material = new CanvasItemMaterial { BlendMode = CanvasItemMaterial.BlendModeEnum.PremultAlpha } });
+            var l = new Label { MouseFilter = Control.MouseFilterEnum.Ignore };
+            l.AddThemeFontOverride("font", UiTheme.Bold);
+            l.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeSmall + 2);
+            l.AddThemeColorOverride("font_color", Colors.White);
+            l.AddThemeColorOverride("font_outline_color", Colors.Black);
+            l.AddThemeConstantOverride("outline_size", 6);
+            box.AddChild(l);
+            _markerLayer.AddChild(box);
+            _markers.Add((box, l, -1));
+        }
+        for (int i = 0; i < _markers.Count; i++)
+        {
+            var (box, l, _) = _markers[i];
+            if (i >= cells.Length) { box.Visible = false; continue; }
+            _markers[i] = (box, l, cells[i].Cell);
+            l.Text = $"{cells[i].Alive}";
+        }
+        UpdateMarkers();
+    }
+
+    private void UpdateMarkers()
+    {
+        if (_markerLayer is null || _planet is null) return;
+        _markerLayer.Visible = Visible;
+        if (!Visible) return;
+        var camDir = _cam.Position.Normalized();
+        foreach (var (box, l, c) in _markers)
+        {
+            if (c < 0) { box.Visible = false; continue; }
+            var n = ToGodot(_planet.X[c], _planet.Y[c], _planet.Z[c]);
+            var pos = n * (CellRadius(_planet, c) + 0.01f);
+            bool front = n.Dot(camDir) > 0.15f;
+            box.Visible = front;
+            if (!front) continue;
+            box.ResetSize();
+            box.Position = _cam.UnprojectPosition(pos) - new Vector2(11, 26);
+        }
+    }
+
     private void Recolor()
     {
         var p = _planet;
@@ -267,6 +330,11 @@ public partial class GlobeView : Node3D
         for (int c = 0; c < p.CellCount; c++)
         {
             var col = MapModes.CellColor(p, c, _mode, _resource, _shade);
+            if (p.IsLand(c))
+            {
+                if (_opened.Contains(c)) col = col.Lightened(0.12f);
+                else { float g = col.R * 0.3f + col.G * 0.59f + col.B * 0.11f; col = col.Lerp(new Color(g, g, g, col.A), 0.22f).Darkened(0.12f); }
+            }
             int o = c * 4;
             _pixels[o] = (byte)(col.R * 255 + 0.5f);
             _pixels[o + 1] = (byte)(col.G * 255 + 0.5f);
@@ -343,6 +411,7 @@ public partial class GlobeView : Node3D
         _pitch = Mathf.Clamp(_pitch, -1.45f, 1.45f);
         _dist = Mathf.Lerp(_dist, _targetDist, 1f - Mathf.Exp(-9f * dt));
         UpdateCamera();
+        UpdateMarkers();
 
         if (_mouseMoved && !_dragging && _planet is not null && Visible)
         {

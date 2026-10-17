@@ -4,6 +4,7 @@ using Wtw.Sim.Planet;
 using Wtw.Sim.Provinces;
 using Wtw.Sim.Runtime;
 using Wtw.Sim.World;
+using Wtw.Sim.People;
 
 namespace Wtw.Game;
 
@@ -25,6 +26,14 @@ public partial class Main : Node
     private ProvinceView _province = null!;
     private TileCard _card = null!;
     private ProvinceInfoPanel _info = null!;
+    private PersonHoverCard _personHover = null!;
+    private PersonCardPanel _cardPanel = null!;
+    private PeopleListPanel _list = null!;
+    private AlertsPanel _alerts = null!;
+    private int _hoverPerson = -1;
+    private double _cardTimer, _listTimer, _hoverTimer;
+    private string _cardSig = "";
+    private (int Person, int Cell)? _pendingOpen;
     private double _infoTimer;
     private bool _neighborsPref;
     private readonly AutoPilot _auto = new();
@@ -54,11 +63,15 @@ public partial class Main : Node
         _province.HoverChanged += OnTileHover;
         _province.Notice += n => _hud.ShowNotice(n);
         _province.Loaded += UpdateResourceLegend;
+        _province.Loaded += () => { if (_pendingOpen is { } po && po.Cell == _province.Center) { _pendingOpen = null; OpenCard(po.Person); } };
+        _province.PersonHover += id => { _hoverPerson = id; _hoverTimer = 0; if (id < 0) _personHover.Hide2(); else _card.Visible = false; };
+        _province.PersonClicked += OpenCard;
+        _province.SpawnClicked += OnSpawnClicked;
 
         _map = new MapView { Visible = false }; // E0 의 점 시험 화면 — 개발용(F12)
         AddChild(_map);
 
-        var ui = new CanvasLayer();
+        var ui = new CanvasLayer { Layer = 2 }; // 지도 위 이름표 · 말풍선(층 1)보다 위
         AddChild(ui);
         _hud = new Hud { Theme = theme, Visible = false };
         ui.AddChild(_hud);
@@ -71,6 +84,7 @@ public partial class Main : Node
         _hud.ScopeRequested += SetScope;
         _hud.ExitProvinceRequested += ExitProvince;
         _hud.ResourceViewRequested += SetResourceView;
+        _hud.SpawnToolRequested += SetSpawnTool;
 
         _legend = new Legend { Theme = theme, Visible = false };
         ui.AddChild(_legend);
@@ -85,6 +99,19 @@ public partial class Main : Node
         ui.AddChild(_info);
         _card = new TileCard { Theme = theme };
         ui.AddChild(_card);
+        _list = new PeopleListPanel { Theme = theme };
+        ui.AddChild(_list);
+        _list.PersonPicked += id => { OpenCard(id); _province.Follow(id); _cardPanel.SetFollowing(true); };
+        _cardPanel = new PersonCardPanel { Theme = theme };
+        ui.AddChild(_cardPanel);
+        _cardPanel.CloseRequested += CloseCard;
+        _cardPanel.FollowRequested += id => _province.Follow(id);
+        _cardPanel.PersonRequested += OpenCard;
+        _alerts = new AlertsPanel { Theme = theme };
+        ui.AddChild(_alerts);
+        _alerts.AlertPicked += OnAlertPicked;
+        _personHover = new PersonHoverCard { Theme = theme };
+        ui.AddChild(_personHover);
         _province.LabelBlockers = LabelBlockers;
 
         _newWorld = new NewWorldScreen { Theme = theme };
@@ -174,7 +201,7 @@ public partial class Main : Node
             _hud.ShowNotice(notice);
             _auto.OnNotice(notice);
         }
-        else _host.Adopt(w, notice);
+        else { _host.Adopt(w, notice); _alerts.Reset(); }
         _lastConfig = w.Config;
         _newWorld.SetBusy(false, 1, "");
         _newWorld.Visible = false;
@@ -228,6 +255,9 @@ public partial class Main : Node
     {
         foreach (var r in _hud.Blockers()) yield return r;
         if (_info.Visible) yield return _info.GetGlobalRect();
+        if (_cardPanel.Visible) yield return _cardPanel.GetGlobalRect();
+        if (_list.Visible) yield return _list.GetGlobalRect();
+        if (_alerts.Visible && _alerts.GetChildCount() > 0) yield return _alerts.GetGlobalRect();
         if (_panel.Visible) yield return _panel.GetGlobalRect();
         if (_legend.Visible) yield return _legend.GetGlobalRect();
     }
@@ -284,6 +314,9 @@ public partial class Main : Node
         if (_province.ResourceView) { _province.SetResourceView(false); _hud.SetResourceViewPressed(false); }
         SetMode(_globe.Mode, null); // 지구본 범례로 되돌림
         _province.Close();
+        CloseCard();
+        _list.Visible = false;
+        _personHover.Hide2();
         _card.Visible = false;
         _info.Visible = false;
         _globe.Visible = true;
@@ -314,7 +347,98 @@ public partial class Main : Node
         var p = _globe.Planet;
         var m = _province.MapOf(cell);
         if (p is null || m is null) return;
+        CloseCard();
         _panel.ShowTile(TileDescriber.Describe(p, m, x, y));
+    }
+
+    // ───────── 사람 ─────────
+
+    private void SetSpawnTool(int tool)
+    {
+        if (!_province.IsOpen) tool = 0;
+        _province.SetSpawnTool(tool);
+        _hud.SetSpawnTool(tool);
+        if (tool != 0) _hud.ShowNotice(tool == 1 ? "땅을 누르면 그 자리에 한 명을 뿌립니다 (오른쪽 단추 · Esc = 그만)" : "땅을 누르면 가족(짝 + 아이)을 뿌립니다 (오른쪽 단추 · Esc = 그만)");
+    }
+
+    private void OnSpawnClicked(int cell, int x, int y, bool family)
+    {
+        if (_host is null) return;
+        var m = _province.MapOf(cell);
+        if (m is null) return;
+        int i = y * HexFrame.Size + x;
+        if (!HexFrame.Inside[i] || !GroundInfo.IsWalkable(m.Ground[i])) { _hud.ShowNotice($"여기는 {GroundInfo.Name(m.Ground[i])} — 걸을 수 있는 땅에만 뿌릴 수 있습니다"); return; }
+        _host.Intervene(family ? Intervention.Kinds.SpawnFamily : Intervention.Kinds.SpawnPerson, cell, x, y);
+        _auto.OnSpawned();
+    }
+
+    private void OpenCard(int id)
+    {
+        if (_host is null || id < 0) return;
+        _panel.Visible = false;
+        _cardPanel.Open(id);
+        _cardPanel.SetFollowing(_province.FollowPerson == id);
+        _province.Select(id);
+        _cardSig = "";
+        _cardTimer = 0;
+        _host.RequestCard(id, 0);
+    }
+
+    private void CloseCard()
+    {
+        _cardPanel.Close();
+        _province.Select(-1);
+        _province.Follow(-1);
+    }
+
+    private void OnAlertPicked(int person, int cell)
+    {
+        if (_globe.Planet is null) return;
+        if (_province.IsOpen && _province.MapOf(cell) is not null) { OpenCard(person); _province.Follow(person); _cardPanel.SetFollowing(true); return; }
+        _pendingOpen = (person, cell);
+        if (_province.IsOpen) ExitProvince();
+        _globe.Select(cell);
+        EnterProvince(cell);
+    }
+
+    /// <summary>카드 · 목록 · 알림을 매 프레임 맞춘다(카드 내용은 시뮬에게 부탁해 받는다).</summary>
+    private void UpdatePeopleUi(WorldSnapshot snap, double delta)
+    {
+        var vp = GetViewport().GetVisibleRect().Size;
+        _alerts.RightMargin = _cardPanel.Visible ? PersonCardPanel.Width + 24 : _panel.Visible ? CellPanel.Width + 24 : 12;
+        _alerts.Update(snap, Time.GetTicksMsec() / 1000.0, vp);
+        if (_host is null) return;
+        // 큰 카드
+        if (_cardPanel.Visible)
+        {
+            _cardTimer -= delta;
+            var c = _host.Card(0);
+            if (c is not null && c.Id == _cardPanel.PersonId)
+            {
+                string sig = $"{c.Activity}|{c.Why}|{c.Mood}|{c.Age}|{string.Join(",", c.Needs.Select(n => n.Value / 2))}|{c.Thoughts.Count}|{c.Relations.Count}|{c.Story.Count}|{c.Body.Count}|{string.Join(",", c.Relations.Select(r => r.Opinion / 3))}|{c.Alive}";
+                if (sig != _cardSig) { _cardSig = sig; _cardPanel.Fill(c); }
+            }
+            if (_cardTimer <= 0) { _cardTimer = 0.35; _host.RequestCard(_cardPanel.PersonId, 0); }
+            _cardPanel.SetFollowing(_province.FollowPerson == _cardPanel.PersonId && _province.FollowPerson >= 0);
+        }
+        // 작은 카드
+        if (_hoverPerson >= 0 && _province.IsOpen)
+        {
+            _hoverTimer -= delta;
+            if (_hoverTimer <= 0) { _hoverTimer = 0.3; _host.RequestCard(_hoverPerson, 1); }
+            var h = _host.Card(1);
+            if (h is not null && h.Id == _hoverPerson) _personHover.Show(h, GetViewport().GetMousePosition());
+            else _personHover.Follow(GetViewport().GetMousePosition());
+        }
+        else if (_personHover.Visible) _personHover.Hide2();
+        // 사람 목록: 오른쪽 칸이 비어 있을 때만(창끼리 겹치지 않게)
+        _list.Visible = _province.IsOpen && _province.ShownCount > 0 && !_cardPanel.Visible && !_panel.Visible;
+        if (_list.Visible)
+        {
+            _listTimer -= delta;
+            if (_listTimer <= 0) { _listTimer = 0.8; _host.RequestRows(_province.Center); }
+            if (_host.Rows is { } rows && (rows.Count == 0 || rows[0].Cell == _province.Center)) _list.Fill(rows);
+        }
     }
 
     private void OnCellSelected(int c)
@@ -334,6 +458,9 @@ public partial class Main : Node
         if (snap.Planet is not null) _globe.SetPlanet(snap.Planet);
         if (_card.Visible) _card.Follow(GetViewport().GetMousePosition());
         _province.SetTime(_host.RenderTick + ShowTickOffset);
+        _province.SetPeople(snap, _host.RenderTick);
+        _globe.SetPeople(snap.CellPeople, snap.OpenedCells);
+        UpdatePeopleUi(snap, delta);
         UpdateProvinceInfo(delta);
         _map.Visible = _devDots;
         if (_devDots) _map.Render(snap, _host.RenderTick);
@@ -348,10 +475,13 @@ public partial class Main : Node
 
     public override void _UnhandledInput(InputEvent e)
     {
+        if (e is InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: true } && _province.SpawnTool != 0) { SetSpawnTool(0); GetViewport().SetInputAsHandled(); return; }
         if (e is not InputEventKey { Pressed: true, Echo: false } k) return;
         if (k.Keycode == Key.Escape)
         {
             if (_newWorld.Visible) { if (_host is not null && !_newWorld.Busy) _newWorld.Visible = false; }
+            else if (_province.SpawnTool != 0) SetSpawnTool(0);
+            else if (_cardPanel.Visible) CloseCard();
             else if (_province.IsOpen) { _panel.Visible = false; ExitProvince(); }
             else if (_panel.Visible) _globe.Select(-1);
             GetViewport().SetInputAsHandled();
@@ -391,6 +521,11 @@ public partial class Main : Node
     /// <summary>개발용(자동 확인): 지방 화면의 시각만 앞당겨 보여 준다(시뮬 시간은 그대로).</summary>
     internal double ShowTickOffset;
     internal TileCard Card => _card;
+    internal PersonCardPanel CardPanel => _cardPanel;
+    internal PersonHoverCard PersonHover => _personHover;
+    internal void OpenCardForTest(int id) => OpenCard(id);
+    internal void HoverPersonForTest(int id) { _hoverPerson = id; _hoverTimer = 0; }
+    internal void SpawnForTest(int cell, int x, int y, bool family) => OnSpawnClicked(cell, x, y, family);
     internal void EnterForTest(int c) => EnterProvince(c);
     internal void ExitForTest() => ExitProvince();
     internal void ScopeForTest(bool nb) => SetScope(nb);

@@ -9,6 +9,10 @@ public sealed record Intervention(long Tick, string Kind, long[] Values)
         public const string AddDots = "add_dots";
         /// <summary>모든 점이 하던 일을 끊고 한 곳으로 모임(예약 당김 시험). 값: [x 밀리타일, y 밀리타일]</summary>
         public const string Gather = "gather";
+        /// <summary>사람 한 명 뿌리기(E3). 값: [칸, 타일 x, 타일 y]</summary>
+        public const string SpawnPerson = "spawn_person";
+        /// <summary>가족 뿌리기(짝 + 아이 0~2). 값: [칸, 타일 x, 타일 y]</summary>
+        public const string SpawnFamily = "spawn_family";
     }
 
     public bool Equals(Intervention? o) => o is not null && Tick == o.Tick && Kind == o.Kind && Values.AsSpan().SequenceEqual(o.Values);
