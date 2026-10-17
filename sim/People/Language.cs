@@ -157,8 +157,8 @@ public static class Words
                 int cho = Pick(lang.Sounds, accent, 0, d.Cho.Length, rng, d.Cho, avoid: prevCho, ban: prevCho == 11 ? 11 : -1);
                 int jung = Pick(lang.Sounds, accent, d.Cho.Length, d.Jung.Length, rng, d.Jung);
                 int jong = Pick(lang.Sounds, accent, d.Cho.Length + d.Jung.Length, d.Jong.Length, rng, d.Jong, emptyBoost: i < n - 1 ? 5 : 1);
-                // 어색한 소리를 줄인다: ㅈ · ㅊ 뒤 이중 모음은 홑 모음으로(져 → 저), 이중 모음 + 받침은 받침을 뗀다(겡 같은 소리)
-                if (cho is 12 or 14 && jung is 2 or 6 or 12 or 17) jung = jung switch { 2 => 0, 6 => 4, 12 => 8, _ => 13 };
+                // 어색한 소리를 줄인다: 이중 모음(ㅑ ㅕ ㅛ ㅠ)은 소리 없는 첫소리(ㅇ) 뒤에만(댜 · 며 → 다 · 머), 이중 모음 + 받침은 받침을 뗀다(겡 같은 소리)
+                if (cho != 11 && jung is 2 or 6 or 12 or 17) jung = jung switch { 2 => 0, 6 => 4, 12 => 8, _ => 13 };
                 if (jung is 2 or 6 or 12 or 17 or 1 or 5) jong = jong is 4 or 8 ? jong : 0;
                 if (i > 0 && jung is 2 or 6 or 12 or 17) jung = jung switch { 2 => 0, 6 => 4, 12 => 8, _ => 13 };
                 chars[i] = Hangul.Compose(cho, jung, jong);
