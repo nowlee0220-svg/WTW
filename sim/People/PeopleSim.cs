@@ -20,7 +20,7 @@ public sealed class PeopleStats
     /// <summary>목마름으로 죽었는데 그 사람이 닿을 수 있는 곳(지방 안 이어진 땅)에 민물이 없었다 · 굶어 죽었는데 먹을 것이 없었다.</summary>
     public long NoWaterDeaths, NoFoodDeaths;
     /// <summary>(E3b) 경계를 넘은 횟수 · 잠든 지방이 깨어난 횟수 · 옮겨 간 까닭별 횟수(Why 값).</summary>
-    public long Crossings, Wakes;
+    public long Crossings, Wakes, CrossBatches;
     /// <summary>(E3b) 말이 갈라진 횟수 · 낱말이 새로 바뀐 횟수.</summary>
     public long LanguageSplits, WordChanges;
     public readonly long[] MoveWhy = new long[64];

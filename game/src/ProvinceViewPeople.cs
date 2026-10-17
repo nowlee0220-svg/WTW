@@ -164,6 +164,12 @@ public partial class ProvinceView
     private int _crossSeenCount;
     private readonly List<(Label L, Vector2 World, double Born)> _crossLabels = new();
 
+    private void ClearCrossLabels()
+    {
+        foreach (var (l, _, _) in _crossLabels) l.QueueFree();
+        _crossLabels.Clear();
+    }
+
     private void UpdateCrossLabels(WorldSnapshot snap)
     {
         double now = Time.GetTicksMsec() / 1000.0;

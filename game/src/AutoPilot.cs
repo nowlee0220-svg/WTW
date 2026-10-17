@@ -52,7 +52,9 @@ public sealed class AutoPilot
     private double? _globeAfter, _waitDays;
     public int? PreRunYears;
     public int PreFamilies = 3, PreHomes = 1;
-    private bool _waitCross;
+    private bool _waitCross, _crossNoFollow;
+    private int? _existingCard;
+    private bool _existingDone;
     private int _crossTarget = -1, _crossFrom = -1;
     private double _sinceCross = -1;
     private double _sincePeople;
@@ -127,6 +129,8 @@ public sealed class AutoPilot
                 case "--prefamilies": PreFamilies = int.Parse(v); break;
                 case "--prehomes": PreHomes = int.Parse(v); break;
                 case "--waitcross": _waitCross = true; break;
+                case "--existingcard": _existingCard = int.Parse(v); break;
+                case "--crossnofollow": _waitCross = true; _crossNoFollow = true; break;
             }
         }
     }
@@ -174,18 +178,32 @@ public sealed class AutoPilot
             }
         }
         else if (_select == "home") cell = Wtw.Sim.People.PeopleSamples.Home(p);
+        else if (_select == "people")
+        {
+            // 사람 사는 칸들의 가운데(고르지 않고 보기만)
+            var cells = _lastSnap?.CellPeople ?? Array.Empty<(int, int)>();
+            double x = 0, y = 0, z = 0;
+            foreach (var (c, _) in cells) { x += p.X[c]; y += p.Y[c]; z += p.Z[c]; }
+            int best = -1; double bd = double.MinValue;
+            for (int c = 0; c < p.CellCount; c++) { double d = p.X[c] * x + p.Y[c] * y + p.Z[c] * z; if (d > bd) { bd = d; best = c; } }
+            g.LookAtCell(best, _zoom ?? 1.7f);
+            return;
+        }
         else cell = int.TryParse(_select, out int sc) ? sc : ProvinceSamples.Find(p, _select!);
         g.LookAtCell(cell, _zoom ?? 1.7f);
         g.Select(cell);
         if (_whyOpen) _main.Panel.SetWhyOpen(true);
     }
 
+    private WorldSnapshot? _lastSnap;
+
     public void Tick(double delta, WorldSnapshot? snap)
     {
+        _lastSnap = snap ?? _lastSnap;
         if (!Active && !_selectPending) return;
         _elapsed += delta;
         _sinceReady += delta;
-        if (_selectPending && _ready && _main.Globe.Planet is not null) { _selectPending = false; DoSelect(); }
+        if (_selectPending && _ready && _main.Globe.Planet is not null && (_select != "people" || (_lastSnap?.CellPeople.Length ?? 0) > 0)) { _selectPending = false; DoSelect(); }
         if (!Active) return;
         if (_enter is not null && _ready && _main.Globe.Planet is not null && !_provinceOpened && _enterExit == 0)
         {
@@ -221,6 +239,20 @@ public sealed class AutoPilot
         if (_elapsed > (PreRunYears is int pr ? 120 + pr * 6 : 120) && !_ready) { Finish(false, "AUTOPILOT 시간 초과 (세계가 만들어지지 않음?)"); return; }
         if (_selftest) { if (_ready && snap is not null) { if (_people is not null && !_spawned) { if (_provinceReady) PeopleSteps(delta, snap); } else SelfTest(delta, snap); } }
         else if (_people is not null) { if (_provinceReady) PeopleSteps(delta, snap); }
+        else if (_existingCard is int ec && _provinceReady && snap is not null && !_existingDone)
+        {
+            // 이미 사는 사람(미리 돌린 세계)의 큰 카드: 가운데 지방에서 옮겨 온 적이 많은 어른 — 화면은 이야기를 볼 수 있게
+            _existingDone = true;
+            var pv = _main.Province;
+            int target = -1;
+            for (int i = 0; i < snap.PeopleCount && target < 0; i++)
+            {
+                var v = snap.People[i];
+                if (!v.Dead && v.Cell == pv.Center && v.Stage >= Wtw.Sim.People.LifeStage.Adult && v.Carrier < 0 && v.Named) target = v.Id;
+            }
+            if (target >= 0) { _main.OpenCardForTest(target); _main.CardPanel.SetTab(ec); }
+            _sinceProvince = 0;
+        }
 
         else if (_shotPath is not null && (StayOnNewWorld ? _elapsed : _enter is not null ? (_provinceReady ? _sinceProvince : -1) : (_ready ? _sinceReady : -1)) >= _shotAfter) Finish(true, "");
     }
@@ -417,8 +449,7 @@ public sealed class AutoPilot
                 {
                     _crossTarget = v.Id; _crossFrom = pv.Center;
                     host.SetSpeed(2);
-                    pv.Follow(v.Id);
-                    _main.OpenCardForTest(v.Id);
+                    if (!_crossNoFollow) { pv.Follow(v.Id); _main.OpenCardForTest(v.Id); }
                     GD.Print($"CROSS following {v.Id} ({v.Name}) from {v.Cell}");
                     break;
                 }
@@ -429,6 +460,8 @@ public sealed class AutoPilot
         {
             var v = snap.People[i];
             if (v.Id != _crossTarget) continue;
+            if (_crossNoFollow && _sinceCross < 0 && v.Cell == _crossFrom && pv.PersonWorld(v.Id) is { } wp)
+                pv.LookAt(wp.X / ProvinceView.TilePx, wp.Y / ProvinceView.TilePx, pv.Zoom); // 따라가지 않고 화면만 그 사람 쪽으로(경계를 넘으면 사라지고 표시가 남는다)
             if (_sinceCross < 0 && v.Cell != _crossFrom) { _sinceCross = 0; host.SetSpeed(1); GD.Print($"CROSS crossed {_crossFrom} → {v.Cell}"); }
         }
         if (_sinceCross >= 0) _sinceCross += delta;

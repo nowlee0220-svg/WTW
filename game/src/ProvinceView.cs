@@ -152,6 +152,7 @@ public partial class ProvinceView : Node2D
         if (_planet is null || _center < 0 || cell == _center) return;
         _center = cell;
         _snapToFollow = true;
+        ClearCrossLabels();
         Load(keepCamera: true);
     }
 

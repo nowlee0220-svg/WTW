@@ -150,7 +150,12 @@ public partial class Main : Node
         {
             var w = GameWorld.Create(seed, config);
             w.EnsurePlanet(Progress);
-            if (_auto.PreRunYears is int years) AutoPilot.PreRun(w, years, _auto.PreFamilies, Progress, _auto.PreHomes); // 자동 확인용
+            if (_auto.PreRunYears is int years) // 자동 확인용(같은 조건이면 저장해 둔 것을 다시 쓴다)
+            {
+                string cache = ProjectSettings.GlobalizePath($"user://prerun-{seed}-{years}-{_auto.PreHomes}-{_auto.PreFamilies}.wtw");
+                if (File.Exists(cache)) { w = SaveGame.LoadFile(cache); w.EnsurePlanet(Progress); GD.Print($"PRERUN cached {cache}"); }
+                else { AutoPilot.PreRun(w, years, _auto.PreFamilies, Progress, _auto.PreHomes); Directory.CreateDirectory(Path.GetDirectoryName(cache)!); SaveGame.SaveFile(w, cache); }
+            }
             return w;
         });
     }
@@ -294,7 +299,7 @@ public partial class Main : Node
                 (names.Length > 1 ? " 다른 무리는 이 땅을 다르게 부른다: " + string.Join(", ", names.Skip(1).Select(n => $"'{n.Word}'({n.Meaning})")) + "." : "")));
             facts = list;
         }
-        _info.Show($"지방 정보 — {ProvinceTitle(m.Cell)}", facts);
+        _info.Show($"지방 정보 — {_snap?.LandLabel(m.Cell) ?? TileDescriber.ProvinceName(p, m.Cell)}", facts); // 이름이 있으면 이름만(위 막대와 겹치지 않게)
     }
 
     /// <summary>지방 화면의 자원 보기: 바위 · 광맥 · 돌만 밝게 + 범례(이 화면에 있는 것만).</summary>

@@ -194,6 +194,7 @@ public sealed partial class PeopleSim
     {
         var ids = _crossQueue.ToArray();
         _crossQueue.Clear();
+        Stats.CrossBatches++;
         _crossAt = long.MaxValue;
         Array.Sort(ids);
         foreach (int id in ids)
