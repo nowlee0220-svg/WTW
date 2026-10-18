@@ -265,7 +265,7 @@ public sealed partial class PeopleSim
         "campfire" => "fire", "ember" => "ember", "hearth" => "hearth", "charcoal" => "charcoal",
         "flake" or "scraper" => "blade", "stone_knife" => "knife", "chopper" or "ground_axe" or "hafted_axe" => "axe", "stick" or "spear" => "stick",
         "cord" => "cord", "basket" or "leaf_cup" => "basket", "wet_pot" or "dry_pot" or "pot" => "pot",
-        "cooked_fruit" or "roasted_mushroom" or "roasted_acorn" or "cracked_coconut" or "stew" => "cooked", "dried_fruit" or "dry_grass" => "dried",
+        "cooked_fruit" or "roasted_mushroom" or "roasted_acorn" or "stew" => "cooked", "dried_fruit" or "dry_grass" => "dried",
         "copper_lump" or "copper_blade" => "copper",
         _ => null,
     };

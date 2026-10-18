@@ -34,7 +34,7 @@ public sealed class PeopleStats
     public readonly long[] PlanWhy = new long[20];
     /// <summary>(E4 측정) 규칙마다 성공한 횟수.</summary>
     public readonly long[] RuleDone = new long[64];
-    public long Experiments, Discoveries, Partials, Crafts, FiresLit, FiresTaken, Mined, CookedMeals, BadStomachs, Watched, Lost, Refound, Wildfires, CraftFails;
+    public long Experiments, Discoveries, Partials, Crafts, FiresLit, FiresTaken, Mined, CookedMeals, BadStomachs, Watched, Lost, Refound, Wildfires, CraftFails, PartialRepeats;
     /// <summary>물 · 먹을 것을 찾아간 방법별 횟수: [0 보임, 1 기억, 2 따라감, 3 찾아다님].</summary>
     public readonly long[] FindHow = new long[4];
 }

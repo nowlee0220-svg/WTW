@@ -15,7 +15,7 @@ public static class DiscoverBench
         public ulong Seed; public int Cell; public string Biome = "";
         public int Alive, Ever, Peak; public long[] Deaths = new long[8];
         public readonly SortedDictionary<string, int> FirstYear = new(); // 결과 아이템 → 처음 나온 해
-        public int CraftFails, Lost, Refound, Experiments, Discoveries, Partials, Crafts, FiresLit, FiresTaken, Mined, Cooked, Watched, Wildfires;
+        public int PartialRepeats, CraftFails, Lost, Refound, Experiments, Discoveries, Partials, Crafts, FiresLit, FiresTaken, Mined, Cooked, Watched, Wildfires;
         public List<int> PopByYear = new();
         public double Seconds; public long PersonDays;
         public int Known1y;
@@ -90,7 +90,7 @@ public static class DiscoverBench
             row.Lost += d.LostCount; row.Refound += d.RefoundCount;
         }
         var st = ps.Stats;
-        row.Experiments = (int)st.Experiments; row.Discoveries = (int)st.Discoveries; row.Partials = (int)st.Partials; row.Crafts = (int)st.Crafts; row.CraftFails = (int)st.CraftFails;
+        row.Experiments = (int)st.Experiments; row.Discoveries = (int)st.Discoveries; row.Partials = (int)st.Partials; row.Crafts = (int)st.Crafts; row.CraftFails = (int)st.CraftFails; row.PartialRepeats = (int)st.PartialRepeats;
         row.FiresLit = (int)st.FiresLit; row.FiresTaken = (int)st.FiresTaken; row.Mined = (int)st.Mined; row.Cooked = (int)st.CookedMeals; row.Watched = (int)st.Watched; row.Wildfires = (int)st.Wildfires;
         row.Known1y = ps.All.Count(q => !q.Dead && q.Known.Count > 0);
     }
@@ -108,7 +108,9 @@ public static class DiscoverBench
         foreach (var q in ps.All) if (!q.Dead) for (int i = 0; i < wishes.Length; i++) wishes[i] += q.Wish[i];
         sb.AppendLine("  바람(살아 있는 사람 합): " + string.Join(" · ", ps.Craft.Wishes.Select(x => $"{x.Name} {wishes[x.Index]}")));
         int fires = 0; foreach (var (_, l) in ps.Provinces) fires += l.Fires.Count(f => f.Value.Lit(w.Now));
-        sb.AppendLine($"  지금 타는 불 {fires}개");
+        int hearths = 0, hearthLit = 0; foreach (var (_, l) in ps.Provinces) foreach (var f in l.Fires.Values) if (f.Kind == 2) { hearths++; if (f.Lit(w.Now)) hearthLit++; }
+        int cc = ps.All.Where(q => !q.Dead).SelectMany(q => q.Clues).Count(c => ps.Craft.Rules[c.Rule].Id == "charcoal"), cu = ps.All.Where(q => !q.Dead).SelectMany(q => q.Clues).Count(c => ps.Craft.Rules[c.Rule].Id == "copper");
+        sb.AppendLine($"  지금 타는 불 {fires}개 · 돌 화덕 {hearths}개(타는 것 {hearthLit}) · 숯 단서 가진 사람 {cc} · 구리 단서 {cu}");
         int dup = ps.All.Where(q => !q.Dead).Sum(q => q.Clues.Count - q.Clues.Select(c => (c.Rule, c.Key)).Distinct().Count());
         sb.AppendLine($"  같은 단서 겹침 {dup} · 단서 키: " + string.Join(", ", ps.All.Where(q => !q.Dead).SelectMany(q => q.Clues).GroupBy(c => ps.Craft.Rules[c.Rule].Id + "/" + c.Key).OrderByDescending(g => g.Count()).Take(6).Select(g => g.Key + " " + g.Count())));
         sb.AppendLine("  계획: " + string.Join(" · ", st.PlanWhy.Select((v, i) => $"{i}:{v}")));
@@ -147,7 +149,7 @@ public static class DiscoverBench
         sb.AppendLine();
         sb.AppendLine($"- 멸종(끝 인구 0): {rows.Count(r => r.Alive == 0)}/{seeds} · 끝 인구 중앙값 {PeopleBench.Median(rows.Select(r => (double)r.Alive))} · 가장 많을 때 중앙값 {PeopleBench.Median(rows.Select(r => (double)r.Peak))}");
         sb.AppendLine($"- 죽음 원인(모든 시드 합 {deaths}): " + string.Join(" · ", new[] { (1, "굶주림"), (2, "목마름"), (3, "추위"), (4, "더위"), (5, "늙음"), (6, "병") }.Select(c => $"{c.Item2} {rows.Sum(r => r.Deaths[c.Item1]) * 100.0 / Math.Max(1, deaths):0}%")));
-        sb.AppendLine($"- 사라진 발견 {rows.Sum(r => r.Lost)} · 다시 찾아냄 {rows.Sum(r => r.Refound)} · 실험 {rows.Sum(r => r.Experiments):N0} · 그중 거의 될 듯 {rows.Sum(r => r.Partials):N0} · 아는 법대로 만들기 {rows.Sum(r => r.Crafts):N0}(그중 헛손질 {rows.Sum(r => r.CraftFails):N0}) · 알아냄 {rows.Sum(r => r.Discoveries):N0} · 보고 배움 {rows.Sum(r => r.Watched):N0} · 불 피움 {rows.Sum(r => r.FiresLit):N0} · 불씨 얻음 {rows.Sum(r => r.FiresTaken):N0} · 들불 · 번개 {rows.Sum(r => r.Wildfires)} · 캠 {rows.Sum(r => r.Mined)} · 익힌 끼니 {rows.Sum(r => r.Cooked):N0}");
+        sb.AppendLine($"- 사라진 발견 {rows.Sum(r => r.Lost)} · 다시 찾아냄 {rows.Sum(r => r.Refound)} · 실험 {rows.Sum(r => r.Experiments):N0} · 그중 거의 될 듯(새 단서) {rows.Sum(r => r.Partials):N0} · 같은 헛수고 {rows.Sum(r => r.PartialRepeats):N0} · 아는 법대로 만들기 {rows.Sum(r => r.Crafts):N0}(그중 헛손질 {rows.Sum(r => r.CraftFails):N0}) · 알아냄 {rows.Sum(r => r.Discoveries):N0} · 보고 배움 {rows.Sum(r => r.Watched):N0} · 불 피움 {rows.Sum(r => r.FiresLit):N0} · 불씨 얻음 {rows.Sum(r => r.FiresTaken):N0} · 들불 · 번개 {rows.Sum(r => r.Wildfires)} · 캠 {rows.Sum(r => r.Mined)} · 익힌 끼니 {rows.Sum(r => r.Cooked):N0}");
         sb.AppendLine($"- 인구(10년마다, 시드 중앙값): " + string.Join(" · ", Enumerable.Range(0, years / 10 + 1).Select(i => PeopleBench.Median(rows.Select(r => (double)(i * 10 < r.PopByYear.Count ? r.PopByYear[i * 10] : 0))).ToString("0"))));
         sb.AppendLine($"- (E4) 큰 일: ★★★ {PeopleBench.Median(rows.Select(r => (double)r.Level3))}번 · ★★ {PeopleBench.Median(rows.Select(r => (double)r.Level2))}번(중앙값) → 멈추는 팝업 1배속 규칙 {PeopleBench.Median(rows.Select(r => (double)r.Popups1))}번 · 5배속 규칙 {PeopleBench.Median(rows.Select(r => (double)r.Popups5))}번 ({years}년, 같은 날의 일은 팝업 하나, 실제 시간 30초 간격은 빼고 셈)");
         sb.AppendLine($"- 사람 하루당 {rows.Sum(r => r.Seconds) * 1e6 / Math.Max(1, rows.Sum(r => r.PersonDays)):0}µs");

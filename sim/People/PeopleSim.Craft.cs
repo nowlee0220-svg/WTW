@@ -262,6 +262,7 @@ public sealed partial class PeopleSim
         if (follow is { Key: "heat" or "rain" or "fuel" } && !known)
         {
             int ft = life.NearestFire(here % S, here / S, Now, 60);
+            if (ft < 0 && Craft.Rules[follow.Value.Rule].Result == I_hearth) ft = life.NearestFire(here % S, here / S, Now, 60, litOnly: false); // 꺼진 모닥불 자리도 돌로 둘러쌀 수 있다
             Fire hf = default;
             bool has = ft >= 0 && life.Fires.TryGetValue(ft, out hf);
             if (has && hf.Kind == 1)
@@ -300,7 +301,7 @@ public sealed partial class PeopleSim
         }
         // 쌓기(불 둘러싸기)는 무거운 돌이 넷 있어야 한다 — 한꺼번에 못 들면 두엇씩 날라 불가에 모은다
         if (action == A_pile && CountCarried(p, Craft.P_hardness, 3, Craft.P_weight, 3) is int hc2
-            && !(hc2 >= 2 || (hc2 >= 1 && hc2 + PileStonesAt(life, life.NearestFire(here % S, here / S, Now, 60)) >= 4)))
+            && !(hc2 >= 2 || (hc2 >= 1 && hc2 + PileStonesAt(life, life.NearestFire(here % S, here / S, Now, 60, litOnly: false)) >= 4)))
             return StartMaterialFor(p, it => Prop(it, Craft.P_hardness) >= 3 && Prop(it, Craft.P_weight) >= 3, Craft.P_weight, known ? Why.KnowHow : WishWhy(wish));
         // 재료 고르기
         var inPref = InputPrefs(action, wish, p);
@@ -340,9 +341,19 @@ public sealed partial class PeopleSim
         if (rule is { HasTool: true } && (tool < 0 || !MeetsAll(tool, rule.Tool)))
             tool = p.Carry.Where(c => c.Item != input && c.Item != with && MeetsAll(c.Item, rule.Tool)).Select(c => c.Item).DefaultIfEmpty(-1).First();
         if (rule is { HasTool: true } && tool < 0) { Stats.PlanWhy[6]++; return StartMaterialFor(p, rule.Tool, Why.KnowHow); }
+        // 아는 법에 불쏘시개가 들면(부싯돌 불씨): 아주 잘 타는 마른 것부터 — 없으면 풀을 말려 본다, 그것도 안 되면 하지 않는다
+        if (rule is { Tinder: > 0 } && BestCarried(p, Craft.P_burns, rule.Tinder, input, with) < 0)
+        {
+            if (StartMaterialFor(p, Craft.P_burns, rule.Tinder, Why.KnowHow)) return true;
+            int grass = BestCarried(p, Craft.P_dries, 4);
+            var dry = Craft.Rules.FirstOrDefault(r => r.Result == I_dryGrass);
+            if (grass >= 0 && dry is not null && p.Knows(dry.Index)) { p.PlanAction = dry.Action; p.PlanInput = grass; p.PlanWith = p.PlanTool = -1; p.PlanRule = dry.Index; SetWhy(p, Act.Craft, Why.KnowHow, wish); p.Target = here; BeginWork(p); return true; }
+            Stats.PlanWhy[11]++;
+            return false;
+        }
         if (needFire)
         {
-            int ft = life.NearestFire(here % S, here / S, Now, 60);
+            int ft = life.NearestFire(here % S, here / S, Now, 60, litOnly: action != A_pile); // 돌 쌓기는 꺼진 모닥불 자리에도
             if (ft < 0) { Stats.PlanWhy[4]++; return false; }
             int spot = Beside(p, ft);
             p.PlanAction = action; p.PlanInput = input; p.PlanWith = with; p.PlanTool = tool; p.PlanRule = rule?.Index ?? -1;
@@ -354,6 +365,12 @@ public sealed partial class PeopleSim
         }
         p.PlanAction = action; p.PlanInput = input; p.PlanWith = with; p.PlanTool = tool; p.PlanRule = rule?.Index ?? -1;
         SetWhy(p, known ? Act.Craft : Act.Experiment, known ? Why.KnowHow : follow is not null ? Why.Clue : WishWhy(wish), wish);
+        // (E4) 모닥불을 피우려는데 둘레에 돌 화덕이 있으면 그리로 가서 그 안에 피운다
+        if (action == A_burn && with == I_ember && HearthNear(life, here, 30) is int hz && hz >= 0 && Cheb(hz, here) > 2)
+        {
+            int spot = Beside(p, hz);
+            if (spot != here && WalkTo(p, spot)) { p.Target = hz; return true; }
+        }
         p.Target = here;
         BeginWork(p);
         return true;
@@ -782,7 +799,9 @@ public sealed partial class PeopleSim
                 AddThought(p, H_failedTry);
                 return;
             }
-            Stats.Partials++;
+            // 새 단서면 "거의 될 뻔", 이미 아는 단서를 또 겪었으면 "같은 헛수고"(따로 센다)
+            bool again = false; foreach (var cl in p.Clues) if (cl.Rule == rule.Index && cl.Key == pd.Key) { again = true; break; }
+            if (again) Stats.PartialRepeats++; else Stats.Partials++;
             AddClue(p, new Clue { Rule = rule.Index, Key = pd.Key, Tick = Now, Input = input });
             // (E4) 곁(6타일)에서 본 사람도 그 단서를 얻는다
             foreach (var q in life.People)
@@ -826,7 +845,8 @@ public sealed partial class PeopleSim
             int fuel = p.PlanInput;
             long dur = FuelTicks(fuel);
             if (p.CarryCount(I_ember) > 0) { p.RemoveCarry(I_ember, 1); p.EmberTick = -1; }
-            life.LightFire(here, 1, dur, Now, p.Id);
+            int hh = HearthNear(life, here, 2); // (E4) 곁에 돌 화덕이 있으면 그 안에 피운다
+            life.LightFire(hh >= 0 ? hh : here, hh >= 0 ? (byte)2 : (byte)1, dur, Now, p.Id);
             Stats.FiresLit++;
             AddBio(p, BioKind.LitFire, -1, here);
             return;
@@ -861,6 +881,19 @@ public sealed partial class PeopleSim
     }
 
     /// <summary>들고 있는 불씨로 불을 피운다(땔감이 있어야). 피웠으면 true.</summary>
+    /// <summary>(E4) r 타일 안의 돌 화덕(타든 꺼졌든), 같은 이어진 땅 곁. 없으면 −1.</summary>
+    private int HearthNear(ProvinceLife life, int here, int r)
+    {
+        int best = -1, bd = int.MaxValue;
+        foreach (var (t, f) in life.Fires)
+        {
+            if (f.Kind != 2) continue;
+            int d = Cheb(t, here);
+            if (d <= r && d < bd && life.BesideRegion(t, life.Region[here])) { bd = d; best = t; }
+        }
+        return best;
+    }
+
     private bool TryLightWithEmber(Person p, int here, Pcg32 rng)
     {
         if (p.CarryCount(I_ember) == 0) return false;
@@ -873,7 +906,8 @@ public sealed partial class PeopleSim
         if (!outcome.Success) { AddClue(p, new Clue { Rule = R_campfire.Index, Key = outcome.FailedKey, Tick = Now, Input = fuel }); return false; }
         p.RemoveCarry(fuel, 1);
         p.RemoveCarry(I_ember, 1); p.EmberTick = -1;
-        life.LightFire(here, 1, FuelTicks(fuel) + GameTime.TicksPerHour, Now, p.Id);
+        int hh = HearthNear(life, here, 2);
+        life.LightFire(hh >= 0 ? hh : here, hh >= 0 ? (byte)2 : (byte)1, FuelTicks(fuel) + GameTime.TicksPerHour, Now, p.Id);
         Stats.FiresLit++;
         AddBio(p, BioKind.LitFire, -1, here);
         if (!p.Knows(R_campfire.Index)) Learn(p, R_campfire, W_warmth, fuel, I_ember, -1);
