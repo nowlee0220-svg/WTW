@@ -133,6 +133,11 @@ public sealed class AutoPilot
                 case "--crossnofollow": _waitCross = true; _crossNoFollow = true; break;
                 case "--livebake": ProvinceView.BakeGround = v != "0"; break;
                 case "--look": _look = v; break;
+                case "--popups": Popups = true; break;
+                case "--scene": Scene = v; break;
+                case "--skip": _skip = v; break;
+                case "--skippanel": _skipPanelShot = true; break;
+                case "--skipmid": _skipMidShot = true; break;
                 case "--discoveries": _showDiscoveries = true; break;
                 case "--pausemeasure": _pauseMeasure = double.Parse(v, inv); break;
             }
@@ -145,7 +150,7 @@ public sealed class AutoPilot
         if (_selftest && Seed is null) Seed = 7;
     }
 
-    public void OnNotice(string n) => _lastNotice = n;
+    public void OnNotice(string n) { _lastNotice = n; if (n.StartsWith("SKIPDONE")) { GD.Print(n); _sinceProvince = 0; _sinceReady = 0; } }
     public void OnSpawned() { }
 
     public void OnProvinceOpened() { _provinceOpened = true; _provinceReady = false; }
@@ -265,7 +270,15 @@ public sealed class AutoPilot
             _sinceProvince = 0;
         }
 
-        else if (_shotPath is not null && (_look is null || _lookDone) && (StayOnNewWorld ? _elapsed : _enter is not null ? (_provinceReady ? _sinceProvince : -1) : (_ready ? _sinceReady : -1)) >= _shotAfter) Finish(true, "");
+        else if (_skip is not null && !_skipStarted && (_provinceReady || (_enter is null && _ready)) && _main.Host is { } sh)
+        {
+            _skipStarted = true;
+            var goal = _skip switch { "discovery" => Wtw.Sim.Runtime.SkipGoals.Discovery(null), "pot" => Wtw.Sim.Runtime.SkipGoals.Discovery("pot"), "land" => Wtw.Sim.Runtime.SkipGoals.NewLand(), _ => Wtw.Sim.Runtime.SkipGoals.Years(int.Parse(_skip)) };
+            _main.StartSkipForTest(goal);
+            GD.Print($"SKIP start {goal.Name}");
+        }
+        else if (_skipPanelShot && !_skipPanelShown && (_provinceReady || (_enter is null && _ready))) { _skipPanelShown = true; _main.ShowSkipPanelForTest(); }
+        else if (_shotPath is not null && (_look is null || _lookDone) && (_skip is null || (_lastNotice?.StartsWith("SKIPDONE") ?? false) || _skipMidShot) && (StayOnNewWorld ? _elapsed : _enter is not null ? (_provinceReady ? _sinceProvince : -1) : (_ready ? _sinceReady : -1)) >= _shotAfter) Finish(true, "");
     }
 
     /// <summary>(E4) 스크린샷: fire 불 둘레 · tool 도구를 든 사람 · pot 그릇 · experiment 실험하는 사람(큰 카드) — 찾을 때까지 2배속으로 돌린다.</summary>
@@ -690,6 +703,10 @@ public sealed class AutoPilot
     private int _hoverTarget = -1;
     private bool _showDiscoveries;
     private string? _look;
+    public bool Popups;
+    public string? Scene;
+    private string? _skip;
+    private bool _skipStarted, _skipPanelShot, _skipPanelShown, _skipMidShot;
     private bool _lookDone, _discShown;
     private int _lookPerson = -1, _lookFrames;
     private double _lookWait;

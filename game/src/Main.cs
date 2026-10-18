@@ -31,6 +31,14 @@ public partial class Main : Node
     private PeopleListPanel _list = null!;
     private AlertsPanel _alerts = null!;
     private DiscoveryPanel _discoveries = null!;
+    // (E4) 넘기기 · 큰 일 팝업
+    private SkipPanel _skipPanel = null!;
+    private SkipOverlay _skipOverlay = null!;
+    private EventPopup _popup = null!;
+    private LoadPanel _loadPanel = null!;
+    private readonly PopupGate _gate = new();
+    private long _popupSeq = -1;
+    private bool _pausedByPopup, _wasSkipping;
     private int _hoverPerson = -1;
     private double _cardTimer, _listTimer, _hoverTimer;
     private string _cardSig = "";
@@ -123,6 +131,23 @@ public partial class Main : Node
         ui.AddChild(_discoveries);
         _discoveries.CloseRequested += () => _discoveries.Visible = false;
         _discoveries.PersonPicked += (pid, cell) => { _discoveries.Visible = false; OnAlertPicked(pid, cell); };
+        _skipPanel = new SkipPanel { Theme = theme, Gate = _gate };
+        ui.AddChild(_skipPanel);
+        _skipPanel.CloseRequested += () => _skipPanel.Visible = false;
+        _skipPanel.StartRequested += StartSkip;
+        _hud.SkipRequested += ToggleSkipPanel;
+        _skipOverlay = new SkipOverlay { Theme = theme };
+        ui.AddChild(_skipOverlay);
+        _skipOverlay.StopRequested += () => _host?.StopSkip();
+        _popup = new EventPopup { Theme = theme };
+        ui.AddChild(_popup);
+        _popup.GoRequested += (pid, cell) => { ResumeAfterPopup(); OnAlertPicked(pid, cell); };
+        _popup.ContinueRequested += ResumeAfterPopup;
+        _popup.MuteRequested += kinds => { foreach (var k in kinds) _gate.Muted[(int)k] = true; _hud.ShowNotice("이런 일로는 이제 멈추지 않습니다 ([넘기기] 창에서 다시 켤 수 있음)"); };
+        _loadPanel = new LoadPanel { Theme = theme };
+        ui.AddChild(_loadPanel);
+        _loadPanel.CloseRequested += () => _loadPanel.Visible = false;
+        _loadPanel.Picked += path => LoadFrom(path);
         _personHover = new PersonHoverCard { Theme = theme };
         ui.AddChild(_personHover);
         _province.LabelBlockers = LabelBlockers;
@@ -132,10 +157,11 @@ public partial class Main : Node
         _newWorld.CreateRequested += (seed, land, climate) => StartMaking(seed, new WorldConfig { DotCount = _auto.Dots ?? 0, LandCells = land, Climate = climate });
         _newWorld.LoadRequested += Load;
         _newWorld.CloseRequested += () => { if (_host is not null) _newWorld.Visible = false; };
-        _newWorld.Open(false, File.Exists(SavePath));
+        _newWorld.Open(false, File.Exists(SavePath) || LoadPanel.Scenes().Count > 0);
 
         _auto.Start(this);
-        if (_auto.Seed is ulong s0 && !_auto.StayOnNewWorld)
+        if (_auto.Scene is string scene) LoadFrom("res://scenes/" + scene);
+        else if (_auto.Seed is ulong s0 && !_auto.StayOnNewWorld)
         {
             var cfg = new WorldConfig { DotCount = _auto.Dots ?? 0, LandCells = _auto.Land ?? 16_000, Climate = _auto.Climate ?? ClimateBias.Normal };
             _newWorld.SetValues(s0, cfg.LandCells, cfg.Climate);
@@ -166,10 +192,29 @@ public partial class Main : Node
         });
     }
 
+    /// <summary>(E4) [불러오기]: 빠른 저장과 시험용 장면 가운데 고르는 창.</summary>
     private void Load()
     {
         if (_making is not null) return;
+        if (LoadPanel.Scenes().Count == 0) { LoadFrom(null); return; }
+        _loadPanel.GetParent().MoveChild(_loadPanel, -1); // 새 세계 화면 위에
+        _loadPanel.Open(File.Exists(SavePath));
+    }
+
+    /// <summary>path = null 이면 빠른 저장, 아니면 res://scenes/… 의 시험용 장면.</summary>
+    private void LoadFrom(string? path)
+    {
+        if (_making is not null) return;
         if (_province.IsOpen) ExitProvince();
+        if (path is not null)
+        {
+            _host?.SetPaused(true);
+            _makingNotice = "장면을 불러왔습니다";
+            if (_newWorld.Visible) _newWorld.SetBusy(true, 0, "불러오는 중…");
+            byte[] bytes = Godot.FileAccess.GetFileAsBytes(path);
+            RunWorldTask(() => { var w = SaveGame.FromBytes(bytes); w.EnsurePlanet(Progress); return w; });
+            return;
+        }
         if (!File.Exists(SavePath)) { _hud.ShowNotice("저장 파일이 없습니다. 먼저 저장하세요."); return; }
         _host?.SetPaused(true);
         _makingNotice = "불러왔습니다";
@@ -234,7 +279,7 @@ public partial class Main : Node
         if (_making is not null) return;
         if (_province.IsOpen) ExitProvince();
         _newWorld.SetValues(NewWorldScreen.RandomSeed(), _lastConfig.LandCells, _lastConfig.Climate);
-        _newWorld.Open(_host is not null, File.Exists(SavePath));
+        _newWorld.Open(_host is not null, File.Exists(SavePath) || LoadPanel.Scenes().Count > 0);
     }
 
     private void Save()
@@ -444,7 +489,8 @@ public partial class Main : Node
         var vp = GetViewport().GetVisibleRect().Size;
         _alerts.RightMargin = _cardPanel.Visible ? PersonCardPanel.Width + 24 : _discoveries.Visible ? DiscoveryPanel.Width + 24 : _panel.Visible ? CellPanel.Width + 24 : 12;
         if (_discoveries.Visible) _discoveries.Fill(snap);
-        _alerts.Update(snap, Time.GetTicksMsec() / 1000.0, vp);
+        _alerts.Update(snap, Time.GetTicksMsec() / 1000.0, vp, e => EventLevels.Of(e.Kind) >= EventLevels.Group || (_province.IsOpen && _province.Shows(e.Cell)));
+        CheckPopups(snap);
         if (_host is null) return;
         // 큰 카드
         if (_cardPanel.Visible)
@@ -585,6 +631,7 @@ public partial class Main : Node
         PollMaking();
         if (_host is null) { _auto.Tick(delta, null); return; }
         var snap = _host.Frame(delta);
+        if (UpdateSkip(snap)) { _auto.Tick(delta, snap); Throttle(); return; }
         if (snap.Planet is not null && !ReferenceEquals(snap.Planet, _globe.Planet) && _province.IsOpen) ExitProvince();
         if (snap.Planet is not null) _globe.SetPlanet(snap.Planet);
         if (_card.Visible) _card.Follow(GetViewport().GetMousePosition());
@@ -625,7 +672,7 @@ public partial class Main : Node
         double now = Time.GetTicksMsec() / 1000.0;
         bool idle = _host.Paused && now - _lastInput > 1.5 && !_province.Loading && !_province.Baking && _making is null;
         bool away = !_auto.Active && !GetWindow().HasFocus();
-        int fps = away ? 5 : idle ? 10 : 0;
+        int fps = _host.IsSkipping ? 15 : away ? 5 : idle ? 10 : 0;
         if (Engine.MaxFps != fps) Engine.MaxFps = fps;
     }
 
@@ -657,6 +704,7 @@ public partial class Main : Node
             case Key.F9: Load(); break;
             case Key.F12: _devDots = !_devDots; break; // 개발용: E0 점 시험 화면
             case Key.D: ToggleDiscoveries(); break;
+            case Key.N: ToggleSkipPanel(); break;
             case Key.Enter or Key.KpEnter when !_province.IsOpen && _globe.Selected >= 0: EnterProvince(_globe.Selected); break;
             case Key.Y when _province.IsOpen: SetResourceView(!_province.ResourceView); break;
             default:
@@ -671,6 +719,71 @@ public partial class Main : Node
 
     public override void _ExitTree() => _host?.Dispose();
 
+    // ───────── (E4) 넘기기 · 큰 일 팝업 ─────────
+
+    private void ToggleSkipPanel()
+    {
+        if (_host is null) return;
+        _skipPanel.Sync();
+        _skipPanel.Visible = !_skipPanel.Visible;
+    }
+
+    private void StartSkip(Wtw.Sim.Runtime.SkipGoal goal)
+    {
+        if (_host is null || _host.IsSkipping) return;
+        _skipPanel.Visible = false;
+        _popup.Close();
+        _host.StartSkip(goal);
+    }
+
+    /// <summary>넘기는 중이면 막만 보이고(지도는 그리지 않음) true. 끝나면 "그동안 일어난 일".</summary>
+    private bool UpdateSkip(WorldSnapshot snap)
+    {
+        if (_host!.Skipping is { } info)
+        {
+            if (!_wasSkipping) { _wasSkipping = true; _province.Visible = false; _province.ProcessMode = ProcessModeEnum.Disabled; _globe.Visible = false; _globe.ProcessMode = ProcessModeEnum.Disabled; }
+            _skipOverlay.Show(info, snap.Now);
+            _hud.UpdateInfo(snap, _host, 0);
+            return true;
+        }
+        if (_wasSkipping)
+        {
+            _wasSkipping = false;
+            _skipOverlay.Visible = false;
+            _province.Visible = true; _province.ProcessMode = ProcessModeEnum.Inherit;
+            _globe.Visible = true; _globe.ProcessMode = ProcessModeEnum.Inherit;
+            _alerts.Reset();
+            _popupSeq = -1;
+            _host.SetPaused(true);
+        }
+        if (_host.TryTakeSkipSummary(out var lines)) { _popup.ShowSummary(lines); _auto.OnNotice("SKIPDONE " + lines[0]); }
+        return false;
+    }
+
+    /// <summary>새 큰 일(★★★) 가운데 멈출 것을 한 팝업에 묶어 띄우고 멈춘다(자동 확인 중에는 --popups 일 때만).</summary>
+    private void CheckPopups(WorldSnapshot snap)
+    {
+        long last = snap.BigEvents.Length > 0 ? snap.BigEvents[^1].Seq : 0;
+        if (_popupSeq < 0) { _popupSeq = last; return; }
+        var fire = new List<Wtw.Sim.People.WorldEvent>();
+        double real = Time.GetTicksMsec() / 1000.0;
+        foreach (var e in snap.BigEvents)
+        {
+            if (e.Seq <= _popupSeq) continue;
+            if (_gate.ShouldPause(e, snap.Now, real, _host!.SpeedLevel)) fire.Add(e);
+        }
+        _popupSeq = Math.Max(_popupSeq, last);
+        if (fire.Count == 0 || (_auto.Active && !_auto.Popups)) return;
+        if (!_host!.Paused) { _host.SetPaused(true); _pausedByPopup = true; }
+        _popup.AddEvents(fire);
+    }
+
+    private void ResumeAfterPopup()
+    {
+        if (_pausedByPopup && _host is not null) _host.SetPaused(false);
+        _pausedByPopup = false;
+    }
+
     // AutoPilot 이 쓰는 문
     internal SimHost? Host => _host;
     internal GlobeView Globe => _globe;
@@ -682,6 +795,8 @@ public partial class Main : Node
     internal PersonCardPanel CardPanel => _cardPanel;
     internal PersonHoverCard PersonHover => _personHover;
     internal DiscoveryPanel Discoveries => _discoveries;
+    internal void StartSkipForTest(Wtw.Sim.Runtime.SkipGoal g) => StartSkip(g);
+    internal void ShowSkipPanelForTest() { _skipPanel.Sync(); _skipPanel.Visible = true; }
     internal void ShowDiscoveriesForTest() { if (!_discoveries.Visible) ToggleDiscoveries(); }
     internal void OpenCardForTest(int id) => OpenCard(id);
     internal void CloseCardForTest() => CloseCard();
@@ -695,4 +810,5 @@ public partial class Main : Node
     internal void ResourceViewForTest(bool on) => SetResourceView(on);
     internal void SaveForTest() => Save();
     internal void LoadForTest() => Load();
+    internal void LoadSceneForTest(string file) => LoadFrom("res://scenes/" + file);
 }

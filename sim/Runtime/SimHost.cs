@@ -97,6 +97,37 @@ public sealed class SimHost : IDisposable
 
     public bool TryGetNotice(out string notice) => _notices.TryDequeue(out notice!);
 
+    // ───────── (E4) 넘기기 ─────────
+
+    /// <summary>넘기는 중의 모습(화면 스레드가 읽는다).</summary>
+    public sealed record SkipInfo(string Goal, double Years, double Progress);
+
+    private volatile SkipInfo? _skipInfo;
+    private volatile List<string>? _skipSummary;
+    private volatile bool _skipping;
+
+    /// <summary>넘기는 중이면 그 모습, 아니면 null.</summary>
+    public SkipInfo? Skipping => _skipping ? _skipInfo : null;
+    public bool IsSkipping => _skipping;
+
+    /// <summary>목표까지 화면 없이 최대 속도로 넘긴다. 끝나면 TryTakeSkipSummary 로 "그동안 일어난 일".</summary>
+    public void StartSkip(SkipGoal goal)
+    {
+        _skipping = true;
+        _skipInfo = new SkipInfo(goal.Name, 0, 0);
+        Post(() => { _skip = new SkipRun(_world, goal); });
+    }
+
+    public void StopSkip() => Post(() => _skip?.Cancel());
+
+    public bool TryTakeSkipSummary(out List<string> lines)
+    {
+        lines = _skipSummary!;
+        if (lines is null) return false;
+        _skipSummary = null;
+        return true;
+    }
+
     /// <summary>
     /// 멈춘 다음 저장한다. 시뮬은 이미 정한 목표(화면보다 조금 앞)까지만 마저 계산하고 서며, 화면도 그 시각까지 와서 선다.
     /// 그 상태를 저장하므로 "멈춘 화면에 보이는 것 = 저장된 것".
@@ -180,6 +211,7 @@ public sealed class SimHost : IDisposable
 
     private double _lastDaysPerSecond, _lastLoad;
     private string? _pendingSave;
+    private SkipRun? _skip;
 
     private void ReplaceWorld(GameWorld w)
     {
@@ -221,6 +253,24 @@ public sealed class SimHost : IDisposable
                 windowStart = nowSec; windowStartTick = _world.Now; busy = 0;
             }
 
+            if (_skip is not null)
+            {
+                // 넘기기: 목표 · 위급 · 그만까지 하루씩, 화면 시계를 기다리지 않고. 0.25초마다 스냅샷.
+                double t0 = wall.Elapsed.TotalSeconds;
+                bool done = false;
+                while (!done && wall.Elapsed.TotalSeconds - t0 < 0.25 && _commands.IsEmpty) done = _skip.Step(_world);
+                busy += wall.Elapsed.TotalSeconds - t0;
+                _skipInfo = new SkipInfo(_skip.Goal.Name, _skip.YearsPassed(_world), _skip.Goal.Progress(_world));
+                if (_skip.Done)
+                {
+                    _skipSummary = _skip.Summary(_world);
+                    _skip = null;
+                    lock (_targetLock) { _epoch++; _targetEpoch = _epoch; _target = _world.Now; } // 화면 시계가 새 시각으로 건너뛴다
+                    _skipping = false;
+                }
+                PublishSnapshot(_lastDaysPerSecond, _lastLoad);
+                continue;
+            }
             if (_pendingSave is not null && _world.Now >= target)
             {
                 DoSave(_pendingSave);

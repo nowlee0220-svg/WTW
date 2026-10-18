@@ -95,6 +95,8 @@ public partial class ProvinceView : Node2D
 
     public bool IsOpen => _center >= 0;
     public int Center => _center;
+    /// <summary>(E4) 이 칸(지방)을 지금 그리고 있나.</summary>
+    public bool Shows(int cell) { foreach (var s in _shown) if (s.Map.Cell == cell) return true; return false; }
     public bool Neighbors => _neighbors;
     public bool Loading => _loading is not null;
     public float Zoom => _zoom;

@@ -905,7 +905,7 @@ public sealed partial class PeopleSim
             {
                 d.Lost = false; d.RefoundCount++; Stats.Refound++;
                 if (Partials.TryGetValue(rule.Index, out var pr2)) { d.PartialsBefore += pr2.Count; Partials.Remove(rule.Index); }
-                Notify(WorldEventKind.Discovery, p, rule.Index, $"{Hangul.I(DisplayName(p))} 잊혔던 {Hangul.Eul(Craft.ItemName(rule.Result))} 다시 찾아냈습니다 (잃은 적 {d.LostCount}번)");
+                Notify(WorldEventKind.Rediscovered, p, rule.Index, $"{Hangul.I(DisplayName(p))} 잊혔던 {Hangul.Eul(Craft.ItemName(rule.Result))} 다시 찾아냈습니다 (잃은 적 {d.LostCount}번)");
             }
         }
         else
@@ -919,7 +919,7 @@ public sealed partial class PeopleSim
         if (!GroupFirst.ContainsKey(key))
         {
             GroupFirst[key] = Now;
-            if (!worldFirst && from < 0) Notify(WorldEventKind.Discovery, p, rule.Index, $"이 무리에서 처음: {Hangul.I(DisplayName(p))} {Made(rule)}");
+            if (!worldFirst && from < 0) Notify(WorldEventKind.DiscoveryGroup, p, rule.Index, $"이 무리에서 처음: {Hangul.I(DisplayName(p))} {Made(rule)}");
         }
     }
 

@@ -9,7 +9,8 @@ namespace Wtw.Sim.People;
 /// <summary>알림(아이가 태어남 · 죽음 · 짝 · 정신 붕괴 …). Seq 는 1 부터 차례로.</summary>
 public sealed record WorldEvent(long Seq, long Tick, WorldEventKind Kind, int Person, int Other, int Cell, string Text);
 
-public enum WorldEventKind : byte { Spawn = 0, Birth, Death, Pair, Break, LandNamed, Moved, Language, Discovery, DiscoveryLost, Wildfire }
+/// <summary>세계의 일. 값은 저장 파일에 남으므로 뒤에만 더할 것. Discovery = 세계에서 처음, DiscoveryGroup = 그 무리에서 처음, Rediscovered = 잊혔다 다시.</summary>
+public enum WorldEventKind : byte { Spawn = 0, Birth, Death, Pair, Break, LandNamed, Moved, Language, Discovery, DiscoveryLost, Wildfire, DiscoveryGroup, Rediscovered }
 
 /// <summary>측정용 셈(저장하지 않는다 — 결과에 영향 없음).</summary>
 public sealed class PeopleStats

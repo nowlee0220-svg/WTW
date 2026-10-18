@@ -381,17 +381,20 @@ public partial class AlertsPanel : VBoxContainer
         Alignment = AlignmentMode.End;
     }
 
-    public void Update(WorldSnapshot snap, double now, Vector2 vp)
+    /// <summary>show = 이 알림을 보일까(E4: ★ 한 사람의 일은 그 지방을 볼 때만).</summary>
+    public void Update(WorldSnapshot snap, double now, Vector2 vp, Func<WorldEvent, bool>? show = null)
     {
-        if (!_primed) { _primed = true; _seenSeq = snap.RecentEvents.Length > 0 ? snap.RecentEvents[^1].Seq : 0; }
-        foreach (var e in snap.RecentEvents)
+        long last = Math.Max(snap.RecentEvents.Length > 0 ? snap.RecentEvents[^1].Seq : 0, snap.BigEvents.Length > 0 ? snap.BigEvents[^1].Seq : 0);
+        if (!_primed) { _primed = true; _seenSeq = last; }
+        var fresh = snap.RecentEvents.Concat(snap.BigEvents).Where(e => e.Seq > _seenSeq).GroupBy(e => e.Seq).Select(g => g.First()).OrderBy(e => e.Seq).ToList();
+        foreach (var e in fresh)
         {
-            if (e.Seq <= _seenSeq) continue;
             _seenSeq = e.Seq;
             if (e.Kind == WorldEventKind.Spawn) continue;
+            if (show is not null && !show(e)) continue;
             var b = new Button { Text = $"{Icon(e.Kind)} {e.Text}  · {GameTime.Format(e.Tick)}", FocusMode = FocusModeEnum.None, Alignment = HorizontalAlignment.Left, TooltipText = "눌러서 그 사람으로" };
             b.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeSmall + 1);
-            b.AddThemeColorOverride("font_color", e.Kind switch { WorldEventKind.Death => new Color(1f, 0.6f, 0.55f), WorldEventKind.Birth => new Color(0.6f, 0.95f, 0.6f), WorldEventKind.Pair => new Color(1f, 0.75f, 0.85f), WorldEventKind.Discovery => new Color(1f, 0.85f, 0.35f), WorldEventKind.DiscoveryLost => new Color(1f, 0.45f, 0.3f), WorldEventKind.Wildfire => new Color(1f, 0.6f, 0.3f), _ => new Color(0.75f, 0.8f, 1f) });
+            b.AddThemeColorOverride("font_color", e.Kind switch { WorldEventKind.Death => new Color(1f, 0.6f, 0.55f), WorldEventKind.Birth => new Color(0.6f, 0.95f, 0.6f), WorldEventKind.Pair => new Color(1f, 0.75f, 0.85f), WorldEventKind.Discovery => new Color(1f, 0.85f, 0.35f), WorldEventKind.DiscoveryGroup or WorldEventKind.Rediscovered => new Color(0.95f, 0.85f, 0.55f), WorldEventKind.Language => new Color(0.75f, 0.9f, 1f), WorldEventKind.DiscoveryLost => new Color(1f, 0.45f, 0.3f), WorldEventKind.Wildfire => new Color(1f, 0.6f, 0.3f), _ => new Color(0.75f, 0.8f, 1f) });
             if (e.Kind is WorldEventKind.Discovery or WorldEventKind.DiscoveryLost) b.AddThemeFontOverride("font", UiTheme.Bold);
             int pid = e.Kind == WorldEventKind.Birth ? e.Other : e.Person, cell = e.Cell;
             double life = e.Kind is WorldEventKind.Discovery or WorldEventKind.DiscoveryLost ? 90 : 40;
@@ -413,5 +416,5 @@ public partial class AlertsPanel : VBoxContainer
 
     public void Reset() { _primed = false; foreach (var (b, _) in _items) { RemoveChild(b); b.QueueFree(); } _items.Clear(); }
 
-    private static string Icon(WorldEventKind k) => k switch { WorldEventKind.Birth => "＋", WorldEventKind.Death => "†", WorldEventKind.Pair => "♥", WorldEventKind.Break => "!", WorldEventKind.Discovery => "★", WorldEventKind.DiscoveryLost => "✕", WorldEventKind.Wildfire => "▲", _ => "·" };
+    private static string Icon(WorldEventKind k) => k switch { WorldEventKind.Birth => "＋", WorldEventKind.Death => "†", WorldEventKind.Pair => "♥", WorldEventKind.Break => "!", WorldEventKind.Discovery => "★★★", WorldEventKind.DiscoveryLost => "★★★ ✕", WorldEventKind.Language => "★★★", WorldEventKind.DiscoveryGroup or WorldEventKind.Rediscovered or WorldEventKind.Moved or WorldEventKind.LandNamed => "★★", WorldEventKind.Wildfire => "▲", _ => "·" };
 }

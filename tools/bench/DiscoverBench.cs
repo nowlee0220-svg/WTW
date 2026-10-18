@@ -19,7 +19,8 @@ public static class DiscoverBench
         public List<int> PopByYear = new();
         public double Seconds; public long PersonDays;
         public int Known1y;
-        public string Detail = ""; // 끝에 살아 있는 사람 중 아는 법이 하나라도 있는 사람
+        public string Detail = "";
+        public int Popups1, Popups5, Level3, Level2; // 끝에 살아 있는 사람 중 아는 법이 하나라도 있는 사람
     }
 
     /// <summary>know = "fire" 이면 뿌린 사람들이 처음부터 불 피우는 법(부싯돌 불씨 · 모닥불)을 안다(추운 땅에서 "불을 아는 사람"의 생존을 따로 재기 위해).</summary>
@@ -45,6 +46,8 @@ public static class DiscoverBench
                 w.People.Learn(q, cr.Rules.First(r => r.Id == "campfire"), 0, I("twigs"), I("ember"), -1);
             }
         }
+        var gate1 = new Wtw.Sim.Runtime.PopupGate(); var gate5 = new Wtw.Sim.Runtime.PopupGate();
+        long seen = 0;
         var sw = Stopwatch.StartNew();
         long end = years * GameTime.TicksPerYear;
         for (long t = 0; t < end; t += GameTime.TicksPerDay)
@@ -52,6 +55,19 @@ public static class DiscoverBench
             w.AdvanceTo(Math.Min(end, t + GameTime.TicksPerDay));
             int alive = w.People.AliveCount;
             row.PersonDays += alive; row.Peak = Math.Max(row.Peak, alive);
+            // (E4) 큰 일 팝업: 하루에 생긴 ★★★ 를 한 팝업으로 묶는다(1배속 · 5배속 규칙으로 각각)
+            bool p1 = false, p5 = false;
+            foreach (var e in w.People.Events)
+            {
+                if (e.Seq <= seen) continue;
+                int lv = Wtw.Sim.Runtime.EventLevels.Of(e.Kind);
+                if (lv == 3) row.Level3++; else if (lv == 2) row.Level2++;
+                p1 |= gate1.ShouldPause(e, w.Now, -1, 1);
+                p5 |= gate5.ShouldPause(e, w.Now, -1, 5);
+            }
+            if (w.People.Events.Count > 0) seen = w.People.Events[^1].Seq;
+            if (p1) row.Popups1++;
+            if (p5) row.Popups5++;
             if (t % GameTime.TicksPerYear == 0) row.PopByYear.Add(alive);
             if (alive == 0) break;
         }
@@ -133,6 +149,7 @@ public static class DiscoverBench
         sb.AppendLine($"- 죽음 원인(모든 시드 합 {deaths}): " + string.Join(" · ", new[] { (1, "굶주림"), (2, "목마름"), (3, "추위"), (4, "더위"), (5, "늙음"), (6, "병") }.Select(c => $"{c.Item2} {rows.Sum(r => r.Deaths[c.Item1]) * 100.0 / Math.Max(1, deaths):0}%")));
         sb.AppendLine($"- 사라진 발견 {rows.Sum(r => r.Lost)} · 다시 찾아냄 {rows.Sum(r => r.Refound)} · 실험 {rows.Sum(r => r.Experiments):N0} · 그중 거의 될 듯 {rows.Sum(r => r.Partials):N0} · 아는 법대로 만들기 {rows.Sum(r => r.Crafts):N0}(그중 헛손질 {rows.Sum(r => r.CraftFails):N0}) · 알아냄 {rows.Sum(r => r.Discoveries):N0} · 보고 배움 {rows.Sum(r => r.Watched):N0} · 불 피움 {rows.Sum(r => r.FiresLit):N0} · 불씨 얻음 {rows.Sum(r => r.FiresTaken):N0} · 들불 · 번개 {rows.Sum(r => r.Wildfires)} · 캠 {rows.Sum(r => r.Mined)} · 익힌 끼니 {rows.Sum(r => r.Cooked):N0}");
         sb.AppendLine($"- 인구(10년마다, 시드 중앙값): " + string.Join(" · ", Enumerable.Range(0, years / 10 + 1).Select(i => PeopleBench.Median(rows.Select(r => (double)(i * 10 < r.PopByYear.Count ? r.PopByYear[i * 10] : 0))).ToString("0"))));
+        sb.AppendLine($"- (E4) 큰 일: ★★★ {PeopleBench.Median(rows.Select(r => (double)r.Level3))}번 · ★★ {PeopleBench.Median(rows.Select(r => (double)r.Level2))}번(중앙값) → 멈추는 팝업 1배속 규칙 {PeopleBench.Median(rows.Select(r => (double)r.Popups1))}번 · 5배속 규칙 {PeopleBench.Median(rows.Select(r => (double)r.Popups5))}번 ({years}년, 같은 날의 일은 팝업 하나, 실제 시간 30초 간격은 빼고 셈)");
         sb.AppendLine($"- 사람 하루당 {rows.Sum(r => r.Seconds) * 1e6 / Math.Max(1, rows.Sum(r => r.PersonDays)):0}µs");
         Console.Write(sb.ToString());
         if (seeds <= 2) foreach (var r in rows) Console.Write(r.Detail);

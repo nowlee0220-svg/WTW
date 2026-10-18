@@ -35,6 +35,8 @@ public sealed class WorldSnapshot
     /// <summary>한 번이라도 사람이 산 칸(열린 칸).</summary>
     public int[] OpenedCells = Array.Empty<int>();
     public WorldEvent[] RecentEvents = Array.Empty<WorldEvent>();
+    /// <summary>(E4) 최근의 큰 일(★★ 이상) 30개.</summary>
+    public WorldEvent[] BigEvents = Array.Empty<WorldEvent>();
     public int AliveCount;
     public int PeopleCap;
     /// <summary>사람이 들어가 걷힌 타일(칸 → 타일 번호들). 바뀔 때만 새 배열.</summary>
@@ -146,7 +148,18 @@ public sealed class WorldSnapshot
         var ev = w.People.Events;
         int n = Math.Min(30, ev.Count);
         if (RecentEvents.Length != n || (n > 0 && RecentEvents[^1].Seq != ev[^1].Seq)) RecentEvents = ev.Skip(ev.Count - n).ToArray();
+        // (E4) 큰 일(★★ · ★★★)은 따로 — 빠른 배속에서 태어남 · 죽음에 밀려 빠지지 않게
+        if (ev.Count > 0 && (BigEvents.Length == 0 || ev[^1].Seq != _bigSeq))
+        {
+            _bigSeq = ev[^1].Seq;
+            var big = new List<WorldEvent>();
+            for (int i = ev.Count - 1; i >= 0 && big.Count < 30; i--) if (EventLevels.Of(ev[i].Kind) >= EventLevels.Group) big.Add(ev[i]);
+            big.Reverse();
+            BigEvents = big.ToArray();
+        }
     }
+
+    private long _bigSeq = -1;
 
     private void FillLanguages(GameWorld w)
     {

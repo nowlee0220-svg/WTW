@@ -212,6 +212,7 @@ public sealed partial class PeopleSim
     {
         var from = Life(p.Cell);
         int fromTile = p.Tile(Now);
+        bool fresh = !Provinces.ContainsKey(b.Nb) && !Dormant.ContainsKey(b.Nb); // 아무도 들어가 본 적 없는 땅
         var to = Life(b.Nb);
         from = Life(p.Cell); // (to 를 깨우며 마지막 지방 기억이 바뀌었을 수 있다)
         var babies = new List<Person>();
@@ -230,6 +231,7 @@ public sealed partial class PeopleSim
         Stats.Crossings++;
         if (p.Why is Why.Scarce or Why.SeekMate or Why.Explore or Why.NoWater or Why.NoFood or Why.FollowFamily or Why.Break || !VisitedBefore(p, b.Nb))
             AddBio(p, BioKind.Moved, b.Nb, (int)p.Why | (from.Cell << 8));
+        if (fresh) Notify(WorldEventKind.Moved, p, from.Cell, $"{Hangul.I(DisplayName(p))} 아무도 살지 않던 새 땅으로 들어갔습니다");
         Crossings.Add(new Crossing(Now, p.Id, from.Cell, b.Nb, b.Slot, fromTile, entry, p.Why));
         if (Crossings.Count > CrossingsKept) Crossings.RemoveRange(0, Crossings.Count - CrossingsKept);
         _lastLife = null;
