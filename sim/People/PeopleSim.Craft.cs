@@ -86,7 +86,7 @@ public sealed partial class PeopleSim
     private int Prop(int item, int prop) => Craft.Prop(item, prop);
     private bool IsMade(int item) => (uint)item < (uint)Craft.Catalog.Items.Count && Craft.Catalog.Items[item].Kind == "made";
 
-    public int CarryWeight(Person p) { int w = 0; foreach (var c in p.Carry) w += Prop(c.Item, Craft.P_weight) * c.Count; return w; }
+    public int CarryWeight(Person p) { int w = 0; foreach (var c in p.Carry) w += Math.Max(1, Prop(c.Item, Craft.P_weight)) * c.Count; return w; } // 가벼운 것도 하나에 1(손이 둘뿐)
     public int CarryCapOf(Person p) { int cap = CarryCap; foreach (var c in p.Carry) { if (Prop(c.Item, Craft.P_holds) >= 3) cap += 8; } return cap + Ability(p, PeopleData.Str) / 2; }
 
     /// <summary>들고 있는 것 중 속성 prop 이 가장 높은 것(min 이상). except 두 개는 빼고. 없으면 −1.</summary>
@@ -404,6 +404,14 @@ public sealed partial class PeopleSim
     private bool NeedsFire(Person p, ProvinceLife life) => life.NearestFire(p.Tile(Now) % S, p.Tile(Now) / S, Now, 25) < 0;
     private int NearestFireAny(ProvinceLife life, int here) => life.NearestFire(here % S, here / S, Now, 60, litOnly: false);
 
+    /// <summary>단서를 기억한다. 같은 일 · 같은 까닭의 단서는 하나만(가장 새것).</summary>
+    private static void AddClue(Person p, Clue c)
+    {
+        p.Clues.RemoveAll(x => x.Rule == c.Rule && x.Key == c.Key);
+        p.Clues.Add(c);
+        if (p.Clues.Count > Person.ClueMemory) p.Clues.RemoveAt(0);
+    }
+
     private void TakePileStones(ProvinceLife life, int tile, int n)
     {
         if (!life.Items.TryGetValue(tile, out var list)) return;
@@ -717,8 +725,7 @@ public sealed partial class PeopleSim
                 p.RemoveCarry(input, 1);
                 p.AddCarry(pd.Result, 1);
             }
-            p.Clues.Add(new Clue { Rule = rule.Index, Key = pd.Key, Tick = Now, Input = input });
-            if (p.Clues.Count > Person.ClueMemory) p.Clues.RemoveAt(0);
+            AddClue(p, new Clue { Rule = rule.Index, Key = pd.Key, Tick = Now, Input = input });
             if (!Discoveries.ContainsKey(rule.Index) || Discoveries[rule.Index].Lost)
             {
                 if (!Partials.TryGetValue(rule.Index, out var pr)) Partials[rule.Index] = pr = (0, new List<string>());
@@ -778,7 +785,7 @@ public sealed partial class PeopleSim
             hf.Fuel += 2 * GameTime.TicksPerHour; life.Fires[p.Target] = hf;
         }
         int count = rule.Count;
-        if (CarryWeight(p) + Prop(res, Craft.P_weight) * count > CarryCapOf(p) + 6) life.Drop(here, res, count);
+        if (CarryWeight(p) + Math.Max(1, Prop(res, Craft.P_weight)) * count > CarryCapOf(p) + 6) life.Drop(here, res, count);
         else p.AddCarry(res, count);
         AddBio(p, BioKind.MadeThing, -1, res);
     }
@@ -801,7 +808,7 @@ public sealed partial class PeopleSim
         if (!life.Walk[here]) return false;
         if (R_campfire is null) return false;
         var outcome = Craft.Judge(A_burn, PropsOf(fuel), PropsOf(I_ember), null, life.HeatAt(here, Now), 0, 0, 0);
-        if (!outcome.Success) { p.Clues.Add(new Clue { Rule = R_campfire.Index, Key = outcome.FailedKey, Tick = Now, Input = fuel }); return false; }
+        if (!outcome.Success) { AddClue(p, new Clue { Rule = R_campfire.Index, Key = outcome.FailedKey, Tick = Now, Input = fuel }); return false; }
         p.RemoveCarry(fuel, 1);
         p.RemoveCarry(I_ember, 1); p.EmberTick = -1;
         life.LightFire(here, 1, FuelTicks(fuel) + GameTime.TicksPerHour, Now, p.Id);
@@ -1125,7 +1132,7 @@ public sealed partial class PeopleSim
     private void DropOrCarry(Person p, ProvinceLife life, int here, int item, int n)
     {
         if (item < 0) return;
-        if (CarryWeight(p) + Prop(item, Craft.P_weight) * n > CarryCapOf(p)) life.Drop(here, item, n);
+        if (CarryWeight(p) + Math.Max(1, Prop(item, Craft.P_weight)) * n > CarryCapOf(p)) life.Drop(here, item, n);
         else p.AddCarry(item, n);
     }
 

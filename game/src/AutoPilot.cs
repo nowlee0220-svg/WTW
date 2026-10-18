@@ -288,10 +288,19 @@ public sealed class AutoPilot
             if (host.SpeedLevel != 5) host.SetSpeed(5);
             return false;
         }
+        if (_lookPerson >= 0)
+        {
+            // 멈춘 뒤의 새 스냅샷으로 다시 본다 — 그새 일이 바뀌었으면 다시 찾는다
+            if (++_lookFrames < 3) return false;
+            var lv = snap.People.Take(snap.PeopleCount).FirstOrDefault(q => q.Id == _lookPerson);
+            if (lv.Act is Wtw.Sim.People.Act.Experiment or Wtw.Sim.People.Act.Craft) return true;
+            _lookPerson = -1; _main.CloseCardForTest(); host.SetPaused(false);
+        }
         for (int i = 0; i < snap.PeopleCount; i++)
         {
             var v = snap.People[i];
             if (v.Dead || v.Cell != center || v.Carrier >= 0) continue;
+            if (_look == "experiment" && v.Stage == Wtw.Sim.People.LifeStage.Child) continue;
             bool ok = _look switch
             {
                 "tool" => v.Tool >= 0 && !v.Asleep,
@@ -306,8 +315,8 @@ public sealed class AutoPilot
             if (_look == "experiment" || _cardTab is not null) { _main.OpenCardForTest(v.Id); _main.CardPanel.SetTab(_cardTab ?? 0); }
             if (_follow) pv.Follow(v.Id);
             host.SetSpeed(1);
-            if (_look == "experiment") host.SetPaused(true);
             GD.Print($"LOOK {_look} person={v.Id} {v.Name}");
+            if (_look == "experiment") { host.SetPaused(true); _lookPerson = v.Id; _lookFrames = 0; return false; }
             return true;
         }
         if (host.SpeedLevel != 4) host.SetSpeed(4);
@@ -682,6 +691,7 @@ public sealed class AutoPilot
     private bool _showDiscoveries;
     private string? _look;
     private bool _lookDone, _discShown;
+    private int _lookPerson = -1, _lookFrames;
     private double _lookWait;
     private double? _pauseMeasure;
     private bool _focusTalk;

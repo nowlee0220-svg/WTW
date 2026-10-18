@@ -684,6 +684,7 @@ public partial class Main : Node
     internal DiscoveryPanel Discoveries => _discoveries;
     internal void ShowDiscoveriesForTest() { if (!_discoveries.Visible) ToggleDiscoveries(); }
     internal void OpenCardForTest(int id) => OpenCard(id);
+    internal void CloseCardForTest() => CloseCard();
     internal void HoverPersonForTest(int id) { _hoverPerson = id; _hoverTimer = 0; }
     internal void SpawnForTest(int cell, int x, int y, bool family) => OnSpawnClicked(cell, x, y, family);
     internal void EnterForTest(int c) => EnterProvince(c);
