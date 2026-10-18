@@ -100,7 +100,7 @@ public sealed partial class PeopleSim
         if (p.Rest < UrgentRest) { StartSleep(p, here, Why.Exhausted, collapse: true); return; }
         int felt = FeltNow(p);
         if (felt < 110) AddWish(p, W_warmth, felt < 60 ? 12 : 5);
-        if (p.Hypothermia > 10_000 && felt < 60 && (TryWarmByFire(p, Why.VeryCold) || TryWarm(p, Why.VeryCold))) return;
+        if (p.Hypothermia > 10_000 && felt < 60 && (TryWarmByFire(p, Why.VeryCold) || TryLightKnownFire(p) || TryWarm(p, Why.VeryCold))) return;
         if (p.Heatstroke > 10_000 && felt > 400 && TryWarm(p, Why.Hot)) return;
         if (p.Water < UrgentWater && TryDrink(p, Why.VeryThirsty)) return;
         if (p.Food < UrgentFood && TryEat(p, p.Food <= 0 ? Why.Starving : Why.VeryHungry)) return;
@@ -169,7 +169,8 @@ public sealed partial class PeopleSim
                 13 => TryMine(p),
                 _ => false,
             };
-            if (ok) return;
+            if (ok && p.ActUntil > Now) return;
+            if (ok) Stats.PlanWhy[19]++; // 하겠다고 했는데 아무것도 잡히지 않았다 — 다음 할 일로(멈춰 서서 굶지 않게)
         }
         if (!TryWander(p, Why.Nothing)) StartRest(p, Why.Nothing);
     }

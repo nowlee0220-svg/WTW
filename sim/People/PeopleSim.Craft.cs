@@ -129,7 +129,9 @@ public sealed partial class PeopleSim
     /// <summary>실험을 해 볼 만한가(점수). 바람이 세거나 호기심이 많을 때, 낮에, 쉬었다가.</summary>
     private int ExperimentScore(Person p, ProvinceLife life)
     {
-        if (p.Stage(Now) < LifeStage.Child || life.IsNight(Now)) return int.MinValue;
+        // 밤에는 실험하지 않는다 — 다만 몸이 얼어 가면 어둠 속에서라도 해 본다
+        bool freezing = p.Hypothermia > 10_000 && p.Wish[W_warmth] >= 30;
+        if (p.Stage(Now) < LifeStage.Child || (life.IsNight(Now) && !freezing)) return int.MinValue;
         long cd = p.HasTrait(T_curious) ? 6 * GameTime.TicksPerHour : p.HasTrait(T_stubborn) ? 40 * GameTime.TicksPerHour : 16 * GameTime.TicksPerHour;
         if (Now - p.LastExperiment < cd) return int.MinValue;
         if (Now - p.LastCraftFail < 3 * GameTime.TicksPerHour) return int.MinValue; // 방금 계획이 서지 않았다
@@ -162,6 +164,13 @@ public sealed partial class PeopleSim
         if (Plan(p, wish, known: false, rng)) return true;
         p.LastCraftFail = Now;
         return false;
+    }
+
+    /// <summary>(E4) 몸이 식는데 불 피우는 법을 안다 → 불부터 피운다(따뜻함 바람으로 아는 법 계획).</summary>
+    private bool TryLightKnownFire(Person p)
+    {
+        if (R_campfire is null || !p.Knows(R_campfire.Index) || p.Stage(Now) < LifeStage.Child) return false;
+        return Plan(p, W_warmth, known: true, Rng(p.Cell));
     }
 
     private bool TryCraftKnown(Person p)
@@ -942,8 +951,7 @@ public sealed partial class PeopleSim
         if (!wants) return false;
         // 이미 그 불 곁에 있으면 몸을 녹이는 것으로 충분
         if (Cheb(fire, here) <= 3) return false;
-        if (BestCarried(p, Craft.P_burns, 3) < 0 && !StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel)) return TryWarmByFire(p, Why.Cold);
-        if (p.Act == Act.Material) return true;
+        if (BestCarried(p, Craft.P_burns, 3) < 0) return StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel) || TryWarmByFire(p, Why.Cold); // 땔감부터(이번 판단에서 정말 나섰을 때만 true)
         int spot = Beside(p, fire);
         if (!WalkTo(p, spot)) return false;
         SetWhy(p, Act.TakeFire, Why.TakeFire);

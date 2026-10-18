@@ -23,5 +23,6 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Wtw.Sim.Tests" />
+    <InternalsVisibleTo Include="Wtw.Bench" />
   </ItemGroup>
 </Project>

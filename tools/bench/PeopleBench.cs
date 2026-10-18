@@ -38,7 +38,7 @@ public static class PeopleBench
             case "driftmodel": DriftModel.Run(I("langs", 200), Sx("k", "0.05,0.1,0.2"), Sx("r", "0.02,0.03,0.04"), I("t", 3)); break;
             case "dialect": DialectBench.Run(I("seeds", 20), I("families", 3), I("years", 500), I("cap", 60), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "one": One(I("people", 10), I("years", 5), (ulong)I("seed", 1), Sx("cell", "home"), o.ContainsKey("family"), I("cap", 300)); break;
-            case "discover": DiscoverBench.Run(I("seeds", 20), I("people", 10), I("years", 200), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300)); break;
+            case "discover": DiscoverBench.Know = o.GetValueOrDefault("know") ?? ""; DiscoverBench.Run(I("seeds", 20), I("people", 10), I("years", 200), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300)); break;
             default: Console.WriteLine("모드: seeds | cap | one"); break;
         }
     }
@@ -262,6 +262,7 @@ public static class PeopleBench
     static void One(int people, int years, ulong seed, string where, bool family, int cap)
     {
         long seen = 0;
+        var last = new Dictionary<int, string>();
         var r = Simulate(seed, people, years, true, cap: cap, family: family, where: where, perDay: (w, d) =>
         {
             foreach (var e in w.People.Events)
@@ -273,8 +274,9 @@ public static class PeopleBench
                 var life = w.People.Life(q.Cell);
                 int t = q.Tile(w.Now);
                 int dr = life.NearestDrink(t % 150, t / 150, 220);
-                Console.WriteLine($"  † {d}일 {e.Text} · {q.Stage(w.Now)} · 타일 {t % 150},{t / 150} 땅번호 {life.Region[t]} · 마실 곳 {(dr < 0 ? "없음" : $"{dr % 150},{dr / 150}")} · 안은 사람 {q.Carrier} · 배 {q.Food / 1000} 물 {q.Water / 1000} 탈수 {q.Dehydration / 1000} 영양 {q.Malnutrition / 1000} · 마지막 판단 {q.Why}");
+                Console.WriteLine($"  † {d}일 {e.Text} · {q.Stage(w.Now)} · 타일 {t % 150},{t / 150} 땅번호 {life.Region[t]} · 마실 곳 {(dr < 0 ? "없음" : $"{dr % 150},{dr / 150}")} · 안은 사람 {q.Carrier} · 배 {q.Food / 1000} 물 {q.Water / 1000} 탈수 {q.Dehydration / 1000} 영양 {q.Malnutrition / 1000} · 마지막 판단 {q.Why} · 그 전날 {last.GetValueOrDefault(q.Id, "?")}");
             }
+            foreach (var q in w.People.All) if (!q.Dead) last[q.Id] = $"{q.Act}/{q.Why} 걷는중={q.Walking} 목표={q.Target} 잠={q.Asleep} 계획행동={q.PlanAction} 물그릇={q.PotWater}";
             if (d % 5 != 0) return;
             var alive = w.People.All.Where(q => !q.Dead).ToList();
             if (alive.Count == 0) { Console.WriteLine($"{d}일: 모두 죽음"); return; }

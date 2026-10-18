@@ -22,6 +22,9 @@ public static class DiscoverBench
         public string Detail = ""; // 끝에 살아 있는 사람 중 아는 법이 하나라도 있는 사람
     }
 
+    /// <summary>know = "fire" 이면 뿌린 사람들이 처음부터 불 피우는 법(부싯돌 불씨 · 모닥불)을 안다(추운 땅에서 "불을 아는 사람"의 생존을 따로 재기 위해).</summary>
+    public static string Know = "";
+
     public static Row Simulate(ulong seed, int people, int years, string where, int cap)
     {
         var w = GameWorld.Create(seed, new WorldConfig { DotCount = 0, PeopleCap = cap });
@@ -31,6 +34,17 @@ public static class DiscoverBench
         var life = w.People.Life(cell);
         foreach (var (x, y) in PeopleSamples.SpawnSpots(life, Math.Max(1, people / 3)))
             w.Apply(new Intervention(0, Intervention.Kinds.SpawnFamily, new long[] { cell, x, y }));
+        if (Know == "fire")
+        {
+            w.AdvanceTo(1);
+            var cr = w.People.Craft;
+            int I(string id) => cr.ItemIndex(id);
+            foreach (var q in w.People.All)
+            {
+                w.People.Learn(q, cr.Rules.First(r => r.Id == "sparks"), 0, I("flint"), I("flint"), -1);
+                w.People.Learn(q, cr.Rules.First(r => r.Id == "campfire"), 0, I("twigs"), I("ember"), -1);
+            }
+        }
         var sw = Stopwatch.StartNew();
         long end = years * GameTime.TicksPerYear;
         for (long t = 0; t < end; t += GameTime.TicksPerDay)
@@ -92,7 +106,7 @@ public static class DiscoverBench
         var sw = Stopwatch.StartNew();
         Parallel.For(0, seeds, new ParallelOptions { MaxDegreeOfParallelism = parallel }, k => rows[k] = Simulate(first + (ulong)k, people, years, where, cap));
         var sb = new StringBuilder();
-        sb.AppendLine($"## (E4) 발견 측정: 시드 {seeds}개 × {(where == "cold" ? "추운 땅" : "따뜻한 땅")} {people}명(가족) × {years}년 (걸린 시간 {sw.Elapsed.TotalSeconds:0}초, 코어 {parallel})");
+        sb.AppendLine($"## (E4) 발견 측정: 시드 {seeds}개 × {(where == "cold" ? "추운 땅(툰드라)" : where == "cool" ? "쌀쌀한 땅" : "따뜻한 땅")} {people}명(가족){(Know == "fire" ? " — 처음부터 불 피우는 법을 앎" : "")} × {years}년 (걸린 시간 {sw.Elapsed.TotalSeconds:0}초, 코어 {parallel})");
         sb.AppendLine();
         string[] items = { "campfire", "flake", "chopper", "cord", "basket", "dry_grass", "cooked_fruit", "roasted_mushroom", "wet_pot", "dry_pot", "pot", "hearth", "charcoal", "copper_lump", "copper_blade", "hafted_axe", "ground_axe", "stone_knife", "spear", "stick", "dried_fruit", "leaf_cup", "cracked_coconut", "stew", "scraper", "split_wood" };
         var cat = Wtw.Sim.Data.ObjectCatalog.Default;
