@@ -1,13 +1,33 @@
 {
-  "_설명": "재료 속성 목록(견본). 기획서 8-1 의 일부. 값은 0~max 세기. 진짜 목록은 E4 에서.",
+  "_설명": [
+    "재료 속성 목록 (E4, 기획서 8-1). 값은 0~max 세기(없으면 0). 화학이 아니라 이 속성들의 조합으로 판정한다(crafting.json 의 규칙).",
+    "아이템의 속성 값은 items.json 의 props 에 있다. 기획서에 없던 속성을 더한 것: holds(담는다 — 그릇의 크기), sharp(날이 서 있다 — 만든 도구의 날; sharpens 는 '날이 설 수 있다'), melt_heat(녹는 불 세기 — 0 녹지 않음 · 1 맨불 · 2 가둔 불 · 3 숯 + 가둔 불)."
+  ],
   "properties": [
-    { "id": "burns",      "name": "탄다",          "group": "열" },
-    { "id": "fires_hard", "name": "구우면 굳는다", "group": "열" },
-    { "id": "hardness",   "name": "단단함",        "group": "힘" },
-    { "id": "toughness",  "name": "질김",          "group": "힘" },
-    { "id": "splits",     "name": "쪼개진다",      "group": "힘" },
-    { "id": "sharpens",   "name": "날이 선다",     "group": "힘" },
-    { "id": "weight",     "name": "무게",          "group": "힘" },
-    { "id": "moldable",   "name": "물에 무른다",   "group": "물·시간" }
+    { "id": "burns",      "name": "탄다",            "group": "열" },
+    { "id": "melts",      "name": "녹는다",          "group": "열" },
+    { "id": "melt_heat",  "name": "녹는 불 세기",    "group": "열" },
+    { "id": "fires_hard", "name": "구우면 굳는다",   "group": "열" },
+    { "id": "reduces",    "name": "되살아난다(광석 → 금속)", "group": "열" },
+    { "id": "hardness",   "name": "단단함",          "group": "힘" },
+    { "id": "toughness",  "name": "질김",            "group": "힘" },
+    { "id": "splits",     "name": "쪼개진다",        "group": "힘" },
+    { "id": "bends",      "name": "휜다",            "group": "힘" },
+    { "id": "malleable",  "name": "펴진다",          "group": "힘" },
+    { "id": "tears",      "name": "뜯긴다",          "group": "힘" },
+    { "id": "sharpens",   "name": "날이 선다",       "group": "힘" },
+    { "id": "sharp",      "name": "날이 서 있다",    "group": "힘" },
+    { "id": "weight",     "name": "무게",            "group": "힘" },
+    { "id": "moldable",   "name": "물에 무른다(빚을 수 있다)", "group": "물·시간" },
+    { "id": "waterproof", "name": "물을 막는다",     "group": "물·시간" },
+    { "id": "holds",      "name": "담는다",          "group": "물·시간" },
+    { "id": "rots",       "name": "썩는다",          "group": "물·시간" },
+    { "id": "dries",      "name": "마른다",          "group": "물·시간" },
+    { "id": "mixes",      "name": "섞인다",          "group": "섞임" },
+    { "id": "sticky",     "name": "끈적인다",        "group": "섞임" },
+    { "id": "fibrous",    "name": "실이 된다",       "group": "섞임" },
+    { "id": "edible",     "name": "먹을 수 있다(영양)", "group": "몸" },
+    { "id": "poison",     "name": "독",              "group": "몸" },
+    { "id": "warm",       "name": "따뜻하다",        "group": "몸" }
   ]
 }

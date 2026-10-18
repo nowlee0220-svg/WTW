@@ -56,7 +56,9 @@ public class HostTests
             host.Save(path);
             WaitNotice(host, "저장");
             host.SetPaused(false);
-            for (int i = 0; i < 10; i++) { host.Frame(1 / 30.0); Thread.Sleep(10); }
+            // 시뮬 스레드가 실제로 앞으로 갈 때까지(컴퓨터가 바쁘면 0.1초로는 모자란다 — 예전엔 그래서 가끔 실패)
+            var go = System.Diagnostics.Stopwatch.StartNew();
+            while (host.Frame(1 / 30.0).Now <= savedAt && go.Elapsed.TotalSeconds < 10) Thread.Sleep(10);
             Assert.True(host.Frame(0).Now > savedAt);
             host.SetPaused(true);
             host.Load(path);
@@ -71,7 +73,7 @@ public class HostTests
     private static void WaitNotice(SimHost host, string contains)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        while (sw.Elapsed.TotalSeconds < 5)
+        while (sw.Elapsed.TotalSeconds < 20)
         {
             host.Frame(0);
             if (host.TryGetNotice(out var n)) { Assert.Contains(contains, n); return; }

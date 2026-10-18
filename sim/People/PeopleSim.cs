@@ -9,13 +9,18 @@ namespace Wtw.Sim.People;
 /// <summary>알림(아이가 태어남 · 죽음 · 짝 · 정신 붕괴 …). Seq 는 1 부터 차례로.</summary>
 public sealed record WorldEvent(long Seq, long Tick, WorldEventKind Kind, int Person, int Other, int Cell, string Text);
 
-public enum WorldEventKind : byte { Spawn = 0, Birth, Death, Pair, Break, LandNamed, Moved, Language }
+/// <summary>세계의 일. 값은 저장 파일에 남으므로 뒤에만 더할 것. Discovery = 세계에서 처음, DiscoveryGroup = 그 무리에서 처음, Rediscovered = 잊혔다 다시.</summary>
+public enum WorldEventKind : byte { Spawn = 0, Birth, Death, Pair, Break, LandNamed, Moved, Language, Discovery, DiscoveryLost, Wildfire, DiscoveryGroup, Rediscovered }
 
 /// <summary>측정용 셈(저장하지 않는다 — 결과에 영향 없음).</summary>
 public sealed class PeopleStats
 {
     public long Decisions, Events, Paths, PathFails, Talks, Arguments, Pairs, Births, Breaks, Conceptions, Illnesses;
     public readonly long[] Deaths = new long[8];
+    /// <summary>(E4) 정신 붕괴: 나이 단계별 횟수 · 무너질 때 기분을 끌어내린 생각(생각 번호별 기분 합, 음수만).</summary>
+    public readonly long[] BreaksByStage = new long[4];
+    public readonly long[] RuleFail = new long[64]; public readonly SortedDictionary<string, long> FailKeys = new();
+    public readonly long[] BreakDrag = new long[256];
     public long GatherXpPassion, GatherXpPlain, GatherActsPassion, GatherActsPlain;
     /// <summary>목마름으로 죽었는데 그 사람이 닿을 수 있는 곳(지방 안 이어진 땅)에 민물이 없었다 · 굶어 죽었는데 먹을 것이 없었다.</summary>
     public long NoWaterDeaths, NoFoodDeaths;
@@ -24,6 +29,12 @@ public sealed class PeopleStats
     /// <summary>(E3b) 말이 갈라진 횟수 · 낱말이 새로 바뀐 횟수.</summary>
     public long LanguageSplits, WordChanges;
     public readonly long[] MoveWhy = new long[64];
+    /// <summary>(E4) 실험 · 성공 · 부분 성공 · 아는 법대로 만든 횟수 · 불 피움 · 자연의 불에서 얻음 · 캐기 · 익힌 끼니 · 배탈 · 보고 배움 · 사라진 발견 · 되찾은 발견.</summary>
+    /// <summary>(E4 측정) 계획이 어디서 막혔나: [0 시도, 1 행동 없음, 2 재료 없음(구하러 감), 3 재료를 못 구함, 4 불 없음, 5 둘째 재료, 6 도구, 7 시작함, 8 실험 점수 없음, 9 고른 일이 실험].</summary>
+    public readonly long[] PlanWhy = new long[20];
+    /// <summary>(E4 측정) 규칙마다 성공한 횟수.</summary>
+    public readonly long[] RuleDone = new long[64];
+    public long Experiments, Discoveries, Partials, Crafts, FiresLit, FiresTaken, Mined, CookedMeals, BadStomachs, Watched, Lost, Refound, Wildfires, CraftFails, PartialRepeats;
     /// <summary>물 · 먹을 것을 찾아간 방법별 횟수: [0 보임, 1 기억, 2 따라감, 3 찾아다님].</summary>
     public readonly long[] FindHow = new long[4];
 }
@@ -41,6 +52,7 @@ public sealed partial class PeopleSim
         "hungry", "starving", "thirsty", "cold", "freezing", "hot", "tired", "exhausted", "lonely", "bored", "sick", "ate_well", "slept_well", "slept_rough",
         "slept_cold", "dark_fear", "talked", "good_talk", "argument", "with_partner", "new_partner", "child_born", "family_died", "partner_died", "friend_died",
         "cave_found", "catharsis", "passion_work", "lazy_rest", "alone_long",
+        "by_fire", "firelight", "cooked_meal", "bad_stomach", "discovered", "half_success", "failed_try", "fire_died", "made_thing",
     };
     public static readonly string[] RequiredTraits =
     {
@@ -70,7 +82,7 @@ public sealed partial class PeopleSim
         T_bloodlust, T_kind, T_abrasive, T_optimist, T_pessimist, T_iron, T_nervous, T_fast, T_cannibal;
     internal readonly int H_hungry, H_starving, H_thirsty, H_cold, H_freezing, H_hot, H_tired, H_exhausted, H_lonely, H_bored, H_sick, H_ate, H_slept, H_rough,
         H_sleptCold, H_dark, H_talked, H_goodTalk, H_argument, H_withPartner, H_newPartner, H_childBorn, H_familyDied, H_partnerDied, H_friendDied, H_cave,
-        H_catharsis, H_passion, H_lazyRest, H_alone;
+        H_catharsis, H_passion, H_lazyRest, H_alone, H_byFire, H_firelight, H_cookedMeal, H_badStomach, H_discovered, H_halfSuccess, H_failedTry, H_fireDied, H_madeThing;
 
     public PeopleSim(GameWorld w, PeopleData data)
     {
@@ -87,6 +99,9 @@ public sealed partial class PeopleSim
         H_goodTalk = H("good_talk"); H_argument = H("argument"); H_withPartner = H("with_partner"); H_newPartner = H("new_partner"); H_childBorn = H("child_born");
         H_familyDied = H("family_died"); H_partnerDied = H("partner_died"); H_friendDied = H("friend_died"); H_cave = H("cave_found"); H_catharsis = H("catharsis");
         H_passion = H("passion_work"); H_lazyRest = H("lazy_rest"); H_alone = H("alone_long");
+        H_byFire = H("by_fire"); H_firelight = H("firelight"); H_cookedMeal = H("cooked_meal"); H_badStomach = H("bad_stomach"); H_discovered = H("discovered");
+        H_halfSuccess = H("half_success"); H_failedTry = H("failed_try"); H_fireDied = H("fire_died"); H_madeThing = H("made_thing");
+        InitCraft();
     }
 
     public IReadOnlyList<Person> All => _all;
@@ -108,6 +123,9 @@ public sealed partial class PeopleSim
                 // 깨어남: 바뀐 것을 되살린다. 딴 몫은 딴 시각부터 흐른 시간만큼 저절로 다시 열려 있다.
                 foreach (var (tile, st) in d.Stocks) life.Stocks[tile] = st;
                 foreach (int t in d.Revealed) life.Revealed.Add(t);
+                foreach (var (t, f) in d.Fires) life.Fires[t] = f;
+                foreach (var (t, item, n) in d.Ground) life.Drop(t, item, n);
+                life.RestoreDug(d.Dug);
                 life.People.AddRange(d.People);
                 Stats.Wakes++;
             }
@@ -165,6 +183,9 @@ public sealed partial class PeopleSim
 
     // ───────── 기분 ─────────
 
+    /// <summary>(E4) 사건으로 생긴 슬픈 생각(죽음 · 말다툼 · 노숙 …)을 모두 더해도 기분을 이만큼까지만 끌어내린다.</summary>
+    public const int SadCap = 35;
+
     public int MoodBase(Person p) => 44 + (p.HasTrait(T_optimist) ? 8 : 0) - (p.HasTrait(T_pessimist) ? 8 : 0);
 
     public int BreakThreshold(Person p)
@@ -198,7 +219,13 @@ public sealed partial class PeopleSim
         _tmpThoughts.Clear();
         StateThoughts(p, _tmpThoughts);
         foreach (int t in _tmpThoughts) m += Data.Thoughts[t].Mood;
-        foreach (var (def, count) in ActiveThoughtCounts(p)) m += Data.Thoughts[def].Mood * count;
+        int sad = 0;
+        foreach (var (def, count) in ActiveThoughtCounts(p))
+        {
+            int v = Data.Thoughts[def].Mood * count;
+            if (v < 0) sad += v; else m += v;
+        }
+        m += Math.Max(sad, -SadCap); // (E4) 슬픈 일이 겹쳐도 한꺼번에 끌어내리는 데는 한도가 있다
         return Math.Clamp(m, 0, 100);
     }
 

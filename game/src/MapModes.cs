@@ -40,7 +40,7 @@ public static class MapModes
         ("세력", "세력 지도는 아직 없습니다 — 사람들이 무리·나라를 이루면(E7~) 채워집니다."),
         ("인구", "인구 지도는 아직 없습니다 — 사람이 사는 단계(E3~)부터 채워집니다."),
         ("교역", "교역 지도는 아직 없습니다 — 교역이 생기면(E7~) 채워집니다."),
-        ("기술", "기술 지도는 아직 없습니다 — 발견이 생기면(E4~) 채워집니다."),
+        ("기술", "기술 지도는 아직 없습니다 — 발견은 아래 [발견] 창에서 볼 수 있습니다(지도는 지식이 퍼지는 단계(E5~)에서)."),
     };
 
     // 물
@@ -167,7 +167,13 @@ public static class MapModes
                 break;
             case MapMode.Language:
                 // 사람이 사는 칸은 GlobeView 가 말의 색으로 덮는다. 나머지 땅은 흐린 회색.
-                col = ocean || lake ? Water(p, c).Darkened(0.35f) : C(70, 72, 68);
+                if (ocean || lake) { col = Water(p, c).Darkened(0.35f); break; }
+                {
+                    // (E4) 아무도 안 사는 땅: 옅은 지형(자연 지도를 흐리고 어둡게) — 땅 모양이 보이게
+                    var nat = CellColor(p, c, MapMode.Natural, resource, shade);
+                    float g = nat.R * 0.3f + nat.G * 0.59f + nat.B * 0.11f;
+                    col = nat.Lerp(new Color(g, g, g), 0.65f).Darkened(0.45f);
+                }
                 break;
             default:
                 int lv = p.Resource(c, resource);
@@ -226,7 +232,7 @@ public static class MapModes
                 l.Add((Colors.Transparent, "사람이 사는 칸을 그 칸에서 가장 많이 쓰는 말의 색으로"));
                 l.Add((Colors.Transparent, "비슷한 말은 비슷한 색(사투리 = 같은 색의 옅고 짙음)"));
                 l.Add((Colors.Transparent, "사람 사는 칸을 누르면: 그 말이 어디까지 통하나(밝을수록 잘 통함)"));
-                l.Add((C(70, 72, 68), "아무도 살지 않는 땅"));
+                l.Add((C(70, 72, 68), "아무도 살지 않는 땅(옅은 지형)"));
                 break;
             default:
                 l.Add((C(255, 220, 95), "많음")); l.Add((C(200, 160, 70), "있음")); l.Add((C(62, 64, 60), "없음"));

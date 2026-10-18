@@ -9,6 +9,9 @@ public static class PeopleSamples
     /// <summary>"따뜻하고 열매가 많은 땅(숲 · 초원, 강가)". rank = 0 이면 가장 좋은 칸, 1 이면 그다음 …</summary>
     public static int Home(Planet.Planet p, int rank = 0) => Ranked(p, HomeScore).Skip(rank).FirstOrDefault(-1);
 
+    /// <summary>(E4) 쌀쌀한 땅: 온대림 · 침엽수림 · 초원 중 연평균 6~12°C, 강가 — 밤이 추워 불이 아쉬운 곳.</summary>
+    public static int Cool(Planet.Planet p) => Ranked(p, (pl, c) => pl.Biome[c] is Biome.Temperate or Biome.Boreal or Biome.Grassland && pl.Temp10[c] is >= 60 and <= 120 ? 100 - Math.Abs(pl.Temp10[c] - 90) / 3 + (pl.RiverSize[c] > 0 ? 20 : 0) + pl.Resource(c, ResourceKinds.Wood) * 10 : int.MinValue).FirstOrDefault(-1);
+
     /// <summary>추운 땅(툰드라).</summary>
     public static int Cold(Planet.Planet p) => Ranked(p, (pl, c) => pl.Biome[c] == Biome.Tundra ? 100 - Math.Abs(pl.Temp10[c] + 80) / 10 + (pl.RiverSize[c] > 0 ? 10 : 0) : int.MinValue).FirstOrDefault(-1);
 

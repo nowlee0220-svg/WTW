@@ -35,6 +35,8 @@ public sealed class WorldSnapshot
     /// <summary>한 번이라도 사람이 산 칸(열린 칸).</summary>
     public int[] OpenedCells = Array.Empty<int>();
     public WorldEvent[] RecentEvents = Array.Empty<WorldEvent>();
+    /// <summary>(E4) 최근의 큰 일(★★ 이상) 30개.</summary>
+    public WorldEvent[] BigEvents = Array.Empty<WorldEvent>();
     public int AliveCount;
     public int PeopleCap;
     /// <summary>사람이 들어가 걷힌 타일(칸 → 타일 번호들). 바뀔 때만 새 배열.</summary>
@@ -50,6 +52,19 @@ public sealed class WorldSnapshot
     /// <summary>지금 쓰이는 말들(사본 — 화면이 낱말 · 알아듣기를 셈할 수 있게). 바뀔 때만 새 배열.</summary>
     public LanguageView[] Languages = Array.Empty<LanguageView>();
     private long _langSig = -1, _nameSig = -1;
+
+    // ── (E4) 재료와 발견 ──
+    /// <summary>깨어 있는 지방의 불(칸 → 불들). 해마다가 아니라 매번 새로 — 몇 개 안 된다.</summary>
+    public Dictionary<int, FireView[]> Fires = new();
+    /// <summary>땅에 놓인 물건(칸 → (타일, 아이템, 개수)). 바뀔 때만 새 사전.</summary>
+    public Dictionary<int, (int Tile, int Item, int Count)[]> GroundItems = new();
+    /// <summary>캐낸 바위 타일(칸 → 타일들). 바뀔 때만 새 배열.</summary>
+    public Dictionary<int, int[]> Dug = new();
+    /// <summary>발견 목록(세계에서 처음 나온 순서). 바뀔 때만 새 배열.</summary>
+    public DiscoveryView[] Discoveries = Array.Empty<DiscoveryView>();
+    /// <summary>아직 발견되지 않은 것의 부분 성공(규칙 이름, 횟수, 글).</summary>
+    public (string Rule, int Count, string[] Texts)[] PendingPartials = Array.Empty<(string, int, string[])>();
+    private long _discSig = -1, _itemSig = -1;
 
     /// <summary>"타레(빠른 물)" — 이름이 없으면 null.</summary>
     public string? LandLabel(int cell) => LandNames.TryGetValue(cell, out var l) && l.Length > 0 ? $"{l[0].Word}({l[0].Meaning})" : null;
@@ -133,7 +148,18 @@ public sealed class WorldSnapshot
         var ev = w.People.Events;
         int n = Math.Min(30, ev.Count);
         if (RecentEvents.Length != n || (n > 0 && RecentEvents[^1].Seq != ev[^1].Seq)) RecentEvents = ev.Skip(ev.Count - n).ToArray();
+        // (E4) 큰 일(★★ · ★★★)은 따로 — 빠른 배속에서 태어남 · 죽음에 밀려 빠지지 않게
+        if (ev.Count > 0 && (BigEvents.Length == 0 || ev[^1].Seq != _bigSeq))
+        {
+            _bigSeq = ev[^1].Seq;
+            var big = new List<WorldEvent>();
+            for (int i = ev.Count - 1; i >= 0 && big.Count < 30; i--) if (EventLevels.Of(ev[i].Kind) >= EventLevels.Group) big.Add(ev[i]);
+            big.Reverse();
+            BigEvents = big.ToArray();
+        }
     }
+
+    private long _bigSeq = -1;
 
     private void FillLanguages(GameWorld w)
     {
@@ -169,6 +195,7 @@ public sealed class WorldSnapshot
             cl.Add((cell, top.Key, top.Value, alive));
         }
         CellLanguages = cl.ToArray();
+        FillCraft(w);
         long sig = live.Count;
         foreach (var (id, n) in live) if (ps.Languages.TryGetValue(id, out var l)) sig = sig * 1_000_003 + id * 7919 + l.Version * 31 + n;
         if (sig != _langSig)
@@ -181,12 +208,61 @@ public sealed class WorldSnapshot
                 var copy = new Language { Id = l.Id, Seed = l.Seed, Parent = l.Parent, Born = l.Born, Length = l.Length, Sounds = (int[])l.Sounds.Clone(), Changes = l.Changes };
                 foreach (int k in l.Known) copy.Known.Add(k);
                 foreach (var (k, v) in l.Overrides) copy.Overrides[k] = v;
+                foreach (var (k, v) in l.Loans) copy.Loans[k] = v;
                 int depth = 0; int cur = l.Parent;
                 while (cur >= 0 && ps.Languages.TryGetValue(cur, out var par) && depth < 1000) { depth++; cur = par.Parent; }
                 arr.Add(new LanguageView(id, l.Parent, ps.RootLanguage(id), depth, n, copy, ps.LanguageLabel(id)));
             }
             Languages = arr.ToArray();
         }
+    }
+
+    private void FillCraft(GameWorld w)
+    {
+        var ps = w.People;
+        var fires = new Dictionary<int, FireView[]>();
+        long isig = 0;
+        foreach (var (cell, life) in ps.Provinces)
+        {
+            if (life.Fires.Count > 0 || life.VolcanoFireTiles.Count > 0)
+            {
+                var list = new List<FireView>();
+                foreach (var (t, f) in life.Fires) list.Add(new FireView(t, f.Kind, f.Lit(w.Now), (float)(Math.Max(0, f.Remaining(w.Now)) / (double)Time.GameTime.TicksPerHour), f.Charcoal));
+                fires[cell] = list.ToArray();
+            }
+            foreach (var (t, l) in life.Items) foreach (var (item, n) in l) isig = isig * 31 + cell * 7 + t * 13 + item * 3 + n;
+            isig = isig * 17 + life.Dug.Count;
+        }
+        Fires = fires;
+        if (isig != _itemSig)
+        {
+            _itemSig = isig;
+            var gi = new Dictionary<int, (int, int, int)[]>();
+            var dug = new Dictionary<int, int[]>();
+            foreach (var (cell, life) in ps.Provinces)
+            {
+                if (life.Items.Count > 0) gi[cell] = life.Items.SelectMany(kv => kv.Value.Select(c => (kv.Key, c.Item, c.Count))).ToArray();
+                if (life.Dug.Count > 0) dug[cell] = life.Dug.ToArray();
+            }
+            GroundItems = gi; Dug = dug;
+        }
+        var st = ps.Stats;
+        long dsig = ps.Discoveries.Count * 1_000_003L + st.Discoveries * 7919 + st.Watched * 31 + st.Lost * 13 + st.Refound * 17 + ps.Partials.Count * 5 + ps.Partials.Sum(kv => kv.Value.Count) + w.Now / Time.GameTime.TicksPerDay * 3;
+        if (dsig == _discSig) return;
+        _discSig = dsig;
+        var craft = ps.Craft;
+        Discoveries = ps.Discoveries.Values.OrderBy(d => d.Tick).ThenBy(d => d.Rule).Select(d =>
+        {
+            var r = craft.Rules[d.Rule];
+            var who = ps.Get(d.Person);
+            string word = "", meaning = "";
+            if (ps.ConceptForItem(craft.Catalog.Items[r.Result].Id) is { } cid && ps.Lang.ConceptIndex(cid) is int c && c >= 0 && ps.Languages.TryGetValue(d.LangId, out var lang) && lang.Known.Contains(c))
+            { word = Words.Word(lang, null, ps.Lang.Concepts[c], ps.Lang); meaning = ps.Lang.Concepts[c].Meaning; }
+            return new DiscoveryView(d.Rule, craft.ItemName(r.Result), r.Name, craft.ActionName(r.Action), d.Person, ps.DisplayName(who) + (who is { Nickname.Length: > 0 } ? $" '{who.Nickname}'" : ""), d.Cell,
+                ps.LandLabelOr(d.Cell, Wtw.Sim.Planet.PlanetNames.Of(w.Planet.Biome[d.Cell]) + " 땅"), d.Tick, ps.WishName(d.Wish), d.PartialsBefore, d.PartialTexts.ToArray(),
+                ps.Knowers(d.Rule), d.Lost, d.LostCount, d.RefoundCount, word, meaning, r.Heat > 0 ? craft.HeatName(r.Heat) : "");
+        }).ToArray();
+        PendingPartials = ps.Partials.Select(kv => (craft.Rules[kv.Key].Name, kv.Value.Count, kv.Value.Texts.ToArray())).ToArray();
     }
 
     /// <summary>점 i 의 tick 시점 위치(밀리타일, 실수). 출발이 tick 이하인 가장 최근 구간을 쓴다.</summary>
@@ -206,6 +282,13 @@ public sealed class WorldSnapshot
         x = y = 0;
     }
 }
+
+/// <summary>(E4) 땅 위의 불 하나(화면용): 타일 · 종류(1 모닥불 · 2 돌 화덕) · 켜졌나 · 남은 시간 · 숯을 넣었나.</summary>
+public readonly record struct FireView(int Tile, byte Kind, bool Lit, float HoursLeft, bool Charcoal);
+
+/// <summary>(E4) 발견 목록 한 줄(화면용).</summary>
+public sealed record DiscoveryView(int Rule, string Item, string RuleName, string Action, int Person, string PersonName, int Cell, string Place, long Tick, string Wish,
+    int PartialsBefore, string[] PartialTexts, int Knowers, bool Lost, int LostCount, int RefoundCount, string Word, string WordMeaning, string Heat);
 
 /// <summary>땅 이름 하나(화면용 사본).</summary>
 public sealed record LandNameView(int LangId, string Word, string Meaning, string Reason, long Tick, string Namer);
@@ -236,6 +319,11 @@ public sealed class PersonView
     public long DeathTick;
     public string Name = "";
     public bool Dead, Female, Asleep, Walking, Breaking, Talking, Eaten, Named;
+    /// <summary>(E4) 손에 든 도구(아이템 번호, −1 = 없음) · 들고 있는 그릇 · 불씨 · 실험 중 · 별명.</summary>
+    public int Tool = -1, Vessel = -1;
+    public bool Ember, Working;
+    public string Nickname = "";
+    private static int _ember = -1;
     /// <summary>말풍선: 그 사람의 말로 된 낱말과 뜻(이야기할 때만).</summary>
     public string Say = "", SayMeaning = "";
     public LifeStage Stage;
@@ -256,6 +344,22 @@ public sealed class PersonView
         Talking = (p.Act == Act.Talk || p.Act == Act.BreakArgue) && !p.Walking;
         MotionCount = p.MotionCount;
         for (int k = 0; k < MotionCount; k++) Motions[k].CopyFrom(p.MotionAgo(k));
+        // (E4) 든 것: 날 · 단단함이 가장 좋은 만든 도구, 가장 큰 그릇
+        Tool = -1; Vessel = -1; Ember = false;
+        var craft = Data.CraftData.Default;
+        if (_ember < 0) _ember = craft.ItemIndex("ember");
+        int bt = 0, bv = 0;
+        foreach (var (item, _) in p.Carry)
+        {
+            if (craft.Catalog.Items[item].Kind != "made") { continue; }
+            if (item == _ember) { Ember = true; continue; }
+            int t = craft.Prop(item, craft.P_sharp) * 2 + craft.Prop(item, craft.P_hardness);
+            if (craft.Prop(item, craft.P_sharp) > 0 && t > bt) { bt = t; Tool = item; }
+            int v = craft.Prop(item, craft.P_holds);
+            if (v > bv) { bv = v; Vessel = item; }
+        }
+        Working = !p.Walking && p.Act is Act.Experiment or Act.Craft or Act.Mine or Act.Cook or Act.TendFire;
+        Nickname = p.Nickname;
     }
 
     /// <summary>tick 시점 위치(밀리타일)와 걷는 방향. 출발이 tick 이하인 가장 최근 구간.</summary>

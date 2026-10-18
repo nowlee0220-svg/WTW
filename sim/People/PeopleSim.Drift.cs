@@ -72,6 +72,8 @@ public sealed partial class PeopleSim
                     for (int i = 0; i < n; i++) child.Sounds[i] = Math.Max(0, lang.Sounds[i] + mean[i]);
                     foreach (int k in lang.Known) child.Known.Add(k);
                     foreach (var (k, v) in lang.Overrides) child.Overrides[k] = v;
+                    foreach (var (k, v) in lang.Loans) child.Loans[k] = v;
+                    foreach (var (k, v) in lang.Origins) child.Origins[k] = v;
                     Languages.Add(child.Id, child);
                     Shift(list, mean);
                     foreach (var p in list) p.LangId = child.Id;

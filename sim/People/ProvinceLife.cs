@@ -12,6 +12,20 @@ public struct TileStock
     public long Stamp;
 }
 
+/// <summary>(E4) 땅 위의 불 하나: 모닥불(Kind 1) · 돌 화덕(Kind 2). Stamp 시각부터 Fuel 틱 동안 탄다. Charcoal 이면 숯을 넣은 가둔 불(세기 3).</summary>
+public struct Fire
+{
+    public byte Kind;
+    public long Stamp;
+    public long Fuel;
+    public bool Charcoal;
+    public int Lighter;
+    public long Remaining(long now) => Stamp + Fuel - now;
+    public bool Lit(long now) => Remaining(now) > 0;
+    /// <summary>불 세기: 0 꺼짐 · 1 맨불 · 2 가둔 불 · 3 숯 + 가둔 불.</summary>
+    public int Heat(long now) => !Lit(now) ? 0 : Kind == 2 ? (Charcoal ? 3 : 2) : 1;
+}
+
 /// <summary>손댄 타일의 남은 몫(타일 번호 순으로 돈다 — 저장 순서가 정해져 있다).</summary>
 public sealed class StockTable : IEnumerable<KeyValuePair<int, TileStock>>
 {
@@ -57,6 +71,10 @@ public sealed class ProvinceLife
     public readonly StockTable Stocks = new();
     private readonly HarvestDef?[] _harvest = new HarvestDef?[HexFrame.TileCount];
     public readonly SortedSet<int> Revealed = new();
+    /// <summary>(E4) 땅 위의 불(타일 → 불) · 땅에 놓인 물건(타일 → 아이템 · 개수, 아이템 번호 순) · 캐낸 바위 타일(걸을 수 있는 자갈이 됨). 모두 저장한다.</summary>
+    public readonly SortedDictionary<int, Fire> Fires = new();
+    public readonly SortedDictionary<int, List<(int Item, int Count)>> Items = new();
+    public readonly SortedSet<int> Dug = new();
     /// <summary>이 지방에 있는 사람(살아 있는 · 죽은 모두, 번호 순).</summary>
     public readonly List<Person> People = new();
 
@@ -67,6 +85,8 @@ public sealed class ProvinceLife
     public readonly byte[] Shelter = new byte[HexFrame.TileCount];
     public readonly bool[] Drink = new bool[HexFrame.TileCount];
     private readonly List<int>[] _food = NewBuckets(), _carry = NewBuckets(), _drink = NewBuckets(), _shelter = NewBuckets();
+    /// <summary>(E4) 재료를 얻을 오브젝트(다루는 법이 있는 모든 오브젝트) · 바위 타일(드러난 것만 캔다 — 물을 때 확인).</summary>
+    private readonly List<int>[] _materials = NewBuckets(), _stone = NewBuckets();
     /// <summary>
     /// 칸 묶음마다 "이 시각 전에는 딸 것이 하나도 없다"(다 따 간 묶음을 다시 뒤지지 않게). 따 가는 일은 몫을 줄이기만 하므로 늘 맞는 아래 경계다.
     /// 결과에는 영향이 없고(이미 빈 것이 확실한 묶음만 건너뛴다) 저장하지 않는다.
@@ -115,10 +135,12 @@ public sealed class ProvinceLife
 
         for (int i = 0; i < HexFrame.TileCount; i++)
         {
+            if (HexFrame.Inside[i] && g[i] == Ground.Stone) _stone[Bk(i % HexFrame.Size, i / HexFrame.Size)].Add(i);
             if (!Walk[i]) continue;
             int x = i % HexFrame.Size, y = i / HexFrame.Size, b = Bk(x, y);
             int o = map.ObjectAt(i);
             if (o >= 0 && data.Harvest[o] is { } h) { _harvest[i] = h; (h.Food ? _food : _carry)[b].Add(i); if (h.Food) FoodTiles++; }
+            if (o >= 0 && ObjectCatalog.Default.Objects[o].Uses.Count > 0) _materials[b].Add(i);
             bool fresh = false, nearStone = false, nearTree = o >= 0 && ObjectCatalog.Default.Objects[o].IsTree;
             for (int dy = -1; dy <= 1; dy++)
                 for (int dx = -1; dx <= 1; dx++)
@@ -135,6 +157,20 @@ public sealed class ProvinceLife
             byte sh = (map.Flags[i] & TileFlags.Roof) != 0 ? (byte)3 : nearStone ? (byte)2 : nearTree ? (byte)1 : (byte)0;
             Shelter[i] = sh;
             if (sh >= 2) { _shelter[b].Add(i); if (sh == 3) CaveTiles++; }
+        }
+        for (int i = 0; i < HexFrame.TileCount; i++)
+        {
+            if (!Walk[i]) continue;
+            int x = i % HexFrame.Size, y = i / HexFrame.Size;
+            bool crater = false;
+            for (int dy = -1; dy <= 1 && !crater; dy++)
+                for (int dx = -1; dx <= 1 && !crater; dx++)
+                {
+                    int nx = x + dx, ny = y + dy;
+                    if ((uint)nx >= HexFrame.Size || (uint)ny >= HexFrame.Size) continue;
+                    if (g[ny * HexFrame.Size + nx] == Ground.Crater) crater = true;
+                }
+            if (crater) _volcanoFire.Add(i);
         }
         Paths = new PathFinder(this);
         // 이어진 땅마다 마실 물 · 먹을 것이 있나(측정: "지방 안에 없어서 죽은 사람")
@@ -187,8 +223,218 @@ public sealed class ProvinceLife
         else if (sh == 2) t += night ? 25 : (t > 280 ? -30 : 0);
         else if (sh == 1) t += night ? 15 : (t > 280 ? -40 : 0);
         if (huddle) t += 30;
+        // (E4) 불은 추울 때 데워 준다 — 이미 따뜻하면 사람은 불에서 한 걸음 물러난다(불 때문에 26°C 를 넘지는 않는다)
+        if (Fires.Count > 0 || _volcanoFire.Count > 0) { int fw = FireWarmth(tile, tick); if (fw > 0 && t < 260) t = Math.Min(t + fw, 260); }
         return t;
     }
+
+    /// <summary>(E4) 화산의 불: 분화구와 맞닿은 걸을 수 있는 타일(늘 타는 맨불 — 불씨를 얻을 수 있다).</summary>
+    private readonly List<int> _volcanoFire = new();
+    public IReadOnlyList<int> VolcanoFireTiles => _volcanoFire;
+    public bool IsVolcanoFire(int tile) => _volcanoFire.Contains(tile);
+
+    /// <summary>(E4) 불이 주는 따뜻함(0.1°C): 바로 곁 +20°C, 두 칸 +12°C, 세 칸 +6°C, 네 칸 +2.5°C. 돌 화덕은 1.25배(불을 가둬 열이 덜 샌다).</summary>
+    public int FireWarmth(int tile, long tick)
+    {
+        if ((uint)tile >= HexFrame.TileCount) return 0;
+        int best = 0, tx = tile % HexFrame.Size, ty = tile / HexFrame.Size;
+        foreach (var (ft, f) in Fires)
+        {
+            if (!f.Lit(tick)) continue;
+            int d = Math.Max(Math.Abs(ft % HexFrame.Size - tx), Math.Abs(ft / HexFrame.Size - ty));
+            int w = d <= 1 ? 200 : d == 2 ? 120 : d == 3 ? 60 : d == 4 ? 25 : 0;
+            if (f.Kind == 2) w = w * 5 / 4;
+            best = Math.Max(best, w);
+        }
+        if (_volcanoFire.Count > 0 && best < 200)
+            foreach (int ft in _volcanoFire)
+            {
+                int d = Math.Max(Math.Abs(ft % HexFrame.Size - tx), Math.Abs(ft / HexFrame.Size - ty));
+                if (d <= 1) return 200;
+                if (d == 2) best = Math.Max(best, 120);
+            }
+        return best;
+    }
+
+    /// <summary>(E4) 불이 켜진 가장 가까운 불 타일(maxDist 안, 같은 이어진 땅 곁). 없으면 −1.</summary>
+    public int NearestFire(int px, int py, long now, int maxDist, bool litOnly = true)
+    {
+        int here = py * HexFrame.Size + px;
+        int reg = (uint)here < HexFrame.TileCount ? Region[here] : -1;
+        int best = -1; long bd = (long)maxDist * maxDist;
+        foreach (var (t, f) in Fires)
+        {
+            if (litOnly && !f.Lit(now)) continue;
+            long d = D2(t, px, py);
+            if (d > bd) continue;
+            if (reg >= 0 && !BesideRegion(t, reg)) continue;
+            bd = d; best = t;
+        }
+        foreach (int t in _volcanoFire)
+        {
+            long d = D2(t, px, py);
+            if (d > bd || (reg >= 0 && Region[t] != reg)) continue;
+            bd = d; best = t;
+        }
+        return best;
+    }
+
+    /// <summary>타일 t 자체 또는 둘레 8칸이 이어진 땅 reg 에 닿아 있나.</summary>
+    public bool BesideRegion(int t, int reg)
+    {
+        int x = t % HexFrame.Size, y = t / HexFrame.Size;
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                int nx = x + dx, ny = y + dy;
+                if ((uint)nx >= HexFrame.Size || (uint)ny >= HexFrame.Size) continue;
+                if (Region[ny * HexFrame.Size + nx] == reg) return true;
+            }
+        return false;
+    }
+
+    /// <summary>(E4) 불 세기(0~3) — 그 자리 둘레 1칸 안의 가장 센 불.</summary>
+    public int HeatAt(int tile, long now)
+    {
+        int best = 0, tx = tile % HexFrame.Size, ty = tile / HexFrame.Size;
+        foreach (var (ft, f) in Fires)
+        {
+            if (Math.Max(Math.Abs(ft % HexFrame.Size - tx), Math.Abs(ft / HexFrame.Size - ty)) > 1) continue;
+            best = Math.Max(best, f.Heat(now));
+        }
+        if (best == 0) foreach (int ft in _volcanoFire) if (Math.Max(Math.Abs(ft % HexFrame.Size - tx), Math.Abs(ft / HexFrame.Size - ty)) <= 1) return 1;
+        return best;
+    }
+
+    /// <summary>(E4) 불을 피운다(이미 불 자리면 땔감을 더한다). fuel = 타는 시간(틱).</summary>
+    public void LightFire(int tile, byte kind, long fuel, long now, int lighter)
+    {
+        if (Fires.TryGetValue(tile, out var f))
+        {
+            long left = Math.Max(0, f.Remaining(now));
+            f.Kind = Math.Max(f.Kind, kind); f.Stamp = now; f.Fuel = left + fuel; if (f.Lighter < 0) f.Lighter = lighter;
+            Fires[tile] = f;
+        }
+        else Fires[tile] = new Fire { Kind = kind, Stamp = now, Fuel = fuel, Lighter = lighter };
+    }
+
+    /// <summary>(E4) 땅에 물건을 놓는다.</summary>
+    public void Drop(int tile, int item, int count)
+    {
+        if (count <= 0) return;
+        if (!Items.TryGetValue(tile, out var list)) Items[tile] = list = new List<(int, int)>();
+        int k = list.FindIndex(c => c.Item == item);
+        if (k >= 0) list[k] = (item, list[k].Count + count);
+        else { list.Add((item, count)); list.Sort((a, b) => a.Item.CompareTo(b.Item)); }
+    }
+
+    /// <summary>(E4) 바위 타일을 캔다: 자갈 바닥이 되어 걸을 수 있다. 이어진 땅 번호를 이웃에서 받고(둘이 다르면 합친다), 길 찾기 비용도 바꾼다. 캤으면 true.</summary>
+    public bool Mine(int tile)
+    {
+        if ((uint)tile >= HexFrame.TileCount || Map.Ground[tile] != Ground.Stone || Dug.Contains(tile)) return false;
+        Dug.Add(tile);
+        Walk[tile] = true;
+        int x = tile % HexFrame.Size, y = tile / HexFrame.Size;
+        int reg = -1;
+        var merge = new List<int>();
+        for (int k = 0; k < 4; k++)
+        {
+            int nx = x + (k == 0 ? 1 : k == 1 ? -1 : 0), ny = y + (k == 2 ? 1 : k == 3 ? -1 : 0);
+            if ((uint)nx >= HexFrame.Size || (uint)ny >= HexFrame.Size) continue;
+            int r = Region[ny * HexFrame.Size + nx];
+            if (r < 0) continue;
+            if (reg < 0) reg = r; else if (r != reg && !merge.Contains(r)) merge.Add(r);
+        }
+        if (reg < 0) { reg = RegionHasDrink.Length; Array.Resize(ref RegionHasDrink, reg + 1); Array.Resize(ref RegionHasFood, reg + 1); }
+        Region[tile] = reg;
+        if (merge.Count > 0)
+            for (int i = 0; i < HexFrame.TileCount; i++)
+                if (merge.Contains(Region[i])) { Region[i] = reg; }
+        foreach (int m in merge) { RegionHasDrink[reg] |= RegionHasDrink[m]; RegionHasFood[reg] |= RegionHasFood[m]; }
+        Shelter[tile] = 2;
+        Paths.SetWalkable(tile, 1);
+        // 캔 자리 둘레의 숨은 바위 속(광맥)이 드러난다
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                int nx = x + dx, ny = y + dy;
+                if ((uint)nx >= HexFrame.Size || (uint)ny >= HexFrame.Size) continue;
+                int n = ny * HexFrame.Size + nx;
+                if (Map.IsHidden(n)) Revealed.Add(n);
+            }
+        _stone[Bk(x, y)].Remove(tile);
+        return true;
+    }
+
+    /// <summary>캐낸 자리를 되살린다(불러오기).</summary>
+    public void RestoreDug(IEnumerable<int> tiles) { foreach (int t in tiles) Mine(t); }
+
+    /// <summary>(E4) 가장 가까운 드러난 바위 타일(캘 수 있는 — 걸을 수 있는 땅과 맞닿은). wantOre 면 드러난 광맥만.</summary>
+    public int NearestStone(int px, int py, int maxDist, bool wantOre)
+    {
+        int here = py * HexFrame.Size + px;
+        int reg = (uint)here < HexFrame.TileCount ? Region[here] : -1;
+        if (reg < 0) return -1;
+        int best = -1; long bd = (long)maxDist * maxDist;
+        int bx = Math.Min(Buckets - 1, px / Bucket), by = Math.Min(Buckets - 1, py / Bucket);
+        for (int r = 0; r < Buckets; r++)
+        {
+            long ringMin = (long)Math.Max(0, (r - 1) * Bucket);
+            if (ringMin * ringMin > bd) break;
+            for (int yy = by - r; yy <= by + r; yy++)
+                for (int xx = bx - r; xx <= bx + r; xx++)
+                {
+                    if (Math.Max(Math.Abs(xx - bx), Math.Abs(yy - by)) != r || (uint)xx >= Buckets || (uint)yy >= Buckets) continue;
+                    foreach (int t in _stone[yy * Buckets + xx])
+                    {
+                        if (Dug.Contains(t) || IsHidden(t)) continue;
+                        if (wantOre && Map.OreAt(t) < 0) continue;
+                        long d = D2(t, px, py);
+                        if (d > bd || (d == bd && t > best)) continue;
+                        if (!BesideRegion(t, reg)) continue;
+                        bd = d; best = t;
+                    }
+                }
+        }
+        return best;
+    }
+
+    /// <summary>(E4) 가장 가까운 재료 오브젝트(ok 가 참인 오브젝트 종류), 같은 이어진 땅. 없으면 −1.</summary>
+    private bool[] _okBuf = Array.Empty<bool>();
+
+    public int NearestMaterial(int px, int py, int maxDist, Func<int, bool> ok)
+    {
+        int here = py * HexFrame.Size + px;
+        int reg = (uint)here < HexFrame.TileCount ? Region[here] : -1;
+        if (reg < 0) return -1;
+        int best = -1; long bd = (long)maxDist * maxDist;
+        var okByObject = _okBuf.Length == ObjectCatalog.Default.Objects.Count ? _okBuf : (_okBuf = new bool[ObjectCatalog.Default.Objects.Count]);
+        for (int o = 0; o < okByObject.Length; o++) okByObject[o] = ok(o);
+        int bx = Math.Min(Buckets - 1, px / Bucket), by = Math.Min(Buckets - 1, py / Bucket);
+        for (int r = 0; r < Buckets; r++)
+        {
+            long ringMin = (long)Math.Max(0, (r - 1) * Bucket);
+            if (ringMin * ringMin > bd) break;
+            for (int yy = by - r; yy <= by + r; yy++)
+                for (int xx = bx - r; xx <= bx + r; xx++)
+                {
+                    if (Math.Max(Math.Abs(xx - bx), Math.Abs(yy - by)) != r || (uint)xx >= Buckets || (uint)yy >= Buckets) continue;
+                    foreach (int t in _materials[yy * Buckets + xx])
+                    {
+                        if (Region[t] != reg) continue;
+                        long d = D2(t, px, py);
+                        if (d > bd || (d == bd && t > best)) continue;
+                        int o = Map.ObjectAt(t);
+                        if (o < 0 || !okByObject[o]) continue;
+                        bd = d; best = t;
+                    }
+                }
+        }
+        return best;
+    }
+
+    /// <summary>(E4) 걸을 수 있는 땅인가 — 캐낸 바위도 걸을 수 있다.</summary>
+    public Ground GroundAt(int i) => Dug.Contains(i) ? Ground.Gravel : Map.Ground[i];
 
     public static string ShelterName(int s) => s switch { 3 => "동굴", 2 => "바위 그늘", 1 => "나무 그늘", _ => "탁 트인 곳" };
 
@@ -319,6 +565,36 @@ public sealed class ProvinceLife
 
     public int NearestFood(int px, int py, long now, int maxDist, int skipTile = -1) => Nearest(_food, px, py, maxDist, 0, now, skipTile);
     public int NearestCarry(int px, int py, long now, int maxDist) { var c = Claims; Claims = null; try { return Nearest(_carry, px, py, maxDist, 0, now); } finally { Claims = c; } }
+
+    /// <summary>(E4) 조건에 맞는 주울 것(몫이 남은) 중 가장 가까운 것.</summary>
+    public int NearestCarryWhere(int px, int py, long now, int maxDist, Func<HarvestDef, bool> ok)
+    {
+        int here = py * HexFrame.Size + px;
+        int reg = (uint)here < HexFrame.TileCount ? Region[here] : -1;
+        if (reg < 0) return -1;
+        int best = -1; long bd = (long)maxDist * maxDist;
+        int bx = Math.Min(Buckets - 1, px / Bucket), by = Math.Min(Buckets - 1, py / Bucket);
+        for (int r = 0; r < Buckets; r++)
+        {
+            long ringMin = (long)Math.Max(0, (r - 1) * Bucket);
+            if (ringMin * ringMin > bd) break;
+            for (int yy = by - r; yy <= by + r; yy++)
+                for (int xx = bx - r; xx <= bx + r; xx++)
+                {
+                    if (Math.Max(Math.Abs(xx - bx), Math.Abs(yy - by)) != r || (uint)xx >= Buckets || (uint)yy >= Buckets) continue;
+                    foreach (int t in _carry[yy * Buckets + xx])
+                    {
+                        if (Region[t] != reg) continue;
+                        long d = D2(t, px, py);
+                        if (d > bd || (d == bd && t > best)) continue;
+                        var h = _harvest[t]!;
+                        if (!ok(h) || StockAt(t, now) <= 0) continue;
+                        bd = d; best = t;
+                    }
+                }
+        }
+        return best;
+    }
     public int NearestDrink(int px, int py, int maxDist) => Nearest(_drink, px, py, maxDist, 1);
     /// <summary>가장 가까운 그늘(동굴이면 우선: 동굴까지 거리는 반으로 친다).</summary>
     public int NearestShelter(int px, int py, int maxDist, bool caveOnly)

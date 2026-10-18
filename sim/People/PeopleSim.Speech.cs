@@ -257,6 +257,70 @@ public sealed partial class PeopleSim
         return C(topics[rng.NextInt(topics.Length)]);
     }
 
+    // ───────── (E4) 새로 알게 된 것에 새 낱말 · 빌려 오기 · 별명 ─────────
+
+    /// <summary>만든 것 → 뜻(language.json 의 뜻 아이디). 낱말이 생기지 않는 것은 null.</summary>
+    public string? ConceptForItem(string itemId) => itemId switch
+    {
+        "campfire" => "fire", "ember" => "ember", "hearth" => "hearth", "charcoal" => "charcoal",
+        "flake" or "scraper" => "blade", "stone_knife" => "knife", "chopper" or "ground_axe" or "hafted_axe" => "axe", "stick" or "spear" => "stick",
+        "cord" => "cord", "basket" or "leaf_cup" => "basket", "wet_pot" or "dry_pot" or "pot" => "pot",
+        "cooked_fruit" or "roasted_mushroom" or "roasted_acorn" or "stew" => "cooked", "dried_fruit" or "dry_grass" => "dried",
+        "copper_lump" or "copper_blade" => "copper",
+        _ => null,
+    };
+
+    /// <summary>
+    /// p 가 법을 알게 됐다: p 의 말에 그 물건의 낱말이 없으면 생긴다. 스스로 알아냈으면 지어내고(새 시드), 다른 말을 쓰는 사람에게서 보고 배웠으면
+    /// 그 사람의 낱말을 빌려 온다(같은 소리 — 낱말의 출처가 남는다 → 지식의 행방).
+    /// </summary>
+    private void NewWordFor(Person p, Data.CraftRule rule, int from)
+    {
+        if (!Languages.TryGetValue(p.LangId, out var lang)) return;
+        string? cid = ConceptForItem(Craft.Catalog.Items[rule.Result].Id);
+        if (cid is null) return;
+        int c = C(cid);
+        if (c < 0 || lang.Known.Contains(c)) return;
+        var teacher = from >= 0 ? Get(from) : null;
+        if (teacher is not null && teacher.LangId != p.LangId && Languages.TryGetValue(teacher.LangId, out var src) && src.Known.Contains(c))
+        {
+            lang.Loans[c] = WordOf(teacher, c);
+            lang.Origins[c] = (src.Id, Now);
+            AddBio(p, BioKind.BorrowedWord, from, c);
+        }
+        else
+        {
+            lang.Origins[c] = (-1, Now);
+            AddBio(p, BioKind.NewWord, -1, c);
+        }
+        lang.Known.Add(c);
+        lang.Version++;
+    }
+
+    /// <summary>큰 일을 한 사람(세계에서 처음 불 · 토기 · 구리 · 도끼)에게 사건이 별명을 붙인다 — 그 무리의 말로, 뜻과 함께.</summary>
+    private void GiveNickname(Person p, Data.CraftRule rule)
+    {
+        if (p.Nickname.Length > 0 || !Languages.TryGetValue(p.LangId, out var lang)) return;
+        string? cid = ConceptForItem(Craft.Catalog.Items[rule.Result].Id);
+        if (cid is not ("fire" or "pot" or "copper" or "axe" or "knife")) return;
+        int c = C(cid), maker = C("maker"), first = C("first");
+        if (c < 0 || maker < 0) return;
+        if (!lang.Known.Contains(c)) { lang.Known.Add(c); lang.Origins[c] = (-1, Now); lang.Version++; }
+        foreach (int k in new[] { maker, first }) if (k >= 0 && !lang.Known.Contains(k)) { lang.Known.Add(k); lang.Origins[k] = (-1, Now); lang.Version++; }
+        var concepts = new[] { c, maker };
+        p.Nickname = Words.Name(lang, p.Accent, concepts.Select(k => Lang.Concepts[k]).ToList(), Lang);
+        p.NicknameConcepts = concepts;
+        p.NicknameReason = $"{Hangul.Eul(Craft.ItemName(rule.Result))} 처음 {(cid == "fire" ? "피운" : "만든")} 사람";
+        AddBio(p, BioKind.Nicknamed, -1, rule.Index);
+    }
+
+    /// <summary>낱말의 출처(쉬운 말): 처음 낱말 · 지어냄 · 어느 말에서 빌려 옴.</summary>
+    public string WordOrigin(Language lang, int concept)
+    {
+        if (!lang.Origins.TryGetValue(concept, out var o)) return Lang.Concepts[concept].Base ? "" : "";
+        return o.FromLang < 0 ? $"{PeopleText.Date(o.Tick)}에 지어냄" : $"{PeopleText.Date(o.Tick)}에 말 {o.FromLang}에서 빌려 옴";
+    }
+
     public string LanguageLabel(int langId)
     {
         if (!Languages.TryGetValue(langId, out var l)) return "말 없음";

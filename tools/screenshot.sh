@@ -17,5 +17,5 @@ cd "$ROOT"
 xvfb-run -a -s "-screen 0 1920x1080x24" \
   "$GODOT" --path game --audio-driver Dummy --rendering-driver opengl3 --resolution 1920x1080 --position 0,0 \
   -- --screenshot="$OUT" --shot-after="$SECS" --speed="$SPEED" --seed=20261016 "$@" 2>&1 \
-  | grep -E "SCREENSHOT|FRAMES|SELFTEST|PROVINCE|ENTEREXIT|PEOPLE|CROSS|PRERUN|ERROR|Error|error" | grep -v "^\s*at " || true
+  | grep -E "SKIP|FRAMEMEASURE|LOOK|SCREENSHOT|FRAMES|SELFTEST|PROVINCE|ENTEREXIT|PEOPLE|CROSS|PRERUN|ERROR|Error|error" | grep -v "^\s*at " || true
 [ -f "$OUT" ] && echo "[screenshot] $OUT"

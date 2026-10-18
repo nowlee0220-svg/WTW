@@ -35,6 +35,9 @@ public sealed class PathFinder
 
     public bool Reachable(int from, int to) => _life.Walk[from] && _life.Walk[to] && _life.Region[from] == _life.Region[to];
 
+    /// <summary>(E4) 타일이 걸을 수 있게 바뀌었다(캐낸 바위).</summary>
+    public void SetWalkable(int tile, byte cost) => _cost[tile] = cost;
+
     /// <summary>
     /// (sx, sy) 밀리타일 위치에서 타일 goal 까지. 성공하면 꺾임점(밀리타일, 처음 = 지금 위치)을 points 에 채운다.
     /// </summary>

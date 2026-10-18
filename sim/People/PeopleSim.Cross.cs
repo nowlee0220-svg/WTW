@@ -212,6 +212,7 @@ public sealed partial class PeopleSim
     {
         var from = Life(p.Cell);
         int fromTile = p.Tile(Now);
+        bool fresh = !Provinces.ContainsKey(b.Nb) && !Dormant.ContainsKey(b.Nb); // 아무도 들어가 본 적 없는 땅
         var to = Life(b.Nb);
         from = Life(p.Cell); // (to 를 깨우며 마지막 지방 기억이 바뀌었을 수 있다)
         var babies = new List<Person>();
@@ -230,6 +231,7 @@ public sealed partial class PeopleSim
         Stats.Crossings++;
         if (p.Why is Why.Scarce or Why.SeekMate or Why.Explore or Why.NoWater or Why.NoFood or Why.FollowFamily or Why.Break || !VisitedBefore(p, b.Nb))
             AddBio(p, BioKind.Moved, b.Nb, (int)p.Why | (from.Cell << 8));
+        if (fresh) Notify(WorldEventKind.Moved, p, from.Cell, $"{Hangul.I(DisplayName(p))} 아무도 살지 않던 새 땅으로 들어갔습니다");
         Crossings.Add(new Crossing(Now, p.Id, from.Cell, b.Nb, b.Slot, fromTile, entry, p.Why));
         if (Crossings.Count > CrossingsKept) Crossings.RemoveRange(0, Crossings.Count - CrossingsKept);
         _lastLife = null;
@@ -289,7 +291,12 @@ public sealed partial class PeopleSim
         {
             var life = Provinces[cell];
             Provinces.Remove(cell);
-            Dormant[cell] = new DormantProvince(cell, life.Stocks.Select(kv => (kv.Key, kv.Value)).ToArray(), life.Revealed.ToArray(), life.People);
+            Dormant[cell] = new DormantProvince(cell, life.Stocks.Select(kv => (kv.Key, kv.Value)).ToArray(), life.Revealed.ToArray(), life.People)
+            {
+                Fires = life.Fires.Select(kv => (kv.Key, kv.Value)).ToArray(),
+                Ground = life.Items.SelectMany(kv => kv.Value.Select(c => (kv.Key, c.Item, c.Count))).ToArray(),
+                Dug = life.Dug.ToArray(),
+            };
         }
         _lastLife = null;
     }
@@ -311,8 +318,13 @@ public sealed partial class PeopleSim
         Provinces.TryGetValue(cell, out var l) ? l.People : Dormant.TryGetValue(cell, out var d) ? d.People : Array.Empty<Person>();
 }
 
-/// <summary>잠든 지방: 딴 몫(타일 번호 순) · 걷힌 숨김 · 그곳의 (죽은) 사람.</summary>
-public sealed record DormantProvince(int Cell, (int Tile, TileStock Stock)[] Stocks, int[] Revealed, List<Person> People);
+/// <summary>잠든 지방: 딴 몫(타일 번호 순) · 걷힌 숨김 · 그곳의 (죽은) 사람 · (E4) 불 · 땅에 놓인 물건 · 캐낸 바위.</summary>
+public sealed record DormantProvince(int Cell, (int Tile, TileStock Stock)[] Stocks, int[] Revealed, List<Person> People)
+{
+    public (int Tile, Fire Fire)[] Fires { get; init; } = Array.Empty<(int, Fire)>();
+    public (int Tile, int Item, int Count)[] Ground { get; init; } = Array.Empty<(int, int, int)>();
+    public int[] Dug { get; init; } = Array.Empty<int>();
+}
 
 /// <summary>경계를 넘은 일 하나(화면 · 지구본의 이동 표시).</summary>
 public readonly record struct Crossing(long Tick, int Person, int From, int To, int Slot, int FromTile, int ToTile, Why Why);

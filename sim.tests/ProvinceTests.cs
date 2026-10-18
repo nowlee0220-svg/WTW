@@ -432,7 +432,7 @@ public class ProvinceTests : IClassFixture<ProvinceFixture>
         var bytes = SaveGame.ToBytes(w);
         Assert.Equal(SaveGame.Version, BitConverter.ToInt32(bytes, 4));
         var loaded = SaveGame.FromBytes(bytes);
-        ProvinceCache.Clear();
+        ProvinceCache.Forget(w.Planet); ProvinceCache.Forget(loaded.Planet);
         var remade = PlanetGenerator.Generate(loaded.Seed, loaded.Config.PlanetSettings);
         Assert.Equal(before, ProvinceGenerator.Generate(remade, c).Fingerprint);
         Assert.Equal(before, loaded.Province(c).Fingerprint);
@@ -595,10 +595,10 @@ public class ProvinceHeavyTests : IClassFixture<ProvinceFixture>
             foreach (int nb in _p.Grid.Neighbors(c))
             {
                 if (!_p.IsLand(nb)) continue;
-                ProvinceCache.Clear();
+                ProvinceCache.Forget(_p);
                 var b1 = ProvinceCache.Get(_p, nb); // 이웃을 먼저
                 var a1 = ProvinceCache.Get(_p, c);
-                ProvinceCache.Clear();
+                ProvinceCache.Forget(_p);
                 var a2 = ProvinceCache.Get(_p, c);  // 가운데를 먼저
                 var b2 = ProvinceCache.Get(_p, nb);
                 Assert.Equal(a1.Fingerprint, a2.Fingerprint);
@@ -677,11 +677,12 @@ public class ProvinceHeavyTests : IClassFixture<ProvinceFixture>
     [Fact]
     public void CacheForgetsOldMaps()
     {
-        ProvinceCache.Clear();
+        // 다른 테스트가 동시에 다른 행성으로 캐시를 쓰므로(병렬), 이 행성의 것만 본다(예전: 전체 Clear · "마지막 행성"의 Count → 가끔 실패)
+        ProvinceCache.Forget(_p);
         int n = 0;
         for (int c = 0; c < _p.CellCount && n < ProvinceCache.Capacity + 5; c++)
             if (_p.IsLand(c)) { ProvinceCache.Get(_p, c); n++; }
-        Assert.Equal(ProvinceCache.Capacity, ProvinceCache.Count);
-        ProvinceCache.Clear();
+        Assert.Equal(ProvinceCache.Capacity, ProvinceCache.CountFor(_p));
+        ProvinceCache.Forget(_p);
     }
 }

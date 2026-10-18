@@ -1,8 +1,8 @@
 {
   "_설명": [
     "사람 (E3). 기획서 7절. 숫자는 사람이 읽고 고칠 수 있게 여기에 모았다(코드는 이 값을 읽기만 한다).",
-    "foods: 맨손으로 따 먹을 수 있는 오브젝트. stock = 한 번에 열려 있는 몫, regrow_days = 한 몫이 다시 열리는 데 걸리는 날, nutrition = 한 몫의 배부름(한 끼 ≈ 33), water = 한 몫의 물기.",
-    "carry: 줍기만 하는 것(아직 쓸 데는 없음, 들고 다니기만). stock · regrow_days 는 foods 와 같다(regrow_days 0 = 다시 나지 않음).",
+    "foods: 맨손으로 따 먹을 수 있는 오브젝트. stock = 한 번에 열려 있는 몫, regrow_days = 한 몫이 다시 열리는 데 걸리는 날, nutrition = 한 몫의 배부름(한 끼 ≈ 33), water = 한 몫의 물기. (E4 굶주린 세계: 다시 열리는 날을 늘려 지방 하나가 먹여 살리는 사람을 줄였다 — 야자는 깨야 제대로 먹는다.)",
+    "carry: 주울 수 있는 것(돌 · 도토리 — 몫이 있다). stock · regrow_days 는 foods 와 같다(regrow_days 0 = 다시 나지 않음). (E4) 그 밖의 재료(나무 · 풀 · 갈대 · 껍질 · 큰 잎 · 진흙)는 objects.json 의 다루는 법(uses)에서 바로 얻는다 — 몫 없이, 베기는 날카로운 도구가 있어야.",
     "traits: 기획서 7-2 의 22개 그대로. abilities = 타고난 능력에 더하는 값(str 힘 · dex 손재주 · int 영리함 · soc 말재주 · nerve 담력). opposite = 같이 가질 수 없는 특성.",
     "thoughts: 생각(기분 조각). mood = 기분에 더하는 값, hours = 남아 있는 시간(0 = 지금 상태로만 정해지는 생각), stack = 같은 생각이 겹치는 최대 수.",
     "이름은 이 파일이 아니라 사람들의 말(data/language.json)에서 나온다."
@@ -27,14 +27,14 @@
     { "id": "medicine",  "name": "치료" }
   ],
   "foods": [
-    { "object": "apple_tree", "item": "apple",        "stock": 6, "regrow_days": 1.5, "nutrition": 20, "water": 6 },
-    { "object": "berry_bush", "item": "berries",      "stock": 4, "regrow_days": 2.0, "nutrition": 14, "water": 4 },
-    { "object": "palm",       "item": "coconut",      "stock": 4, "regrow_days": 3.0, "nutrition": 18, "water": 25 },
-    { "object": "banana",     "item": "banana",       "stock": 5, "regrow_days": 2.0, "nutrition": 22, "water": 5 },
-    { "object": "baobab",     "item": "baobab_fruit", "stock": 8, "regrow_days": 2.0, "nutrition": 22, "water": 4 },
-    { "object": "cactus",     "item": "cactus_fruit", "stock": 2, "regrow_days": 4.0, "nutrition": 12, "water": 15 },
-    { "object": "mushroom",   "item": "mushroom",     "stock": 2, "regrow_days": 3.0, "nutrition": 10, "water": 3 },
-    { "object": "lichen",     "item": "lichen",       "stock": 2, "regrow_days": 6.0, "nutrition": 6,  "water": 1 }
+    { "object": "apple_tree", "item": "apple",        "stock": 5, "regrow_days": 6.0, "nutrition": 20, "water": 6 },
+    { "object": "berry_bush", "item": "berries",      "stock": 4, "regrow_days": 8.0, "nutrition": 14, "water": 4 },
+    { "object": "palm",       "item": "coconut",      "stock": 3, "regrow_days": 12.0, "nutrition": 6,  "water": 10 },
+    { "object": "banana",     "item": "banana",       "stock": 4, "regrow_days": 8.0, "nutrition": 22, "water": 5 },
+    { "object": "baobab",     "item": "baobab_fruit", "stock": 6, "regrow_days": 8.0, "nutrition": 22, "water": 4 },
+    { "object": "cactus",     "item": "cactus_fruit", "stock": 2, "regrow_days": 12.0, "nutrition": 12, "water": 15 },
+    { "object": "mushroom",   "item": "mushroom",     "stock": 2, "regrow_days": 10.0, "nutrition": 10, "water": 3 },
+    { "object": "lichen",     "item": "lichen",       "stock": 2, "regrow_days": 16.0, "nutrition": 6,  "water": 1 }
   ],
   "carry": [
     { "object": "oak",             "item": "acorn",    "stock": 4, "regrow_days": 3.0 },
@@ -42,6 +42,7 @@
     { "object": "flint_nodules",   "item": "flint",    "stock": 3, "regrow_days": 0 },
     { "object": "quartz_pebbles",  "item": "quartz",   "stock": 2, "regrow_days": 0 },
     { "object": "obsidian_shards", "item": "obsidian", "stock": 3, "regrow_days": 0 }
+
   ],
   "traits": [
     { "id": "industrious", "name": "근면함",     "opposite": "lazy",        "effect": "일 속도 +20%, 쉬고 싶은 마음이 덜 쌓임" },
@@ -97,6 +98,15 @@
     { "id": "catharsis",    "name": "울고 나니 후련함",   "mood": 12,  "hours": 48,  "stack": 1 },
     { "id": "passion_work", "name": "좋아하는 일을 함",   "mood": 4,   "hours": 6,   "stack": 1 },
     { "id": "lazy_rest",    "name": "게으름 피움",        "mood": 3,   "hours": 6,   "stack": 1 },
-    { "id": "alone_long",   "name": "혼자 너무 오래",     "mood": -10, "hours": 0 }
+    { "id": "alone_long",   "name": "혼자 너무 오래",     "mood": -10, "hours": 0 },
+    { "id": "by_fire",      "name": "불가에서 몸을 녹임",  "mood": 5,   "hours": 10,  "stack": 1 },
+    { "id": "firelight",    "name": "불빛이 어둠을 밀어냄", "mood": 3,  "hours": 16,  "stack": 1 },
+    { "id": "cooked_meal",  "name": "익힌 것을 먹음",      "mood": 4,   "hours": 10,  "stack": 1 },
+    { "id": "bad_stomach",  "name": "배탈",                "mood": -8,  "hours": 20,  "stack": 1 },
+    { "id": "discovered",   "name": "새것을 알아냄",       "mood": 10,  "hours": 72,  "stack": 2 },
+    { "id": "half_success", "name": "거의 될 듯했다",      "mood": 2,   "hours": 24,  "stack": 2 },
+    { "id": "failed_try",   "name": "해 봐도 안 됨",       "mood": -2,  "hours": 12,  "stack": 2 },
+    { "id": "fire_died",    "name": "불이 꺼져 버림",      "mood": -4,  "hours": 16,  "stack": 1 },
+    { "id": "made_thing",   "name": "쓸 것을 만듦",        "mood": 3,   "hours": 24,  "stack": 2 }
   ]
 }
