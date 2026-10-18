@@ -125,6 +125,17 @@ public sealed partial class PeopleSim
 
     /// <summary>(E4) 왜 이 재료로 이 일을 하나 — 지금 계획한 행동 그대로: 고른 재료에서 그 바람의 속성이 가장 높은 것을 짚는다.
     /// 재료를 얻으러 가는 중이면 "무엇이 필요해서".</summary>
+    /// <summary>(E4) 따라가는 단서: 지금 하는 행동과 맞는 가장 최근 단서(재료를 얻으러 가는 중이면 그 재료).</summary>
+    private string FollowedClueText(Person p)
+    {
+        Clue? c = null;
+        for (int i = p.Clues.Count - 1; i >= 0; i--)
+            if (p.PlanAction < 0 || Craft.Rules[p.Clues[i].Rule].Action == p.PlanAction) { c = p.Clues[i]; break; }
+        string clue = c is { } cc ? ClueText(cc) : "";
+        if (p.Act == Act.Material) return $"전에 거의 될 듯했던 단서를 따라서 — {(p.PlanItem >= 0 ? Hangul.Eul(ItemName(p.PlanItem)) + " 얻어 와서" : "재료부터")}: {clue}";
+        return $"전에 거의 될 듯했던 단서를 따라서 — {clue}";
+    }
+
     private string TryReason(Person p, string wishId)
     {
         var wd = Craft.Wishes.FirstOrDefault(w => w.Id == wishId);
@@ -210,7 +221,7 @@ public sealed partial class PeopleSim
             Why.WantCarry => $"더 많이 나를 수 있었으면 (바람 {WishStrength(p, "carry")}): {TryReason(p, "carry")}",
             Why.WantShiny => $"반짝이는 돌이 궁금해서 (바람 {WishStrength(p, "shiny")}): {TryReason(p, "shiny")}",
             Why.KnowHow => $"{Hangul.I(WishName(arg))} 아쉬운데 만드는 법을 알아서",
-            Why.Clue => "전에 거의 될 듯했던 단서를 따라서 — " + (p.Clues.Count > 0 ? ClueText(p.Clues[^1]) : ""),
+            Why.Clue => FollowedClueText(p),
             Why.Fuel => "불이 꺼져 가서 — 땔감을 넣어 지킨다",
             Why.TakeFire => "불이 보여서 — 불씨를 얻어 오면 추위를 피할 수 있다",
             Why.FireNear => p.Act == Act.Sleep ? "불가에서 자려고 — 밤에 덜 춥고 어둠이 덜 무섭다" : "불씨를 들고 있어서 — 자는 곳 가까이에 피운다",
