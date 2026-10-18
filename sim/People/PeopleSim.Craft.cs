@@ -801,7 +801,14 @@ public sealed partial class PeopleSim
             }
             // 새 단서면 "거의 될 뻔", 이미 아는 단서를 또 겪었으면 "같은 헛수고"(따로 센다)
             bool again = false; foreach (var cl in p.Clues) if (cl.Rule == rule.Index && cl.Key == pd.Key) { again = true; break; }
-            if (again) Stats.PartialRepeats++; else Stats.Partials++;
+            if (again)
+            {
+                // 같은 헛수고를 또 했다 — 그 바람을 조금 접고 하루쯤은 실험을 쉰다(지쳐서)
+                Stats.PartialRepeats++;
+                if (wish >= 0) p.Wish[wish] = Math.Max(0, p.Wish[wish] - 15);
+                p.LastExperiment = Now + GameTime.TicksPerDay;
+            }
+            else Stats.Partials++;
             AddClue(p, new Clue { Rule = rule.Index, Key = pd.Key, Tick = Now, Input = input });
             // (E4) 곁(6타일)에서 본 사람도 그 단서를 얻는다
             foreach (var q in life.People)
