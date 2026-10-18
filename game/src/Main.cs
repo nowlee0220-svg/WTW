@@ -765,15 +765,15 @@ public partial class Main : Node
     {
         long last = snap.BigEvents.Length > 0 ? snap.BigEvents[^1].Seq : 0;
         if (_popupSeq < 0) { _popupSeq = last; return; }
-        var fire = new List<Wtw.Sim.People.WorldEvent>();
-        double real = Time.GetTicksMsec() / 1000.0;
-        foreach (var e in snap.BigEvents)
-        {
-            if (e.Seq <= _popupSeq) continue;
-            if (_gate.ShouldPause(e, snap.Now, real, _host!.SpeedLevel)) fire.Add(e);
-        }
+        // 새 ★★★(꺼 둔 종류 빼고) — 그중 하나라도 멈출 차례면(또는 팝업이 이미 열려 있으면) 모두 한 팝업에 묶는다
+        var cand = snap.BigEvents.Where(e => e.Seq > _popupSeq && EventLevels.Of(e.Kind) >= EventLevels.World && !_gate.Muted[(int)e.Kind]).ToList();
         _popupSeq = Math.Max(_popupSeq, last);
-        if (fire.Count == 0 || (_auto.Active && !_auto.Popups)) return;
+        if (cand.Count == 0 || (_auto.Active && !_auto.Popups)) return;
+        double real = Time.GetTicksMsec() / 1000.0;
+        bool due = false;
+        foreach (var e in cand) due |= _gate.ShouldPause(e, snap.Now, real, _host!.SpeedLevel);
+        if (!due && !_popup.Open) return;
+        var fire = cand;
         if (!_host!.Paused) { _host.SetPaused(true); _pausedByPopup = true; }
         _popup.AddEvents(fire);
     }

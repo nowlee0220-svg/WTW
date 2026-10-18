@@ -138,6 +138,7 @@ public sealed class AutoPilot
                 case "--skip": _skip = v; break;
                 case "--skippanel": _skipPanelShot = true; break;
                 case "--skipmid": _skipMidShot = true; break;
+                case "--loadpanel": _loadPanelShot = true; break;
                 case "--discoveries": _showDiscoveries = true; break;
                 case "--pausemeasure": _pauseMeasure = double.Parse(v, inv); break;
             }
@@ -277,6 +278,7 @@ public sealed class AutoPilot
             _main.StartSkipForTest(goal);
             GD.Print($"SKIP start {goal.Name}");
         }
+        else if (_loadPanelShot && !_loadPanelShown && _ready) { _loadPanelShown = true; _main.LoadForTest(); }
         else if (_skipPanelShot && !_skipPanelShown && (_provinceReady || (_enter is null && _ready))) { _skipPanelShown = true; _main.ShowSkipPanelForTest(); }
         else if (_shotPath is not null && (_look is null || _lookDone) && (_skip is null || (_lastNotice?.StartsWith("SKIPDONE") ?? false) || _skipMidShot) && (StayOnNewWorld ? _elapsed : _enter is not null ? (_provinceReady ? _sinceProvince : -1) : (_ready ? _sinceReady : -1)) >= _shotAfter) Finish(true, "");
     }
@@ -706,7 +708,7 @@ public sealed class AutoPilot
     public bool Popups;
     public string? Scene;
     private string? _skip;
-    private bool _skipStarted, _skipPanelShot, _skipPanelShown, _skipMidShot;
+    private bool _skipStarted, _skipPanelShot, _skipPanelShown, _skipMidShot, _loadPanelShot, _loadPanelShown;
     private bool _lookDone, _discShown;
     private int _lookPerson = -1, _lookFrames;
     private double _lookWait;
