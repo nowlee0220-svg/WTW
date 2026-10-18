@@ -274,7 +274,7 @@ public sealed class AutoPilot
         else if (_skip is not null && !_skipStarted && (_provinceReady || (_enter is null && _ready)) && _main.Host is { } sh)
         {
             _skipStarted = true;
-            var goal = _skip switch { "discovery" => Wtw.Sim.Runtime.SkipGoals.Discovery(null), "pot" => Wtw.Sim.Runtime.SkipGoals.Discovery("pot"), "land" => Wtw.Sim.Runtime.SkipGoals.NewLand(), _ => Wtw.Sim.Runtime.SkipGoals.Years(int.Parse(_skip)) };
+            var goal = _skip switch { "discovery" => Wtw.Sim.Runtime.SkipGoals.Discovery(null), "pot" => Wtw.Sim.Runtime.SkipGoals.Discovery("pot"), "land" => Wtw.Sim.Runtime.SkipGoals.NewLand(), "lost" => Wtw.Sim.Runtime.SkipGoals.KnowledgeLost(), "grouplost" => Wtw.Sim.Runtime.SkipGoals.KnowledgeGroupLost(), "refound" => Wtw.Sim.Runtime.SkipGoals.KnowledgeRefound(), _ => Wtw.Sim.Runtime.SkipGoals.Years(int.Parse(_skip)) };
             _main.StartSkipForTest(goal);
             GD.Print($"SKIP start {goal.Name}");
         }

@@ -79,10 +79,10 @@ public partial class ProvinceView
             if (snap.Paintings.TryGetValue(cell, out var pics))
                 foreach (var g in pics)
                 {
-                    if (np == _paintSprites.Count) { var sp = new Sprite2D { Material = _premul }; _itemRoot.AddChild(sp); _paintSprites.Add(sp); }
+                    if (np == _paintSprites.Count) { var sp = new Sprite2D { Material = _premul }; _markerRoot.AddChild(sp); _paintSprites.Add(sp); } // 나무에 가리지 않게 표시 층에
                     var s = _paintSprites[np++];
                     s.Texture = Art.Painting(g.Medium, g.Rule < 0 ? 0 : Art.PaintingGlyph(g.Rule));
-                    s.Scale = Vector2.One * 0.85f * TilePx / 64f;
+                    s.Scale = Vector2.One * 1.3f * TilePx / 64f;
                     var wall = TileWorld(sh, g.Tile); var stand = TileWorld(sh, g.Stand);
                     s.Position = g.Tile == g.Stand ? wall - new Vector2(0, 0.35f * TilePx) : wall.Lerp(stand, 0.35f);
                     s.Modulate = new Color(1, 1, 1, g.YearsLeft <= 1 ? 0.55f : 1f); // 바래 가는 그림은 흐리게

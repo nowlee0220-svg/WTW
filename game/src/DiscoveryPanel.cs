@@ -27,7 +27,7 @@ public partial class DiscoveryPanel : PanelContainer
         Visible = false;
         AnchorLeft = 1; AnchorRight = 1; AnchorTop = 0; AnchorBottom = 1;
         OffsetLeft = -Width - 12; OffsetRight = -12;
-        OffsetTop = UiTheme.TopBarHeight + 12; OffsetBottom = -UiTheme.BottomBarHeight - 12;
+        OffsetTop = UiTheme.TopBarHeight + 72; OffsetBottom = -UiTheme.BottomBarHeight - 12; // (E5) 지방 단추 줄 아래(겹치지 않게)
         AddThemeStyleboxOverride("panel", UiTheme.Box(UiTheme.Panel, 8, 14, 12));
         var box = new VBoxContainer();
         box.AddThemeConstantOverride("separation", 8);
@@ -152,11 +152,20 @@ public partial class DiscoveryPanel : PanelContainer
     /// <summary>(자동 확인용) 역사가 가장 긴 발견을 펼친다.</summary>
     public void ExpandBest(WorldSnapshot snap)
     {
-        var d = snap.Discoveries.OrderByDescending(x => x.History.Length + x.Paintings.Length * 2).FirstOrDefault();
+        var d = snap.Discoveries.OrderByDescending(x => x.History.Length + x.Paintings.Length * 3 + (x.Item == "모닥불" ? 2 : 0)).FirstOrDefault();
         if (d is null) return;
         _open.Add(d.Rule); _sig = -1; Fill(snap);
-        // 펼친 카드가 보이게 아래로
-        Callable.From(() => { if (_rows.GetParent() is ScrollContainer sc) foreach (var n in _rows.GetChildren()) if (n is Control c && c.GetIndex() == Array.IndexOf(snap.Discoveries, d)) sc.ScrollVertical = (int)c.Position.Y; }).CallDeferred();
+        _scrollTo = Array.IndexOf(snap.Discoveries, d);
+    }
+
+    private int _scrollTo = -1, _scrollWait;
+
+    public override void _Process(double delta)
+    {
+        // (자동 확인용) 펼친 카드가 보이게 — 배치가 끝난 뒤(몇 프레임 뒤) 스크롤
+        if (_scrollTo < 0 || ++_scrollWait < 4) return;
+        if (_rows.GetParent() is ScrollContainer sc && _scrollTo < _rows.GetChildCount() && _rows.GetChild(_scrollTo) is Control c) sc.ScrollVertical = (int)c.Position.Y;
+        _scrollTo = -1;
     }
 
     private static string LevelWord(int level) => level >= 80 ? "잘 앎" : level >= 60 ? "앎" : level >= 35 ? "흐려짐" : "거의 잊음";

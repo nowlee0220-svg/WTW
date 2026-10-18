@@ -440,14 +440,15 @@ public partial class Main : Node
         string what = g.Rule < 0 ? "알아볼 수 없는 무늬(손자국)" : $"{g.What} 만드는 법 같다 — {g.How}";
         var facts = new List<(string, string)>
         {
-            ("무엇을 그린 것 같은지", what),
-            ("누가 · 언제", $"{g.Painter} · {Wtw.Sim.Time.GameTime.Format(g.Tick)}"),
-            ("어디에", $"{g.Place}의 {medium}"),
-            ("얼마나 남을까", g.YearsLeft <= 0 ? "곧 바래 사라질 것 같다" : $"앞으로 약 {g.YearsLeft}년 ({medium}: 동굴 벽은 오래, 바위 면은 수십 년, 나무껍질은 몇 해)"),
-            ("들여다본 사람", $"{g.Seen}번 · 이 그림을 보고 다 알게 된 사람 {g.Taught}명"),
-            ("그림이란", "글자가 아니라 그림이라 말을 몰라도 조금은 알아본다. 아는 사람이 모두 죽어도 그림이 남아 있으면 되찾을 길이 있다."),
+            ("그린 것", what),
+            ("누가", $"{g.Painter} · {Wtw.Sim.Time.GameTime.Format(g.Tick)}"),
+            ("어디", $"{g.Place}의 {medium}"),
+            ("남을 해", g.YearsLeft <= 0 ? "곧 바래 사라질 것 같다" : $"앞으로 약 {g.YearsLeft}년"),
+            ("본 사람", $"{g.Seen}번 · 보고 다 알게 된 사람 {g.Taught}명"),
+            ("그림이란", "말을 몰라도 조금은 알아본다. 아는 사람이 모두 죽어도 그림이 남으면 되찾을 길이 있다. 동굴 벽은 수백 년, 바위 면은 수십 년, 나무껍질은 몇 해 남는다."),
         };
-        return new TileReport($"벽 그림 — {(g.Rule < 0 ? "무늬" : g.What)}", $"{medium}에 숯 · 재 · 진흙으로 그림", "", facts);
+        return new TileReport($"벽 그림 — {(g.Rule < 0 ? "무늬" : g.What)}", $"{medium}에 숯 · 재 · 진흙으로 그림",
+            "말을 몰라도 그림은 조금 알아본다 — 아는 사람이 모두 죽어도 그림이 남으면 되찾을 길이 있다. (동굴 벽은 수백 년, 바위 면은 수십 년, 나무껍질은 몇 해 남는다)", facts);
     }
 
     // ───────── 사람 ─────────
