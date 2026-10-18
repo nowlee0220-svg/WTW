@@ -499,7 +499,7 @@ public sealed partial class PeopleSim
                     // (E4) 날것의 독(버섯) → 가끔 배탈 → 익히기가 아쉽다 · 딱딱한 열매(야자)는 깨야 제대로 먹는다 → 단단한 도구가 아쉽다
                     int poison = Craft.Prop(h.ItemIndex, Craft.P_poison);
                     if (poison > 0 && Rng(p.Cell).NextInt(100) < poison * 6) BadStomach(p, h.ItemIndex);
-                    if (Craft.Prop(h.ItemIndex, Craft.P_hardness) >= 4) { AddWish(p, W_hardTool, 20); if (HasHardTool(p) && p.CarryCount(h.ItemIndex) == 0) p.AddCarry(h.ItemIndex, 1); }
+                    if (Craft.Prop(h.ItemIndex, Craft.P_hardness) >= 4) { if (!HasHardTool(p)) AddWish(p, W_hardTool, 20); if (HasHardTool(p) && p.CarryCount(h.ItemIndex) == 0) p.AddCarry(h.ItemIndex, 1); }
                     // (E4) 그릇이 있으면 남는 몫을 담아 둔다
                     if (p.PlanItem == 2 && life.StockAt(p.Target, Now) > 0) { int extra = life.Take(p.Target, Math.Min(3, life.StockAt(p.Target, Now)), Now); p.AddCarry(h.ItemIndex, extra); p.PlanItem = -1; }
                 }

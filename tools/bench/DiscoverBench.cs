@@ -18,7 +18,8 @@ public static class DiscoverBench
         public int Lost, Refound, Experiments, Discoveries, Partials, Crafts, FiresLit, FiresTaken, Mined, Cooked, Watched, Wildfires;
         public List<int> PopByYear = new();
         public double Seconds; public long PersonDays;
-        public int Known1y; // 끝에 살아 있는 사람 중 아는 법이 하나라도 있는 사람
+        public int Known1y;
+        public string Detail = ""; // 끝에 살아 있는 사람 중 아는 법이 하나라도 있는 사람
     }
 
     public static Row Simulate(ulong seed, int people, int years, string where, int cap)
@@ -42,6 +43,7 @@ public static class DiscoverBench
         }
         row.Seconds = sw.Elapsed.TotalSeconds;
         Fill(row, w);
+        row.Detail = Summary(w);
         return row;
     }
 
@@ -116,6 +118,7 @@ public static class DiscoverBench
         sb.AppendLine($"- 인구(10년마다, 시드 중앙값): " + string.Join(" · ", Enumerable.Range(0, years / 10 + 1).Select(i => PeopleBench.Median(rows.Select(r => (double)(i * 10 < r.PopByYear.Count ? r.PopByYear[i * 10] : 0))).ToString("0"))));
         sb.AppendLine($"- 사람 하루당 {rows.Sum(r => r.Seconds) * 1e6 / Math.Max(1, rows.Sum(r => r.PersonDays)):0}µs");
         Console.Write(sb.ToString());
+        if (seeds <= 2) foreach (var r in rows) Console.Write(r.Detail);
         if (outPath is not null) File.WriteAllText(outPath, sb.ToString());
     }
 }

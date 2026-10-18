@@ -190,6 +190,8 @@ public sealed class Person
     /// <summary>지금 하려는 실험 · 만들기: 행동 · 주 재료 · 둘째 재료 · 도구 · 바람 · 규칙(아는 법이면) · 쓸 불 세기.</summary>
     public int PlanAction = -1, PlanInput = -1, PlanWith = -1, PlanTool = -1, PlanWish = -1, PlanRule = -1, PlanHeat, PlanItem = -1;
     public long LastExperiment = long.MinValue / 2;
+    /// <summary>(E4) 아는 법으로 만들려다 재료가 없어 못 한 때 — 잠깐은 다시 계획하지 않는다.</summary>
+    public long LastCraftFail = long.MinValue / 2;
     public int Experiments;
     /// <summary>들고 있는 불씨가 생긴 시각(−1 = 없음) — 두 시간이면 꺼진다.</summary>
     public long EmberTick = -1;

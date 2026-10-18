@@ -223,7 +223,8 @@ public sealed class ProvinceLife
         else if (sh == 2) t += night ? 25 : (t > 280 ? -30 : 0);
         else if (sh == 1) t += night ? 15 : (t > 280 ? -40 : 0);
         if (huddle) t += 30;
-        if (Fires.Count > 0 || _volcanoFire.Count > 0) t += FireWarmth(tile, tick);
+        // (E4) 불은 추울 때 데워 준다 — 이미 따뜻하면 사람은 불에서 한 걸음 물러난다(불 때문에 26°C 를 넘지는 않는다)
+        if (Fires.Count > 0 || _volcanoFire.Count > 0) { int fw = FireWarmth(tile, tick); if (fw > 0 && t < 260) t = Math.Min(t + fw, 260); }
         return t;
     }
 

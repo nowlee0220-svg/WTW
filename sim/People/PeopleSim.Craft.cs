@@ -132,6 +132,7 @@ public sealed partial class PeopleSim
         if (p.Stage(Now) < LifeStage.Child || life.IsNight(Now)) return int.MinValue;
         long cd = p.HasTrait(T_curious) ? 6 * GameTime.TicksPerHour : p.HasTrait(T_stubborn) ? 40 * GameTime.TicksPerHour : 16 * GameTime.TicksPerHour;
         if (Now - p.LastExperiment < cd) return int.MinValue;
+        if (Now - p.LastCraftFail < 3 * GameTime.TicksPerHour) return int.MinValue; // 방금 계획이 서지 않았다
         int w = StrongestWish(p);
         if (w >= 0 && p.Wish[w] < 20 && !p.HasTrait(T_curious)) return int.MinValue; // 조금 아쉬운 정도로는 실험하지 않는다
         int s = (w >= 0 ? p.Wish[w] / 3 : 0) + (p.HasTrait(T_curious) ? 12 : 0) - (p.HasTrait(T_stubborn) ? 10 : 0) + (Ability(p, PeopleData.Int) - 5);
@@ -143,6 +144,7 @@ public sealed partial class PeopleSim
     private int CraftScore(Person p)
     {
         if (p.Known.Count == 0 || p.Stage(Now) < LifeStage.Child) return int.MinValue;
+        if (Now - p.LastCraftFail < 6 * GameTime.TicksPerHour) return int.MinValue; // 방금 재료가 없어 못 했다
         int w = StrongestWish(p);
         return w < 0 ? int.MinValue : p.Wish[w] / 2 + 8;
     }
@@ -157,7 +159,9 @@ public sealed partial class PeopleSim
         int wish = -1;
         if (total > 0) { int r = rng.NextInt(total); for (int w = 0; w < Craft.Wishes.Count; w++) { r -= p.Wish[w]; if (r < 0) { wish = w; break; } } }
         if (wish < 0) wish = rng.NextInt(Craft.Wishes.Count); // 호기심: 아무 바람이나
-        return Plan(p, wish, known: false, rng);
+        if (Plan(p, wish, known: false, rng)) return true;
+        p.LastCraftFail = Now;
+        return false;
     }
 
     private bool TryCraftKnown(Person p)
@@ -166,6 +170,7 @@ public sealed partial class PeopleSim
         // 바람 센 순서로 아는 법을 찾는다
         var order = Enumerable.Range(0, Craft.Wishes.Count).Where(w => p.Wish[w] > 0).OrderByDescending(w => p.Wish[w]).ThenBy(w => w).ToList();
         foreach (int w in order) if (Plan(p, w, known: true, rng)) return true;
+        p.LastCraftFail = Now;
         return false;
     }
 
@@ -251,8 +256,9 @@ public sealed partial class PeopleSim
             bool has = ft >= 0 && life.Fires.TryGetValue(ft, out hf);
             if (has && hf.Kind == 1)
             {
-                if (CountCarried(p, Craft.P_hardness, 3, Craft.P_weight, 3) >= 4) { action = A_pile; needFire = true; }
-                else if (StartMaterialFor(p, Craft.P_weight, 3, Why.Clue)) return true; // 불을 둘러쌀 무거운 돌을 모은다
+                int hc = CountCarried(p, Craft.P_hardness, 3, Craft.P_weight, 3);
+                if (hc >= 2 || (hc >= 1 && hc + PileStonesAt(life, ft) >= 4)) { action = A_pile; needFire = true; }
+                else if (StartMaterialFor(p, it => Prop(it, Craft.P_hardness) >= 3 && Prop(it, Craft.P_weight) >= 3, Craft.P_weight, Why.Clue)) return true; // 불을 둘러쌀 무거운 돌을 모은다
             }
             else if (has && hf.Kind == 2 && !hf.Charcoal)
             {
@@ -282,8 +288,9 @@ public sealed partial class PeopleSim
                 if (PickCarried(p, Array.Empty<int>(), fk.Input, -1, fr.With) < 0 && StartMaterialFor(p, fr.With, Why.Clue)) return true;
             }
         }
-        // 쌓기(불 둘러싸기)는 무거운 돌이 넷 있어야 한다
-        if (action == A_pile && CountCarried(p, Craft.P_hardness, 3, Craft.P_weight, 3) < 4)
+        // 쌓기(불 둘러싸기)는 무거운 돌이 넷 있어야 한다 — 한꺼번에 못 들면 두엇씩 날라 불가에 모은다
+        if (action == A_pile && CountCarried(p, Craft.P_hardness, 3, Craft.P_weight, 3) is int hc2
+            && !(hc2 >= 2 || (hc2 >= 1 && hc2 + PileStonesAt(life, life.NearestFire(here % S, here / S, Now, 60)) >= 4)))
             return StartMaterialFor(p, it => Prop(it, Craft.P_hardness) >= 3 && Prop(it, Craft.P_weight) >= 3, Craft.P_weight, known ? Why.KnowHow : WishWhy(wish));
         // 재료 고르기
         var inPref = InputPrefs(action, wish, p);
@@ -396,6 +403,29 @@ public sealed partial class PeopleSim
 
     private bool NeedsFire(Person p, ProvinceLife life) => life.NearestFire(p.Tile(Now) % S, p.Tile(Now) / S, Now, 25) < 0;
     private int NearestFireAny(ProvinceLife life, int here) => life.NearestFire(here % S, here / S, Now, 60, litOnly: false);
+
+    private void TakePileStones(ProvinceLife life, int tile, int n)
+    {
+        if (!life.Items.TryGetValue(tile, out var list)) return;
+        for (int k = 0; k < list.Count && n > 0; k++)
+        {
+            var c = list[k];
+            if (Prop(c.Item, Craft.P_hardness) < 3 || Prop(c.Item, Craft.P_weight) < 3) continue;
+            int t = Math.Min(n, c.Count); n -= t;
+            list[k] = (c.Item, c.Count - t);
+        }
+        list.RemoveAll(c => c.Count <= 0);
+        if (list.Count == 0) life.Items.Remove(tile);
+    }
+
+    /// <summary>(E4) 불 타일 땅에 모아 둔 무거운 돌(화덕 쌓을 돌) 수.</summary>
+    private int PileStonesAt(ProvinceLife life, int fireTile)
+    {
+        if (fireTile < 0 || !life.Items.TryGetValue(fireTile, out var list)) return 0;
+        int n = 0;
+        foreach (var c in list) if (Prop(c.Item, Craft.P_hardness) >= 3 && Prop(c.Item, Craft.P_weight) >= 3) n += c.Count;
+        return n;
+    }
 
     private int CountCarried(Person p, int prop, int min, int prop2, int min2)
     {
@@ -522,6 +552,7 @@ public sealed partial class PeopleSim
         // 1) 땅에 놓인 물건(죽은 사람이 남긴 것 등) 바로 곁
         foreach (var (t, list) in life.Items)
         {
+            if (life.Fires.ContainsKey(t)) continue; // 불가에 모아 둔 돌은 화덕감이다
             if (Cheb(t, hy * S + hx) > 20 || !life.Paths.Reachable(hy * S + hx, t)) continue;
             foreach (var (item, _) in list)
                 if (itemOk(item))
@@ -633,7 +664,19 @@ public sealed partial class PeopleSim
         p.LastExperiment = Now;
         p.Experiments++;
         Stats.PlanWhy[12]++;
-        if (action < 0 || input < 0 || p.CarryCount(input) == 0) { Stats.PlanWhy[13]++; return; }
+        // (E4) 쌓기: 들고 온 무거운 돌을 불가에 내려놓는다. 넷이 모이면 둘러쌓아 본다.
+        bool pile = action == A_pile && p.Target >= 0 && life.Fires.ContainsKey(p.Target);
+        if (pile)
+        {
+            for (int k = p.Carry.Count - 1; k >= 0; k--)
+            {
+                var c = p.Carry[k];
+                if (Prop(c.Item, Craft.P_hardness) >= 3 && Prop(c.Item, Craft.P_weight) >= 3) { life.Drop(p.Target, c.Item, c.Count); p.RemoveCarry(c.Item, c.Count); }
+            }
+            if (PileStonesAt(life, p.Target) < 4) { Stats.PlanWhy[18]++; return; } // 아직 모자라다 — 더 날라 온다
+            input = life.Items[p.Target].First(c => Prop(c.Item, Craft.P_hardness) >= 3 && Prop(c.Item, Craft.P_weight) >= 3).Item;
+        }
+        else if (action < 0 || input < 0 || p.CarryCount(input) == 0) { Stats.PlanWhy[13]++; return; }
         if (with >= 0 && p.CarryCount(with) == 0) with = -1;
         if (tool >= 0 && p.CarryCount(tool) < (tool == input ? 2 : 1)) tool = -1;
         int heat = life.HeatAt(here, Now);
@@ -647,11 +690,12 @@ public sealed partial class PeopleSim
         WearTool(p, tool, rng);
         if (outcome.Rule is null) { AddThought(p, H_failedTry); return; }
         var rule = outcome.Rule;
-        if (outcome.Success && rule.Uses > p.CarryCount(input)) { AddThought(p, H_failedTry); return; } // 재료가 모자랐다
+        if (outcome.Success && !pile && rule.Uses > p.CarryCount(input)) { AddThought(p, H_failedTry); return; } // 재료가 모자랐다
         if (outcome.Success)
         {
             // 재료를 쓴다
-            if (rule.Uses > 0) p.RemoveCarry(input, Math.Min(rule.Uses, p.CarryCount(input)));
+            if (pile) TakePileStones(life, p.Target, rule.Uses);
+            else if (rule.Uses > 0) p.RemoveCarry(input, Math.Min(rule.Uses, p.CarryCount(input)));
             if (rule.WithUses > 0 && with >= 0) p.RemoveCarry(with, Math.Min(rule.WithUses, p.CarryCount(with)));
             if (rule.Tinder > 0 && tinderItem >= 0) p.RemoveCarry(tinderItem, 1);
             if (rule.Skill >= 0) GainSkill(p, rule.Skill, known ? 10 : 25);
@@ -1113,7 +1157,7 @@ public sealed partial class PeopleSim
         var rng = Rng(p.Cell);
         if (IsMade(item) && poison == 0 && e >= 4) { AddThought(p, H_cookedMeal); Stats.CookedMeals++; }
         if (poison > 0 && rng.NextInt(100) < poison * 8) BadStomach(p, item);
-        if (item == I_coconut) AddWish(p, W_hardTool, 20);
+        if (item == I_coconut && !HasHardTool(p)) AddWish(p, W_hardTool, 20);
         if (p.Food >= 85_000) AddThought(p, H_ate);
     }
 
