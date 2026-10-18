@@ -253,7 +253,7 @@ public sealed class AutoPilot
         else if (_look is not null && _provinceReady && snap is not null && !_lookDone)
         {
             _lookWait += delta;
-            if (Look(snap) || _lookWait > 300) { _lookDone = true; _sinceProvince = 0; }
+            if (Look(snap) || _lookWait > (_look == "painting" ? 1200 : 300)) { _lookDone = true; _sinceProvince = 0; }
             return;
         }
         else if (_existingCard is int ec && _provinceReady && snap is not null && !_existingDone)

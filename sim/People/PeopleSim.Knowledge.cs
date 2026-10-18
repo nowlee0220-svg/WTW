@@ -26,6 +26,8 @@ public sealed class GroupKnow
     /// <summary>아는 사람이 무리에서 없어진 때(−1 = 있음). 잠깐 이웃 땅에 다녀오는 것은 끊김이 아니다 — LoseAfter 동안 없어야 끊긴 것.</summary>
     public long EmptySince = -1;
     public int LostCount, RefoundCount;
+    /// <summary>이 무리가 이 법을 마지막으로 그림으로 남긴 때(바랜 뒤에도 기억 — 같은 것을 거듭 그리지 않게).</summary>
+    public long Painted = long.MinValue / 2;
 }
 
 /// <summary>(E5) 지식의 행방 — 한 법의 역사 한 줄. Kind: 0 처음 · 1 무리에서 끊김 · 2 무리에서 되찾음 · 3 세계에서 사라짐 · 4 세계에서 다시 · 5 그림으로 남김 · 6 그림이 바램.</summary>
@@ -38,7 +40,10 @@ public readonly record struct KnowEvent(long Tick, byte Kind, int Cell, string T
 /// </summary>
 public sealed partial class PeopleSim
 {
-    public const long TeachCooldown = GameTime.TicksPerDay;
+    /// <summary>한 사람이 가르치는 사이(사흘) — 날마다 가르치면 수업이 일보다 많아진다.</summary>
+    public const long TeachCooldown = 3 * GameTime.TicksPerDay;
+    /// <summary>한 사람이 그림을 그리는 사이(5년) — 나무껍질 그림이 바랠 때마다 다시 그리지 않게.</summary>
+    public const long PaintCooldown = 5 * GameTime.TicksPerYear;
     public const int ForgetBelow = 15;
     /// <summary>안 쓴 지 이만큼 지나면 흐려지기 시작한다(2년).</summary>
     public const long FadeAfter = 2 * GameTime.TicksPerYear;
@@ -188,10 +193,12 @@ public sealed partial class PeopleSim
                 int ql = q.KnowLevel(k.Rule);
                 if (ql >= 50) continue;
                 int sc = 0; Why why = Why.None;
-                if (ql > 0) { sc = 18; why = Why.TeachFaded; }
+                // 흐려진 사람은 그 법이 아쉬울 때(물어 올 때) 다시 일러 준다 — 안 쓰는 법을 되풀이해 가르치지 않게
+                bool faded = ql > 0;
                 int asked = 0;
                 for (int w = 0; w < Craft.Wishes.Count; w++) if (q.Wish[w] >= 20 && ServesWish(r, Craft.Wishes[w])) asked = Math.Max(asked, q.Wish[w]);
-                if (asked > 0 && 20 + asked / 2 > sc) { sc = 20 + asked / 2; why = Why.TeachAsked; }
+                if (asked > 0 && 20 + asked / 2 > sc) { sc = 20 + asked / 2; why = faded ? Why.TeachFaded : Why.TeachAsked; }
+                if (faded && why != Why.TeachFaded) continue;
                 int kn = Count(k.Rule);
                 if (kn <= 2 && 25 - kn * 5 > sc) { sc = 25 - kn * 5; why = Why.TeachFew; }
                 if (child && 22 > sc) { sc = 22; why = Why.TeachChild; }
@@ -356,6 +363,7 @@ public sealed partial class PeopleSim
         }
         var g = new Painting { Id = NextPaintingId++, Cell = p.Cell, Tile = wall, Stand = stand, Rule = rule, Painter = p.Id, Medium = med, Tick = Now, Until = Now + PaintingLife(med, rng) };
         Paintings[g.Id] = g;
+        if (rule >= 0) { long gkey = GroupKey(p.Cell, rule); if (!GroupKnows.TryGetValue(gkey, out var gk)) GroupKnows[gkey] = gk = new GroupKnow { Since = Now, Knowers = 1 }; gk.Painted = Now; }
         p.RecordRule = -1;
         p.LastPaint = Now;
         Stats.Paintings++;
@@ -422,7 +430,7 @@ public sealed partial class PeopleSim
         int alive = 0; foreach (var q in life.People) if (!q.Dead) alive++;
         foreach (var q in life.People)
         {
-            if (q.Dead || q.Stage(Now) < LifeStage.Adult || q.Known.Count == 0) continue;
+            if (q.Dead || q.Stage(Now) < LifeStage.Adult || q.Known.Count == 0 || Now - q.LastPaint < PaintCooldown) continue;
             bool old = q.AgeYears(Now) >= 55;
             int pick = -1; Why why = Why.None; int amount = 0;
             foreach (var k in q.Known)
@@ -433,6 +441,7 @@ public sealed partial class PeopleSim
                 else if (n == 1 && alive >= 3 && 4 > amount) { pick = k.Rule; why = Why.RecordOnly; amount = 4; }
             }
             if (pick < 0 || HasPainting(cell, pick)) continue;
+            if (GroupKnows.TryGetValue(GroupKey(cell, pick), out var pgk) && Now - pgk.Painted < 20 * GameTime.TicksPerYear) continue; // 이 무리가 20년 안에 이미 그렸다
             AddWish(q, W_record, amount);
             if (q.RecordRule < 0 || !q.Knows(q.RecordRule)) { q.RecordRule = pick; q.RecordWhy = why; }
         }
@@ -471,6 +480,7 @@ public sealed partial class PeopleSim
             if (counts is not null) cellCounts[cell] = counts;
         }
         List<long>? gone = null;
+        List<(int Cell, int Rule, Person P, string Item, string Text)>? lostNotes = null, refoundNotes = null;
         foreach (var (key, gk) in GroupKnows)
         {
             int cell = GroupCell(key), rule = GroupRule(key);
@@ -486,7 +496,7 @@ public sealed partial class PeopleSim
                 bool painted = HasPainting(cell, rule);
                 var who = FirstAlive(cell);
                 string text = $"{LandLabelOr(cell, "한 땅")}의 무리에서 {Hangul.I(Craft.ItemName(Craft.Rules[rule].Result))} 끊겼습니다 — 아는 사람이 없습니다" + (painted ? " (그림은 남아 있다)" : "");
-                if (who is not null) Notify(WorldEventKind.GroupLost, who, rule, text);
+                if (who is not null) (lostNotes ??= new()).Add((cell, rule, who, Craft.ItemName(Craft.Rules[rule].Result), text));
                 History(rule, 1, cell, text);
             }
             else if (!gk.Known && n > 0)
@@ -498,11 +508,14 @@ public sealed partial class PeopleSim
                 var (how, person) = RegainHow(cell, rule, gk.LostTick);
                 Stats.RefoundHow[(int)how]++;
                 string text = $"{LandLabelOr(cell, "한 땅")}의 무리가 {Hangul.Eul(Craft.ItemName(Craft.Rules[rule].Result))} 되찾았습니다 — {RegainName(how, person)} ({delay / (double)GameTime.TicksPerYear:0.#}년 만에)";
-                if (person is not null) Notify(WorldEventKind.GroupRefound, person, rule, text);
+                if (person is not null) (refoundNotes ??= new()).Add((cell, rule, person, Craft.ItemName(Craft.Rules[rule].Result), text));
                 History(rule, 2, cell, text);
             }
         }
         if (gone is not null) foreach (long k in gone) GroupKnows.Remove(k);
+        // 알림은 한 무리 · 하루에 하나로 묶는다(여럿이 한꺼번에 끊기면 줄줄이 뜨지 않게)
+        NotifyGrouped(WorldEventKind.GroupLost, lostNotes, "끊겼습니다 — 아는 사람이 없습니다");
+        NotifyGrouped(WorldEventKind.GroupRefound, refoundNotes, "되찾았습니다");
         foreach (var (cell, counts) in cellCounts)
         {
             foreach (var (rule, n) in counts)
@@ -525,6 +538,19 @@ public sealed partial class PeopleSim
                 Stats.PaintingsFaded++;
                 if (g.Rule >= 0) History(g.Rule, 6, g.Cell, $"{LandLabelOr(g.Cell, "한 땅")}의 {Painting.MediumName(g.Medium)} 그림이 바래 사라졌다");
             }
+    }
+
+    private void NotifyGrouped(WorldEventKind kind, List<(int Cell, int Rule, Person P, string Item, string Text)>? notes, string verb)
+    {
+        if (notes is null) return;
+        foreach (var g in notes.GroupBy(n => n.Cell))
+        {
+            var list = g.ToList();
+            if (list.Count == 1) { Notify(kind, list[0].P, list[0].Rule, list[0].Text); continue; }
+            string items = string.Join(" · ", list.Take(5).Select(n => n.Item)) + (list.Count > 5 ? $" 외 {list.Count - 5}가지" : "");
+            string head = kind == WorldEventKind.GroupLost ? $"{LandLabelOr(g.Key, "한 땅")}의 무리에서 {list.Count}가지가 {verb}: {items}" : $"{LandLabelOr(g.Key, "한 땅")}의 무리가 {list.Count}가지를 {verb}: {items}";
+            Notify(kind, list[0].P, list[0].Rule, head);
+        }
     }
 
     /// <summary>되찾은 길: 0 다시 발견 · 1 이웃(다른 무리 사람)에게 배움 · 2 그림 · 3 옮겨 온 사람이 가져옴.</summary>

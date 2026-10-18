@@ -177,7 +177,7 @@ public static class SaveGame
             bw.Write(g.Tick); bw.Write(g.Until); bw.Write(g.Seen); bw.Write(g.Taught);
         }
         bw.Write(ps.GroupKnows.Count);
-        foreach (var (k, g) in ps.GroupKnows) { bw.Write(k); bw.Write(g.Known); bw.Write(g.Knowers); bw.Write(g.Since); bw.Write(g.LostTick); bw.Write(g.LostCount); bw.Write(g.RefoundCount); bw.Write(g.EmptySince); }
+        foreach (var (k, g) in ps.GroupKnows) { bw.Write(k); bw.Write(g.Known); bw.Write(g.Knowers); bw.Write(g.Since); bw.Write(g.LostTick); bw.Write(g.LostCount); bw.Write(g.RefoundCount); bw.Write(g.EmptySince); bw.Write(g.Painted); }
         bw.Write(ps.KnowHistory.Count);
         foreach (var (rule, list) in ps.KnowHistory)
         {
@@ -329,7 +329,7 @@ public static class SaveGame
             }
             int ngk = br.ReadInt32();
             for (int i = 0; i < ngk; i++)
-                ps.GroupKnows[br.ReadInt64()] = new GroupKnow { Known = br.ReadBoolean(), Knowers = br.ReadInt32(), Since = br.ReadInt64(), LostTick = br.ReadInt64(), LostCount = br.ReadInt32(), RefoundCount = br.ReadInt32(), EmptySince = br.ReadInt64() };
+                ps.GroupKnows[br.ReadInt64()] = new GroupKnow { Known = br.ReadBoolean(), Knowers = br.ReadInt32(), Since = br.ReadInt64(), LostTick = br.ReadInt64(), LostCount = br.ReadInt32(), RefoundCount = br.ReadInt32(), EmptySince = br.ReadInt64(), Painted = br.ReadInt64() };
             int nh = br.ReadInt32();
             for (int i = 0; i < nh; i++)
             {
