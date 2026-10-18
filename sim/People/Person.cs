@@ -11,6 +11,25 @@ public enum Act : byte
     BreakWander, BreakArgue, BreakLeave, Collapse, EatCorpse, Dead,
     /// <summary>(E3b) 지방 경계(Target = 경계 타일, TargetB = 변)로 걸어가 이웃 지방으로 넘어간다.</summary>
     Cross,
+    // (E4) 재료와 발견
+    /// <summary>실험: 바람에 맞을 것 같은 재료 · 행동을 해 본다(Target = 자리, Plan 에 행동 · 재료).</summary>
+    Experiment,
+    /// <summary>아는 법대로 만든다(Plan 에 규칙).</summary>
+    Craft,
+    /// <summary>불가에서 들고 있는 먹을 것을 익혀 먹는다(Target = 불 타일).</summary>
+    Cook,
+    /// <summary>불에 땔감을 넣는다(Target = 불 타일).</summary>
+    TendFire,
+    /// <summary>불씨를 얻으러 불이 있는 곳으로 간다(Target = 불 타일).</summary>
+    TakeFire,
+    /// <summary>재료를 얻으러 간다(Target = 오브젝트 타일, TargetB = 다루는 법 번호, PlanItem = 얻을 아이템).</summary>
+    Material,
+    /// <summary>바위를 캔다(Target = 바위 타일).</summary>
+    Mine,
+    /// <summary>들고 있는 것을 먹는다(제자리).</summary>
+    EatCarried,
+    /// <summary>그릇의 물을 마신다(제자리).</summary>
+    DrinkCarried,
 }
 
 public enum DeathCause : byte { None = 0, Starvation, Thirst, Cold, Heat, OldAge, Illness }
@@ -22,6 +41,8 @@ public enum Why : byte
     FollowParent, Carried, TalkedTo, WantsTalk, Break, Partner, FamilyNear, NoFood, NoWater, NoPath, Starving, Morning, Friend, WaitTalk,
     // (E3b) 옮겨 가는 까닭
     Scarce, SeekMate, Explore, GoBack, FollowFamily, FollowOther,
+    // (E4) 바람(~가 있었으면) · 아는 법 · 단서 · 불 · 재료 · 캐기
+    WantWarmth, WantSharp, WantHardTool, WantContainer, WantCooking, WantCarry, WantShiny, KnowHow, Clue, Fuel, TakeFire, Material, MineOre, MineStone, CookFood, Store, Carried2, FireNear, Rediscover,
 }
 
 /// <summary>생김새(코드로 그리는 몸 — 부모를 닮는다). 값은 0~255.</summary>
@@ -43,7 +64,31 @@ public struct Relation
     public int Talks;    // 이야기한 횟수
 }
 
-public enum BioKind : byte { Born = 0, Spawned, Paired, ChildBorn, Died, FamilyDied, Break, CaveFound, Passion, Adult, Ill, PartnerDied, Starving, Argument, Named, LearnedSpeech, FoundWater, Moved, NamedLand }
+public enum BioKind : byte
+{
+    Born = 0, Spawned, Paired, ChildBorn, Died, FamilyDied, Break, CaveFound, Passion, Adult, Ill, PartnerDied, Starving, Argument, Named, LearnedSpeech, FoundWater, Moved, NamedLand,
+    // (E4) Other = 규칙 번호(또는 사람), Param = 바람 번호 · 아이템 등
+    Discovered, LearnedWatching, PartialSuccess, MadeThing, LitFire, FireDied, Mined, Nicknamed, NewWord, BorrowedWord, SawFire, BadStomach,
+}
+
+/// <summary>(E4) 아는 법 하나: 어느 규칙을 · 언제 · 어떤 바람에서 · 어떻게(주 재료 · 둘째 재료) · 누구에게서(−1 = 스스로 알아냄).</summary>
+public struct Knowledge
+{
+    public int Rule;
+    public long Tick;
+    public int Wish;
+    public int Input, With;
+    public int LearnedFrom;
+}
+
+/// <summary>(E4) 부분 성공의 단서: 어느 규칙이 어느 조건(속성 이름 · heat · tool …)에서 모자랐나.</summary>
+public struct Clue
+{
+    public int Rule;
+    public string Key;
+    public long Tick;
+    public int Input;
+}
 
 public struct BioEntry
 {
@@ -135,6 +180,27 @@ public sealed class Person
     // 들고 다니는 것: (아이템 번호, 개수)
     public readonly List<(int Item, int Count)> Carry = new();
 
+    // (E4) 재료와 발견
+    /// <summary>바람의 세기(0~100, crafting.json 의 wishes 순서)와 생긴 시각.</summary>
+    public int[] Wish = new int[8];
+    public long[] WishSince = new long[8];
+    public readonly List<Knowledge> Known = new();
+    public readonly List<Clue> Clues = new();
+    public const int ClueMemory = 12;
+    /// <summary>지금 하려는 실험 · 만들기: 행동 · 주 재료 · 둘째 재료 · 도구 · 바람 · 규칙(아는 법이면) · 쓸 불 세기.</summary>
+    public int PlanAction = -1, PlanInput = -1, PlanWith = -1, PlanTool = -1, PlanWish = -1, PlanRule = -1, PlanHeat, PlanItem = -1;
+    public long LastExperiment = long.MinValue / 2;
+    public int Experiments;
+    /// <summary>들고 있는 불씨가 생긴 시각(−1 = 없음) — 두 시간이면 꺼진다.</summary>
+    public long EmberTick = -1;
+    /// <summary>그릇에 담은 물(몫 수).</summary>
+    public int PotWater;
+    /// <summary>별명(그 무리의 말) · 뜻 · 까닭(쉬운 말).</summary>
+    public string Nickname = "";
+    public int[] NicknameConcepts = Array.Empty<int>();
+    public string NicknameReason = "";
+    public int Mined;
+
     public readonly List<ThoughtInst> Thoughts = new();
     public readonly List<Relation> Relations = new(); // Other 순으로 정렬
     public readonly List<BioEntry> Bio = new();
@@ -180,6 +246,22 @@ public sealed class Person
     }
 
     public bool HasTrait(int t) => Traits.Contains(t);
+
+    public bool Knows(int rule) { foreach (var k in Known) if (k.Rule == rule) return true; return false; }
+    public int CarryCount(int item) { foreach (var c in Carry) if (c.Item == item) return c.Count; return 0; }
+    public void AddCarry(int item, int n)
+    {
+        if (n <= 0) return;
+        int k = Carry.FindIndex(c => c.Item == item);
+        if (k >= 0) Carry[k] = (item, Carry[k].Count + n); else Carry.Add((item, n));
+    }
+    public bool RemoveCarry(int item, int n)
+    {
+        int k = Carry.FindIndex(c => c.Item == item);
+        if (k < 0 || Carry[k].Count < n) return false;
+        if (Carry[k].Count == n) Carry.RemoveAt(k); else Carry[k] = (item, Carry[k].Count - n);
+        return true;
+    }
 
     public void Position(long tick, out int x, out int y) => Current.IntPositionAt(tick, out x, out y);
     public int Tile(long tick) { Position(tick, out int x, out int y); return (y / 1000) * Provinces.HexFrame.Size + x / 1000; }

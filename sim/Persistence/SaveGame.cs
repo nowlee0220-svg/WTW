@@ -18,11 +18,12 @@ namespace Wtw.Sim.Persistence;
 /// 버전 5(E3 고침): 말(언어) · 이름의 뜻 · 말씨 · 기억해 둔 물가 · 열매 자리. 버전 4 파일은 지방마다 말 하나를 새로 만들어 읽는다.
 /// 버전 6(E3b): 지방 넘기 — 잠든 지방도 같은 목록에(깨어 있든 잠들었든 칸 번호 순), 넘겨주기 대기, 땅 이름, 사람의 옮겨 가기 상태,
 ///   기억(칸 × 타일 수 + 타일). 버전 5 이하의 기억은 그 사람이 사는 지방의 타일로 읽는다.
+/// 버전 7(E4): 지방의 불 · 땅에 놓인 물건 · 캐낸 바위, 발견 목록 · 부분 성공 · 무리마다 처음 안 때, 말의 낱말 출처, 사람의 바람 · 아는 법 · 단서 · 계획 · 불씨 · 그릇의 물 · 별명.
 /// 버전 1(E0) · 2(E1) · 3(E2) 파일도 읽는다(행성 설정은 기본값, 사람 없음).
 /// </summary>
 public static class SaveGame
 {
-    public const int Version = 6;
+    public const int Version = 7;
     private static readonly byte[] Magic = "WTWS"u8.ToArray();
 
     public static byte[] ToBytes(GameWorld w)
@@ -130,6 +131,13 @@ public static class SaveGame
                 foreach (var (tile, st) in life.Stocks) { bw.Write(tile); bw.Write(st.Stock); bw.Write(st.Stamp); }
                 bw.Write(life.Revealed.Count);
                 foreach (int t in life.Revealed) bw.Write(t);
+                bw.Write(life.Fires.Count);
+                foreach (var (t, f) in life.Fires) WriteFire(bw, t, f);
+                int ni = 0; foreach (var (_, l) in life.Items) ni += l.Count;
+                bw.Write(ni);
+                foreach (var (t, l) in life.Items) foreach (var (item, n) in l) { bw.Write(t); bw.Write(item); bw.Write(n); }
+                bw.Write(life.Dug.Count);
+                foreach (int t in life.Dug) bw.Write(t);
             }
             else
             {
@@ -138,8 +146,26 @@ public static class SaveGame
                 foreach (var (tile, st) in d.Stocks) { bw.Write(tile); bw.Write(st.Stock); bw.Write(st.Stamp); }
                 bw.Write(d.Revealed.Length);
                 foreach (int t in d.Revealed) bw.Write(t);
+                bw.Write(d.Fires.Length);
+                foreach (var (t, f) in d.Fires) WriteFire(bw, t, f);
+                bw.Write(d.Ground.Length);
+                foreach (var (t, item, n) in d.Ground) { bw.Write(t); bw.Write(item); bw.Write(n); }
+                bw.Write(d.Dug.Length);
+                foreach (int t in d.Dug) bw.Write(t);
             }
         }
+        // (E4) 발견 목록 · 부분 성공 · 무리마다 처음
+        bw.Write(ps.Discoveries.Count);
+        foreach (var (rule, d) in ps.Discoveries)
+        {
+            bw.Write(rule); bw.Write(d.Tick); bw.Write(d.Person); bw.Write(d.Cell); bw.Write(d.Wish); bw.Write(d.LangId); bw.Write(d.PartialsBefore);
+            bw.Write(d.PartialTexts.Count); foreach (var t in d.PartialTexts) bw.Write(t);
+            bw.Write(d.Lost); bw.Write(d.LostTick); bw.Write(d.LostCount); bw.Write(d.RefoundCount);
+        }
+        bw.Write(ps.Partials.Count);
+        foreach (var (rule, pr) in ps.Partials) { bw.Write(rule); bw.Write(pr.Count); bw.Write(pr.Texts.Count); foreach (var t in pr.Texts) bw.Write(t); }
+        bw.Write(ps.GroupFirst.Count);
+        foreach (var (k, v) in ps.GroupFirst) { bw.Write(k); bw.Write(v); }
         var (queue, at) = ps.CrossQueueForSave();
         bw.Write(at); bw.Write(queue.Length); foreach (int id in queue) bw.Write(id);
         bw.Write(ps.LandNames.Count);
@@ -161,10 +187,14 @@ public static class SaveGame
             bw.Write(l.Known.Count); foreach (int k in l.Known) bw.Write(k);
             bw.Write(l.Overrides.Count); foreach (var (k, v) in l.Overrides) { bw.Write(k); bw.Write(v); }
             bw.Write(l.Changes);
+            bw.Write(l.Origins.Count); foreach (var (k, v) in l.Origins) { bw.Write(k); bw.Write(v.FromLang); bw.Write(v.Tick); }
         }
         bw.Write(ps.All.Count);
         foreach (var p in ps.All) WritePerson(bw, p);
     }
+
+    private static void WriteFire(BinaryWriter bw, int tile, Fire f) { bw.Write(tile); bw.Write(f.Kind); bw.Write(f.Stamp); bw.Write(f.Fuel); bw.Write(f.Charcoal); bw.Write(f.Lighter); }
+    private static (int, Fire) ReadFire(BinaryReader br) => (br.ReadInt32(), new Fire { Kind = br.ReadByte(), Stamp = br.ReadInt64(), Fuel = br.ReadInt64(), Charcoal = br.ReadBoolean(), Lighter = br.ReadInt32() });
 
     private static void WritePerson(BinaryWriter bw, Person p)
     {
@@ -204,6 +234,13 @@ public static class SaveGame
             bw.Write(m.Depart); bw.Write(m.Arrive); bw.Write(m.Count);
             for (int i = 0; i < m.Count; i++) { bw.Write(m.X[i]); bw.Write(m.Y[i]); }
         }
+        // (E4)
+        bw.Write(p.Wish.Length); for (int i = 0; i < p.Wish.Length; i++) { bw.Write(p.Wish[i]); bw.Write(p.WishSince[i]); }
+        bw.Write(p.Known.Count); foreach (var k in p.Known) { bw.Write(k.Rule); bw.Write(k.Tick); bw.Write(k.Wish); bw.Write(k.Input); bw.Write(k.With); bw.Write(k.LearnedFrom); }
+        bw.Write(p.Clues.Count); foreach (var c in p.Clues) { bw.Write(c.Rule); bw.Write(c.Key); bw.Write(c.Tick); bw.Write(c.Input); }
+        bw.Write(p.PlanAction); bw.Write(p.PlanInput); bw.Write(p.PlanWith); bw.Write(p.PlanTool); bw.Write(p.PlanWish); bw.Write(p.PlanRule); bw.Write(p.PlanHeat); bw.Write(p.PlanItem);
+        bw.Write(p.LastExperiment); bw.Write(p.Experiments); bw.Write(p.EmberTick); bw.Write(p.PotWater); bw.Write(p.Mined);
+        bw.Write(p.Nickname); bw.Write(p.NicknameConcepts.Length); foreach (int c in p.NicknameConcepts) bw.Write(c); bw.Write(p.NicknameReason);
     }
 
     private static void ReadPeople(BinaryReader br, GameWorld w, int version)
@@ -224,7 +261,38 @@ public static class SaveGame
             int nr = br.ReadInt32();
             var rev = new int[nr];
             for (int k = 0; k < nr; k++) rev[k] = br.ReadInt32();
-            ps.Dormant[cell] = new DormantProvince(cell, stocks, rev, new List<Person>());
+            var dp = new DormantProvince(cell, stocks, rev, new List<Person>());
+            if (version >= 7)
+            {
+                var fires = new (int, Fire)[br.ReadInt32()];
+                for (int k = 0; k < fires.Length; k++) fires[k] = ReadFire(br);
+                var ground = new (int, int, int)[br.ReadInt32()];
+                for (int k = 0; k < ground.Length; k++) ground[k] = (br.ReadInt32(), br.ReadInt32(), br.ReadInt32());
+                var dug = new int[br.ReadInt32()];
+                for (int k = 0; k < dug.Length; k++) dug[k] = br.ReadInt32();
+                dp = dp with { Fires = fires, Ground = ground, Dug = dug };
+            }
+            ps.Dormant[cell] = dp;
+        }
+        if (version >= 7)
+        {
+            int nd = br.ReadInt32();
+            for (int i = 0; i < nd; i++)
+            {
+                var d = new Discovery { Rule = br.ReadInt32(), Tick = br.ReadInt64(), Person = br.ReadInt32(), Cell = br.ReadInt32(), Wish = br.ReadInt32(), LangId = br.ReadInt32(), PartialsBefore = br.ReadInt32() };
+                int nt = br.ReadInt32(); for (int k = 0; k < nt; k++) d.PartialTexts.Add(br.ReadString());
+                d.Lost = br.ReadBoolean(); d.LostTick = br.ReadInt64(); d.LostCount = br.ReadInt32(); d.RefoundCount = br.ReadInt32();
+                ps.Discoveries[d.Rule] = d;
+            }
+            int npa = br.ReadInt32();
+            for (int i = 0; i < npa; i++)
+            {
+                int rule = br.ReadInt32(), cnt = br.ReadInt32(); var texts = new List<string>();
+                int nt = br.ReadInt32(); for (int k = 0; k < nt; k++) texts.Add(br.ReadString());
+                ps.Partials[rule] = (cnt, texts);
+            }
+            int ng = br.ReadInt32();
+            for (int i = 0; i < ng; i++) ps.GroupFirst[br.ReadInt64()] = br.ReadInt64();
         }
         if (version >= 6)
         {
@@ -259,6 +327,7 @@ public static class SaveGame
                 int nk = br.ReadInt32(); for (int k = 0; k < nk; k++) l.Known.Add(br.ReadInt32());
                 int no = br.ReadInt32(); for (int k = 0; k < no; k++) l.Overrides[br.ReadInt32()] = br.ReadUInt64();
                 if (version >= 6) l.Changes = br.ReadInt32();
+                if (version >= 7) { int nor = br.ReadInt32(); for (int k = 0; k < nor; k++) { int c = br.ReadInt32(); l.Origins[c] = (br.ReadInt32(), br.ReadInt64()); } }
                 ps.AddLoadedLanguage(l);
             }
         }
@@ -331,6 +400,17 @@ public static class SaveGame
             var xs = new int[n]; var ys = new int[n];
             for (int j = 0; j < n; j++) { xs[j] = br.ReadInt32(); ys[j] = br.ReadInt32(); }
             p.NewMotion().Set(dep, arr, xs, ys, n);
+        }
+        if (version >= 7)
+        {
+            int nw = br.ReadInt32();
+            if (nw != p.Wish.Length) throw new InvalidDataException("저장 파일의 바람 수가 지금 데이터와 다릅니다.");
+            for (int i = 0; i < nw; i++) { p.Wish[i] = br.ReadInt32(); p.WishSince[i] = br.ReadInt64(); }
+            int nk = br.ReadInt32(); for (int k = 0; k < nk; k++) p.Known.Add(new Knowledge { Rule = br.ReadInt32(), Tick = br.ReadInt64(), Wish = br.ReadInt32(), Input = br.ReadInt32(), With = br.ReadInt32(), LearnedFrom = br.ReadInt32() });
+            int ncl = br.ReadInt32(); for (int k = 0; k < ncl; k++) p.Clues.Add(new Clue { Rule = br.ReadInt32(), Key = br.ReadString(), Tick = br.ReadInt64(), Input = br.ReadInt32() });
+            p.PlanAction = br.ReadInt32(); p.PlanInput = br.ReadInt32(); p.PlanWith = br.ReadInt32(); p.PlanTool = br.ReadInt32(); p.PlanWish = br.ReadInt32(); p.PlanRule = br.ReadInt32(); p.PlanHeat = br.ReadInt32(); p.PlanItem = br.ReadInt32();
+            p.LastExperiment = br.ReadInt64(); p.Experiments = br.ReadInt32(); p.EmberTick = br.ReadInt64(); p.PotWater = br.ReadInt32(); p.Mined = br.ReadInt32();
+            p.Nickname = br.ReadString(); p.NicknameConcepts = new int[br.ReadInt32()]; for (int k = 0; k < p.NicknameConcepts.Length; k++) p.NicknameConcepts[k] = br.ReadInt32(); p.NicknameReason = br.ReadString();
         }
         return p;
     }

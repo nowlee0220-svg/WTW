@@ -9,7 +9,7 @@ namespace Wtw.Sim.People;
 /// <summary>알림(아이가 태어남 · 죽음 · 짝 · 정신 붕괴 …). Seq 는 1 부터 차례로.</summary>
 public sealed record WorldEvent(long Seq, long Tick, WorldEventKind Kind, int Person, int Other, int Cell, string Text);
 
-public enum WorldEventKind : byte { Spawn = 0, Birth, Death, Pair, Break, LandNamed, Moved, Language }
+public enum WorldEventKind : byte { Spawn = 0, Birth, Death, Pair, Break, LandNamed, Moved, Language, Discovery, DiscoveryLost, Wildfire }
 
 /// <summary>측정용 셈(저장하지 않는다 — 결과에 영향 없음).</summary>
 public sealed class PeopleStats
@@ -24,6 +24,8 @@ public sealed class PeopleStats
     /// <summary>(E3b) 말이 갈라진 횟수 · 낱말이 새로 바뀐 횟수.</summary>
     public long LanguageSplits, WordChanges;
     public readonly long[] MoveWhy = new long[64];
+    /// <summary>(E4) 실험 · 성공 · 부분 성공 · 아는 법대로 만든 횟수 · 불 피움 · 자연의 불에서 얻음 · 캐기 · 익힌 끼니 · 배탈 · 보고 배움 · 사라진 발견 · 되찾은 발견.</summary>
+    public long Experiments, Discoveries, Partials, Crafts, FiresLit, FiresTaken, Mined, CookedMeals, BadStomachs, Watched, Lost, Refound, Wildfires;
     /// <summary>물 · 먹을 것을 찾아간 방법별 횟수: [0 보임, 1 기억, 2 따라감, 3 찾아다님].</summary>
     public readonly long[] FindHow = new long[4];
 }
@@ -41,6 +43,7 @@ public sealed partial class PeopleSim
         "hungry", "starving", "thirsty", "cold", "freezing", "hot", "tired", "exhausted", "lonely", "bored", "sick", "ate_well", "slept_well", "slept_rough",
         "slept_cold", "dark_fear", "talked", "good_talk", "argument", "with_partner", "new_partner", "child_born", "family_died", "partner_died", "friend_died",
         "cave_found", "catharsis", "passion_work", "lazy_rest", "alone_long",
+        "by_fire", "firelight", "cooked_meal", "bad_stomach", "discovered", "half_success", "failed_try", "fire_died", "made_thing",
     };
     public static readonly string[] RequiredTraits =
     {
@@ -70,7 +73,7 @@ public sealed partial class PeopleSim
         T_bloodlust, T_kind, T_abrasive, T_optimist, T_pessimist, T_iron, T_nervous, T_fast, T_cannibal;
     internal readonly int H_hungry, H_starving, H_thirsty, H_cold, H_freezing, H_hot, H_tired, H_exhausted, H_lonely, H_bored, H_sick, H_ate, H_slept, H_rough,
         H_sleptCold, H_dark, H_talked, H_goodTalk, H_argument, H_withPartner, H_newPartner, H_childBorn, H_familyDied, H_partnerDied, H_friendDied, H_cave,
-        H_catharsis, H_passion, H_lazyRest, H_alone;
+        H_catharsis, H_passion, H_lazyRest, H_alone, H_byFire, H_firelight, H_cookedMeal, H_badStomach, H_discovered, H_halfSuccess, H_failedTry, H_fireDied, H_madeThing;
 
     public PeopleSim(GameWorld w, PeopleData data)
     {
@@ -87,6 +90,9 @@ public sealed partial class PeopleSim
         H_goodTalk = H("good_talk"); H_argument = H("argument"); H_withPartner = H("with_partner"); H_newPartner = H("new_partner"); H_childBorn = H("child_born");
         H_familyDied = H("family_died"); H_partnerDied = H("partner_died"); H_friendDied = H("friend_died"); H_cave = H("cave_found"); H_catharsis = H("catharsis");
         H_passion = H("passion_work"); H_lazyRest = H("lazy_rest"); H_alone = H("alone_long");
+        H_byFire = H("by_fire"); H_firelight = H("firelight"); H_cookedMeal = H("cooked_meal"); H_badStomach = H("bad_stomach"); H_discovered = H("discovered");
+        H_halfSuccess = H("half_success"); H_failedTry = H("failed_try"); H_fireDied = H("fire_died"); H_madeThing = H("made_thing");
+        InitCraft();
     }
 
     public IReadOnlyList<Person> All => _all;
@@ -108,6 +114,9 @@ public sealed partial class PeopleSim
                 // 깨어남: 바뀐 것을 되살린다. 딴 몫은 딴 시각부터 흐른 시간만큼 저절로 다시 열려 있다.
                 foreach (var (tile, st) in d.Stocks) life.Stocks[tile] = st;
                 foreach (int t in d.Revealed) life.Revealed.Add(t);
+                foreach (var (t, f) in d.Fires) life.Fires[t] = f;
+                foreach (var (t, item, n) in d.Ground) life.Drop(t, item, n);
+                life.RestoreDug(d.Dug);
                 life.People.AddRange(d.People);
                 Stats.Wakes++;
             }

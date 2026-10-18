@@ -8,9 +8,14 @@ public sealed record ActionDef(string Id, string Name);
 
 public sealed record ItemDef(string Id, string Name)
 {
-    /// <summary>성질 메모: 재료 속성 아이디(properties.json) → 낮음 · 보통 · 높음 · 아주 높음. 숫자는 E4 에서.</summary>
+    /// <summary>성질 메모(E2): 재료 속성 아이디(properties.json) → 낮음 · 보통 · 높음 · 아주 높음. 숫자는 Props.</summary>
     public IReadOnlyDictionary<string, string> Traits { get; init; } = new Dictionary<string, string>();
     public static readonly string[] TraitLevels = { "낮음", "보통", "높음", "아주 높음" };
+    /// <summary>(E4) 재료 속성(properties.json 아이디 → 0~5). 적지 않은 속성은 0. 검사는 ContentLoader · CraftData 가 한다.</summary>
+    public IReadOnlyDictionary<string, int> Props { get; init; } = new Dictionary<string, int>();
+    /// <summary>"" 자원 · "made" 만들어지는 것 · "place" 땅 위에 놓이는 것(모닥불 · 화덕).</summary>
+    public string Kind { get; init; } = "";
+    public int Prop(string id) => Props.TryGetValue(id, out int v) ? v : 0;
 }
 
 /// <summary>다루는 법 하나 → 나오는 아이템들.</summary>
@@ -135,7 +140,18 @@ public sealed class ObjectCatalog
                                 else traits[tp.Name] = lv;
                             }
                     }
-                    var it = new ItemDef(id, name) { Traits = traits };
+                    var props = new Dictionary<string, int>();
+                    if (e.TryGetProperty("props", out var pe))
+                    {
+                        if (pe.ValueKind != JsonValueKind.Object) problems.Add($"{where}: props 는 {{ \"속성\": 0~5 }} 이어야 합니다.");
+                        else foreach (var pp in pe.EnumerateObject())
+                            {
+                                if (pp.Value.ValueKind != JsonValueKind.Number || !pp.Value.TryGetInt32(out int pv) || pv < 0 || pv > 5) problems.Add($"{where}: props 의 '{pp.Name}' 값은 0~5 의 정수여야 합니다.");
+                                else props[pp.Name] = pv;
+                            }
+                    }
+                    string kind = e.TryGetProperty("kind", out var ke) && ke.ValueKind == JsonValueKind.String ? ke.GetString() ?? "" : "";
+                    var it = new ItemDef(id, name) { Traits = traits, Props = props, Kind = kind };
                     itemById[id] = it; items.Add(it);
                 }
             }

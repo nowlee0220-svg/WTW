@@ -1,0 +1,130 @@
+{
+  "_설명": [
+    "재료 다루기와 판정 (E4, 기획서 8-2 · 8-3). 조합식 정답표가 아니라 '어떤 속성 조합 + 행동 + 조건이면 무엇이 나온다'는 규칙이다 — 재료의 속성을 바꾸면 결과도 바뀐다.",
+    "actions: 다루는 행동. heat_names: 불의 세기 사다리(0 불 없음 · 1 맨불 · 2 가둔 불 · 3 숯 + 가둔 불).",
+    "wishes: '~가 있었으면' 바람. props = 그 바람에 맞을 것 같은 속성(사람은 이 속성이 높은 재료로 실험한다), actions = 해 볼 행동, fire = 불이 있어야 하는 바람.",
+    "rules: action 으로 input(주 재료, 속성 최소값) 을 다룬다. input_max = 넘으면 안 되는 값, with = 둘째 재료(속성 최소값), tool = 들고 있는 도구(속성 최소값), heat = 필요한 불 세기, tinder = 불쏘시개(burns 최소값)가 함께 있어야 함.",
+    "  chance = 조건이 다 맞을 때 성공할 백분율(손재주 · 영리함 · 기술이 더해짐). result/count = 나오는 것, uses = 쓰는 주 재료 수, with_uses = 쓰는 둘째 재료 수, time_min = 걸리는 시간(분), skill = 오르는 기술.",
+    "  partial: 조건 하나가 모자랄 때(그 속성 이름 · 'heat' · 'tool' · 'with' · 'tinder' · 'chance') 남는 부분 성공 — text(결과 글) · hint(다음 실험의 단서) · result(남는 것). 없으면 generic_hints 의 말을 쓴다.",
+    "판정 순서: 같은 행동의 규칙 중 맞는 조건이 가장 많은 것(같으면 먼저 적은 것). 조건이 모두 맞으면 성공(chance), 주 재료 조건의 절반 넘게 맞으면 부분 성공, 아니면 아무 일도 없다."
+  ],
+  "actions": [
+    { "id": "strike",  "name": "두드리기" },
+    { "id": "break",   "name": "깨뜨리기" },
+    { "id": "grind",   "name": "갈기" },
+    { "id": "cut",     "name": "자르기" },
+    { "id": "tear",    "name": "뜯기" },
+    { "id": "twist",   "name": "꼬기" },
+    { "id": "weave",   "name": "엮기" },
+    { "id": "shape",   "name": "빚기" },
+    { "id": "dry",     "name": "말리기" },
+    { "id": "roast",   "name": "굽기" },
+    { "id": "burn",    "name": "태우기" },
+    { "id": "melt",    "name": "녹이기" },
+    { "id": "mix",     "name": "섞기" },
+    { "id": "soak",    "name": "담그기" },
+    { "id": "boil",    "name": "끓이기" },
+    { "id": "bury",    "name": "묻어 두기" },
+    { "id": "pile",    "name": "쌓기" }
+  ],
+  "heat_names": [ "불 없음", "맨불(모닥불)", "가둔 불(돌 화덕)", "숯 + 가둔 불" ],
+  "generic_hints": {
+    "heat":      "불이 모자랐다 — 불을 가두거나(돌 화덕) 숯을 쓰면 더 세질 것 같다",
+    "dries":     "덜 말랐다 — 더 말린 뒤에 해 본다",
+    "moldable":  "덜 말랐다 — 더 말린 뒤에 해 본다",
+    "sharpens":  "날이 서지 않는다 — 날이 잘 서는 돌(부싯돌 · 흑요석)을 찾는다",
+    "splits":    "쪼개지지 않는다 — 결을 따라 잘 쪼개지는 것을 찾는다",
+    "hardness":  "너무 무르다 — 더 단단한 것을 찾는다",
+    "toughness": "쉽게 부서진다 — 더 질긴 것을 찾는다",
+    "fibrous":   "실이 되지 않는다 — 풀 · 갈대 · 껍질처럼 실이 되는 것을 찾는다",
+    "bends":     "뚝뚝 끊어진다 — 잘 휘는 것을 찾는다",
+    "burns":     "타지 않는다 — 잘 타는 마른 것을 찾는다",
+    "edible":    "먹을 수 있는 것이 아니었다",
+    "melts":     "녹지 않는 것이다",
+    "reduces":   "불에 넣어도 금속이 나오지 않는다",
+    "malleable": "두드려도 펴지지 않는다 — 녹여 만든 덩이를 두드린다",
+    "waterproof": "물이 샌다 — 물을 막는 것을 찾는다",
+    "holds":     "담을 수 없는 모양이다",
+    "fires_hard": "구워도 굳지 않는다 — 진흙을 쓴다",
+    "tool":      "손으로는 안 된다 — 더 단단한 돌로 두드린다",
+    "with":      "둘째 재료가 맞지 않다",
+    "tinder":    "불꽃은 튀었지만 붙지 않았다 — 더 마른 불쏘시개(마른 풀 · 자작나무 껍질)를 쓴다",
+    "chance":    "이번엔 안 됐다 — 손이 익으면 될 것 같다"
+  },
+  "wishes": [
+    { "id": "warmth",    "name": "따뜻함",   "props": ["burns"],                       "actions": ["strike", "grind", "burn"] },
+    { "id": "sharpness", "name": "날카로움", "props": ["sharpens", "splits"],          "actions": ["strike", "break", "grind"] },
+    { "id": "hard_tool", "name": "단단한 도구", "props": ["hardness", "toughness"],   "actions": ["break", "grind", "twist", "strike"] },
+    { "id": "container", "name": "그릇",     "props": ["holds", "moldable", "bends", "fibrous", "waterproof"], "actions": ["weave", "shape", "dry", "roast"] },
+    { "id": "cooking",   "name": "익히기",   "props": ["edible"],                      "actions": ["roast", "dry", "boil"], "fire": true },
+    { "id": "carry",     "name": "나르기",   "props": ["fibrous", "bends", "holds"],   "actions": ["weave", "twist"] },
+    { "id": "shiny",     "name": "반짝이는 돌", "props": ["melts", "reduces", "malleable"], "actions": ["melt", "strike"], "fire": true }
+  ],
+  "rules": [
+    { "id": "flake",        "name": "돌을 깨뜨려 날을 낸다",     "action": "strike", "input": { "splits": 3, "sharpens": 3 }, "tool": { "hardness": 3 }, "result": "flake", "count": 2, "uses": 1, "time_min": 40, "skill": "crafting",
+      "partial": { "sharpens": { "text": "쪼개지긴 했지만 날이 서지 않았다", "result": "broken_stone" }, "splits": { "text": "깨지지 않고 튕겨 나갔다" }, "tool": { "text": "손으로 쳐서는 깨지지 않았다" } } },
+    { "id": "scraper",      "name": "얇은 돌을 쳐서 긁개를 만든다", "action": "strike", "input": { "splits": 2, "sharpens": 2, "hardness": 2 }, "tool": { "hardness": 3 }, "result": "scraper", "count": 1, "uses": 1, "time_min": 40, "skill": "crafting",
+      "partial": { "sharpens": { "text": "쪼개지긴 했지만 날이 서지 않았다", "result": "broken_stone" } } },
+    { "id": "sparks",       "name": "단단한 돌을 부딪쳐 불씨를 얻는다", "action": "strike", "input": { "hardness": 4 }, "with": { "hardness": 4 }, "tinder": 5, "chance": 7, "result": "ember", "count": 1, "uses": 0, "time_min": 50, "skill": "research",
+      "partial": { "tinder": { "text": "불꽃은 튀었지만 붙지 않았다", "hint": "더 마른 불쏘시개(마른 풀 · 자작나무 껍질)가 있어야 붙을 것 같다" }, "chance": { "text": "불꽃이 튀었지만 금방 꺼졐다", "hint": "불꽃이 튄다 — 더 해 보면 붙을 것 같다" }, "with": { "text": "돌이 부서지기만 했다" } } },
+    { "id": "copper_blade", "name": "구리 덩이를 두드려 날을 만든다", "action": "strike", "input": { "malleable": 4 }, "tool": { "hardness": 3 }, "result": "copper_blade", "count": 1, "uses": 1, "time_min": 90, "skill": "crafting",
+      "partial": { "malleable": { "text": "두드려도 펴지지 않고 깨졌다" } } },
+    { "id": "split_wood",   "name": "나무를 쪼개 장작을 만든다",   "action": "strike", "input": { "splits": 3, "burns": 3, "toughness": 3 }, "tool": { "sharp": 2 }, "result": "split_wood", "count": 3, "uses": 1, "time_min": 30, "skill": "crafting",
+      "partial": { "tool": { "text": "손으로는 쪼갤 수 없었다" } } },
+
+    { "id": "chopper",      "name": "단단한 돌을 깨서 찍개를 만든다", "action": "break", "input": { "hardness": 4, "toughness": 3 }, "tool": { "hardness": 3 }, "result": "chopper", "count": 1, "uses": 1, "time_min": 60, "skill": "crafting",
+      "partial": { "toughness": { "text": "산산이 부서졌다", "result": "broken_stone" }, "hardness": { "text": "무르게 바스러졌다" }, "tool": { "text": "손으로는 깰 수 없었다" } } },
+    { "id": "crack_coconut", "name": "딱딱한 열매를 깬다",        "action": "break", "input": { "hardness": 4, "edible": 1, "waterproof": 3 }, "tool": { "hardness": 3 }, "result": "cracked_coconut", "count": 1, "uses": 1, "time_min": 10, "skill": "cooking",
+      "partial": { "tool": { "text": "손으로는 깨지지 않았다", "hint": "단단한 돌로 치면 깨질 것 같다" } } },
+
+    { "id": "stone_knife",  "name": "돌 날을 갈아 돌칼을 만든다",  "action": "grind", "input": { "sharpens": 4, "sharp": 3 }, "with": { "hardness": 3 }, "result": "stone_knife", "count": 1, "uses": 1, "time_min": 90, "skill": "crafting",
+      "partial": { "sharpens": { "text": "갈아도 날이 서지 않았다" } } },
+    { "id": "ground_axe",   "name": "단단한 돌을 갈아 날을 만든다", "action": "grind", "input": { "hardness": 4, "toughness": 3 }, "with": { "hardness": 3 }, "result": "ground_axe", "count": 1, "uses": 1, "time_min": 180, "skill": "crafting",
+      "partial": { "toughness": { "text": "갈다가 부서졌다", "result": "broken_stone" } } },
+    { "id": "friction_fire", "name": "나무를 비벼 불씨를 얻는다",   "action": "grind", "input": { "burns": 3, "toughness": 3 }, "with": { "burns": 3 }, "tinder": 5, "chance": 5, "result": "ember", "count": 1, "uses": 0, "time_min": 60, "skill": "research",
+      "partial": { "tinder": { "text": "연기가 났지만 불이 붙지 않았다", "hint": "연기는 난다 — 아주 마른 불쏘시개가 있으면 붙을 것 같다" }, "chance": { "text": "뜨거워지고 연기가 났지만 불은 붙지 않았다", "hint": "연기가 난다 — 더 빨리, 더 오래 비비면 붙을 것 같다" } } },
+
+    { "id": "stick",        "name": "나무를 잘라 막대를 만든다",   "action": "cut", "input": { "toughness": 3, "splits": 2 }, "tool": { "sharp": 2 }, "result": "stick", "count": 2, "uses": 1, "time_min": 30, "skill": "crafting",
+      "partial": { "tool": { "text": "손으로는 자를 수 없었다", "hint": "날카로운 것이 있으면 자를 수 있을 것 같다" } } },
+    { "id": "bark_strip",   "name": "껍질을 뜯어 끈감을 얻는다",   "action": "tear", "input": { "tears": 3, "fibrous": 3 }, "result": "dry_grass", "count": 1, "uses": 1, "time_min": 15, "skill": "crafting" },
+
+    { "id": "cord",         "name": "실이 되는 것을 꼬아 끈을 만든다", "action": "twist", "input": { "fibrous": 3 }, "result": "cord", "count": 1, "uses": 2, "time_min": 40, "skill": "crafting",
+      "partial": { "fibrous": { "text": "뜯어지기만 하고 꼬이지 않았다" } } },
+    { "id": "hafted_axe",   "name": "돌날에 손잡이를 단다",       "action": "twist", "input": { "sharp": 2, "hardness": 4, "toughness": 3 }, "with": { "toughness": 4, "bends": 5 }, "result": "hafted_axe", "count": 1, "uses": 1, "with_uses": 1, "time_min": 60, "skill": "crafting",
+      "partial": { "with": { "text": "묶을 것이 없어 빠져 버렸다", "hint": "질기고 잘 휘는 끈이 있으면 묶을 수 있을 것 같다" }, "toughness": { "text": "묶다가 날이 부서졌다" } } },
+
+    { "id": "basket",       "name": "잘 휘는 것을 엮어 바구니를 만든다", "action": "weave", "input": { "bends": 3, "fibrous": 2 }, "result": "basket", "count": 1, "uses": 3, "time_min": 90, "skill": "crafting",
+      "partial": { "bends": { "text": "엮다가 뚝뚝 끊어졌다" }, "fibrous": { "text": "엮이지 않고 흩어졌다" } } },
+    { "id": "leaf_cup",     "name": "큰 잎을 접어 그릇을 만든다",   "action": "weave", "input": { "tears": 3, "waterproof": 2, "bends": 3 }, "result": "leaf_cup", "count": 1, "uses": 1, "time_min": 10, "skill": "crafting",
+      "partial": { "waterproof": { "text": "물이 다 새어 나갔다" } } },
+
+    { "id": "wet_pot",      "name": "진흙을 빚어 그릇 모양을 만든다", "action": "shape", "input": { "moldable": 4 }, "result": "wet_pot", "count": 1, "uses": 1, "time_min": 60, "skill": "crafting",
+      "partial": { "moldable": { "text": "빚어지지 않고 부서졌다", "hint": "물에 무른 진흙이라야 빚어진다" } } },
+
+    { "id": "dry_pot",      "name": "빚은 그릇을 말린다",          "action": "dry", "input": { "moldable": 2, "fires_hard": 3 }, "result": "dry_pot", "count": 1, "uses": 1, "time_min": 180, "skill": "crafting" },
+    { "id": "dry_grass",    "name": "풀을 말려 불쏘시개를 만든다",   "action": "dry", "input": { "fibrous": 3, "dries": 4 }, "result": "dry_grass", "count": 1, "uses": 1, "time_min": 120, "skill": "research" },
+    { "id": "dried_fruit",  "name": "열매를 말려 둔다",            "action": "dry", "input": { "edible": 3, "rots": 2 }, "input_max": { "poison": 1 }, "result": "dried_fruit", "count": 1, "uses": 1, "time_min": 150, "skill": "cooking" },
+
+    { "id": "pot",          "name": "마른 그릇을 불에 굽는다",     "action": "roast", "input": { "fires_hard": 3 }, "input_max": { "moldable": 1 }, "heat": 1, "result": "pot", "count": 1, "uses": 1, "time_min": 120, "skill": "crafting",
+      "partial": { "moldable": { "text": "굽다가 금이 갔다 — 덜 말랐다", "hint": "더 말린 뒤에 구워야 할 것 같다", "result": "cracked_pot" } } },
+    { "id": "cooked_fruit", "name": "열매를 불에 익힌다",          "action": "roast", "input": { "edible": 3 }, "input_max": { "poison": 1 }, "heat": 1, "result": "cooked_fruit", "count": 1, "uses": 1, "time_min": 20, "skill": "cooking",
+      "partial": { "heat": { "text": "불이 없어 익힐 수 없었다" } } },
+    { "id": "roasted_mushroom", "name": "버섯을 구워 독을 뺀다",   "action": "roast", "input": { "edible": 2, "poison": 2 }, "heat": 1, "result": "roasted_mushroom", "count": 1, "uses": 1, "time_min": 20, "skill": "cooking" },
+    { "id": "roasted_acorn", "name": "딱딱한 열매를 구워 먹을 수 있게 한다", "action": "roast", "input": { "edible": 1, "hardness": 3 }, "heat": 1, "result": "roasted_acorn", "count": 1, "uses": 1, "time_min": 25, "skill": "cooking" },
+    { "id": "spear",        "name": "막대 끝을 불에 그을려 뾰족하게 한다", "action": "roast", "input": { "toughness": 3, "burns": 2 }, "input_max": { "weight": 1, "edible": 0 }, "heat": 1, "result": "spear", "count": 1, "uses": 1, "time_min": 30, "skill": "crafting" },
+
+    { "id": "campfire",     "name": "불씨에 땔감을 얹어 불을 피운다", "action": "burn", "input": { "burns": 3 }, "with": { "burns": 5, "warm": 2 }, "result": "campfire", "count": 1, "uses": 1, "with_uses": 1, "time_min": 15, "skill": "research",
+      "partial": { "burns": { "text": "불씨가 옮겨 붙지 않고 꺼졌다", "hint": "잘 타는 마른 땔감(잔가지 · 마른 풀)을 쓴다" }, "with": { "text": "불씨가 없다" } } },
+    { "id": "charcoal",     "name": "가둔 불에서 나무를 태워 숯을 얻는다", "action": "burn", "input": { "burns": 4, "splits": 2 }, "heat": 2, "result": "charcoal", "count": 2, "uses": 1, "time_min": 120, "skill": "research",
+      "partial": { "heat": { "text": "다 타서 재만 남았다", "hint": "불을 가두면 다 타 버리지 않고 숯이 남을 것 같다", "result": "ash" } } },
+
+    { "id": "copper",       "name": "광석을 세찬 불에 녹여 구리를 얻는다", "action": "melt", "input": { "melts": 3, "reduces": 3 }, "heat": 3, "result": "copper_lump", "count": 1, "uses": 1, "time_min": 240, "skill": "research",
+      "partial": { "heat": { "text": "붉게 달아올랐지만 녹지 않았다", "hint": "불이 모자랐다 — 불을 가두고 숯을 쓰면 더 세질 것 같다" }, "melts": { "text": "달아오르기만 하고 아무것도 나오지 않았다" } } },
+
+    { "id": "stew",         "name": "그릇에 물과 먹을 것을 넣고 끓인다", "action": "boil", "input": { "edible": 2 }, "with": { "holds": 3, "waterproof": 4 }, "heat": 1, "result": "stew", "count": 1, "uses": 1, "time_min": 60, "skill": "cooking",
+      "partial": { "with": { "text": "물을 담아 불에 올릴 것이 없었다", "hint": "물을 막는 그릇(토기)이 있어야 끓일 수 있다" } } },
+
+    { "id": "hearth",       "name": "모닥불을 돌로 둘러 불을 가둔다", "action": "pile", "input": { "hardness": 3, "weight": 3 }, "heat": 1, "result": "hearth", "count": 1, "uses": 4, "time_min": 60, "skill": "building",
+      "partial": { "heat": { "text": "불이 없는 자리에 돌만 쌓였다" }, "hardness": { "text": "돌이 불에 바스러졌다" } } }
+  ]
+}

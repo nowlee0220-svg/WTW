@@ -289,7 +289,12 @@ public sealed partial class PeopleSim
         {
             var life = Provinces[cell];
             Provinces.Remove(cell);
-            Dormant[cell] = new DormantProvince(cell, life.Stocks.Select(kv => (kv.Key, kv.Value)).ToArray(), life.Revealed.ToArray(), life.People);
+            Dormant[cell] = new DormantProvince(cell, life.Stocks.Select(kv => (kv.Key, kv.Value)).ToArray(), life.Revealed.ToArray(), life.People)
+            {
+                Fires = life.Fires.Select(kv => (kv.Key, kv.Value)).ToArray(),
+                Ground = life.Items.SelectMany(kv => kv.Value.Select(c => (kv.Key, c.Item, c.Count))).ToArray(),
+                Dug = life.Dug.ToArray(),
+            };
         }
         _lastLife = null;
     }
@@ -311,8 +316,13 @@ public sealed partial class PeopleSim
         Provinces.TryGetValue(cell, out var l) ? l.People : Dormant.TryGetValue(cell, out var d) ? d.People : Array.Empty<Person>();
 }
 
-/// <summary>잠든 지방: 딴 몫(타일 번호 순) · 걷힌 숨김 · 그곳의 (죽은) 사람.</summary>
-public sealed record DormantProvince(int Cell, (int Tile, TileStock Stock)[] Stocks, int[] Revealed, List<Person> People);
+/// <summary>잠든 지방: 딴 몫(타일 번호 순) · 걷힌 숨김 · 그곳의 (죽은) 사람 · (E4) 불 · 땅에 놓인 물건 · 캐낸 바위.</summary>
+public sealed record DormantProvince(int Cell, (int Tile, TileStock Stock)[] Stocks, int[] Revealed, List<Person> People)
+{
+    public (int Tile, Fire Fire)[] Fires { get; init; } = Array.Empty<(int, Fire)>();
+    public (int Tile, int Item, int Count)[] Ground { get; init; } = Array.Empty<(int, int, int)>();
+    public int[] Dug { get; init; } = Array.Empty<int>();
+}
 
 /// <summary>경계를 넘은 일 하나(화면 · 지구본의 이동 표시).</summary>
 public readonly record struct Crossing(long Tick, int Person, int From, int To, int Slot, int FromTile, int ToTile, Why Why);

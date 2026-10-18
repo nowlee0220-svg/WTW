@@ -38,6 +38,7 @@ public static class PeopleBench
             case "driftmodel": DriftModel.Run(I("langs", 200), Sx("k", "0.05,0.1,0.2"), Sx("r", "0.02,0.03,0.04"), I("t", 3)); break;
             case "dialect": DialectBench.Run(I("seeds", 20), I("families", 3), I("years", 500), I("cap", 60), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "one": One(I("people", 10), I("years", 5), (ulong)I("seed", 1), Sx("cell", "home"), o.ContainsKey("family"), I("cap", 300)); break;
+            case "discover": DiscoverBench.Run(I("seeds", 20), I("people", 10), I("years", 200), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300)); break;
             default: Console.WriteLine("모드: seeds | cap | one"); break;
         }
     }
@@ -68,7 +69,7 @@ public static class PeopleBench
         var homes = new List<int>();
         if (perProvince > 0) homes.AddRange(PeopleSamples.Ranked(p, (pl, c) => pl.Biome[c] is Wtw.Sim.Planet.Biome.Temperate or Wtw.Sim.Planet.Biome.Rainforest or Wtw.Sim.Planet.Biome.Grassland or Wtw.Sim.Planet.Biome.Savanna && pl.RiverSize[c] > 0 ? pl.Temp10[c] : int.MinValue)
             .Take((people + perProvince - 1) / perProvince));
-        else homes.Add(where == "home" ? PeopleSamples.Home(p) : where == "cold" ? PeopleSamples.Cold(p) : int.Parse(where));
+        else homes.Add(where == "home" ? PeopleSamples.Home(p) : where == "cold" ? PeopleSamples.Cold(p) : where == "cool" ? PeopleSamples.Cool(p) : int.Parse(where));
         run.Cell = homes[0];
         run.Biome = Wtw.Sim.Planet.PlanetNames.Of(p.Biome[homes[0]]);
         int left = people;
@@ -294,5 +295,6 @@ public static class PeopleBench
         Console.WriteLine("죽음: " + string.Join(" · ", Enumerable.Range(1, 6).Select(c => $"{CauseNames[c]} {r.Deaths[c]}")));
         if (_lastWorld is { } lw2) Console.WriteLine($"찾아간 방법: 보임 {lw2.People.Stats.FindHow[0]} · 기억 {lw2.People.Stats.FindHow[1]} · 따라감 {lw2.People.Stats.FindHow[2]} · 찾아다님 {lw2.People.Stats.FindHow[3]} · 물 없어 죽음 {lw2.People.Stats.NoWaterDeaths} · 먹을 것 없어 죽음 {lw2.People.Stats.NoFoodDeaths}");
         Console.WriteLine($"예약 {r.Events:N0} · 판단 {r.Decisions:N0} · 길 {r.Paths:N0} 실패 {r.PathFails:N0} · 사람 하루당 {r.Seconds * 1e6 / Math.Max(1, r.PersonDays):0}µs");
+        if (_lastWorld is { } lw3) Console.WriteLine(DiscoverBench.Summary(lw3));
     }
 }

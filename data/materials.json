@@ -1,8 +1,0 @@
-{
-  "_설명": "재료 견본 3개. 데이터 읽기·검사 시험용. 진짜 데이터는 E4 에서.",
-  "materials": [
-    { "id": "flint", "name": "부싯돌", "props": { "hardness": 4, "toughness": 1, "splits": 5, "sharpens": 5, "weight": 2 } },
-    { "id": "wood",  "name": "나무",   "props": { "burns": 4, "hardness": 2, "toughness": 4, "splits": 3, "weight": 2 } },
-    { "id": "clay",  "name": "진흙",   "props": { "fires_hard": 4, "moldable": 5, "weight": 3 } }
-  ]
-}

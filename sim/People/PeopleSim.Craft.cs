@@ -1,0 +1,1031 @@
+using Wtw.Sim.Core;
+using Wtw.Sim.Data;
+using Wtw.Sim.Provinces;
+using Wtw.Sim.Time;
+
+namespace Wtw.Sim.People;
+
+/// <summary>세계에서 처음 나온 것 하나(발견 목록): 어느 규칙을 · 누가 · 언제 · 어디서 · 어떤 바람에서 · 그 전의 부분 성공 · 사라졌나.</summary>
+public sealed class Discovery
+{
+    public int Rule, Person = -1, Cell = -1, Wish = -1, LangId = -1;
+    public long Tick;
+    public int PartialsBefore;
+    public readonly List<string> PartialTexts = new();
+    public bool Lost;
+    public long LostTick;
+    public int LostCount, RefoundCount;
+}
+
+/// <summary>
+/// (E4) 재료와 발견(기획서 8절). 필요가 실험을 끈다: 욕구 · 사건이 "~가 있었으면" 바람(Wish)을 남기고, 바람이 있으면 사람은 들고 있는 것 ·
+/// 주변의 것 가운데 그 바람에 맞을 것 같은 재료(속성으로 짐작)를 골라 행동을 해 본다(Experiment). 판정은 CraftData.Judge — 속성 × 행동 × 조건(불 세기 · 도구).
+/// 성공하면 그 사람이 그 법을 알고(Known), 곁에서 본 사람도 따라 할 수 있다. 부분 성공은 단서(Clue)로 남아 다음 실험을 이끈다.
+/// 아는 법은 바람이 생기면 바로 만든다(Craft). 발견은 세계 목록(Discoveries)에 남고, 아는 사람이 다 죽으면 사라진다.
+/// </summary>
+public sealed partial class PeopleSim
+{
+    public CraftData Craft { get; } = CraftData.Default;
+    public readonly SortedDictionary<int, Discovery> Discoveries = new();
+    /// <summary>발견 전의 부분 성공(규칙 → 횟수 · 글 몇 개). 저장한다.</summary>
+    public readonly SortedDictionary<int, (int Count, List<string> Texts)> Partials = new();
+    /// <summary>말마다 처음 그 법을 알게 된 시각(열쇠 = 말 번호 × 1000 + 규칙 번호).</summary>
+    public readonly SortedDictionary<long, long> GroupFirst = new();
+
+    public const long ExperimentCooldown = 4 * GameTime.TicksPerHour;
+    public const long EmberLife = 2 * GameTime.TicksPerHour;
+    public const int CarryCap = 12;
+    public const long FireSleepRange = 40;
+
+    private int W_warmth, W_sharp, W_hardTool, W_container, W_cooking, W_carry, W_shiny;
+    private int I_ember, I_campfire, I_hearth, I_charcoal, I_coconut, I_crackedCoconut, I_dryGrass, I_twigs, I_wood, I_splitWood, I_stone;
+    private int A_strike, A_break, A_grind, A_cut, A_twist, A_weave, A_shape, A_dry, A_roast, A_burn, A_melt, A_boil, A_pile, A_tear;
+    private CraftRule? R_campfire, R_hearth, R_crack;
+
+    private void InitCraft()
+    {
+        int W(string id) { foreach (var w in Craft.Wishes) if (w.Id == id) return w.Index; throw new InvalidOperationException($"crafting.json 에 바람 '{id}' 가 없습니다."); }
+        W_warmth = W("warmth"); W_sharp = W("sharpness"); W_hardTool = W("hard_tool"); W_container = W("container"); W_cooking = W("cooking"); W_carry = W("carry"); W_shiny = W("shiny");
+        I_ember = Craft.ItemIndex("ember"); I_campfire = Craft.ItemIndex("campfire"); I_hearth = Craft.ItemIndex("hearth"); I_charcoal = Craft.ItemIndex("charcoal");
+        I_coconut = Craft.ItemIndex("coconut"); I_crackedCoconut = Craft.ItemIndex("cracked_coconut"); I_dryGrass = Craft.ItemIndex("dry_grass"); I_twigs = Craft.ItemIndex("twigs");
+        I_wood = Craft.ItemIndex("wood"); I_splitWood = Craft.ItemIndex("split_wood"); I_stone = Craft.ItemIndex("stone");
+        A_strike = Craft.ActionIndex("strike"); A_break = Craft.ActionIndex("break"); A_grind = Craft.ActionIndex("grind"); A_cut = Craft.ActionIndex("cut"); A_twist = Craft.ActionIndex("twist");
+        A_weave = Craft.ActionIndex("weave"); A_shape = Craft.ActionIndex("shape"); A_dry = Craft.ActionIndex("dry"); A_roast = Craft.ActionIndex("roast"); A_burn = Craft.ActionIndex("burn");
+        A_melt = Craft.ActionIndex("melt"); A_boil = Craft.ActionIndex("boil"); A_pile = Craft.ActionIndex("pile"); A_tear = Craft.ActionIndex("tear");
+        R_campfire = Craft.Rule("campfire"); R_hearth = Craft.Rule("hearth"); R_crack = Craft.Rule("crack_coconut");
+        if (Craft.Wishes.Count > 8) throw new InvalidOperationException("바람은 8가지까지(Person.Wish 배열).");
+    }
+
+    // ───────── 바람 ─────────
+
+    internal void AddWish(Person p, int wish, int amount)
+    {
+        if (wish < 0 || p.Stage(Now) < LifeStage.Child) return;
+        if (p.Wish[wish] <= 0) p.WishSince[wish] = Now;
+        p.Wish[wish] = Math.Clamp(p.Wish[wish] + amount, 0, 100);
+    }
+
+    private int StrongestWish(Person p)
+    {
+        int best = -1, bv = 0;
+        for (int w = 0; w < Craft.Wishes.Count; w++) if (p.Wish[w] > bv) { bv = p.Wish[w]; best = w; }
+        return best;
+    }
+
+    public int WishStrength(Person p, string id) { foreach (var w in Craft.Wishes) if (w.Id == id) return p.Wish[w.Index]; return 0; }
+
+    /// <summary>하루 경계: 바람은 천천히 식는다(이루어지지 않아도 잊는다), 불씨는 두 시간이면 꺼진다.</summary>
+    private void CraftDaily(Person p)
+    {
+        for (int w = 0; w < Craft.Wishes.Count; w++) p.Wish[w] = p.Wish[w] * 4 / 5;
+    }
+
+    // ───────── 속성 도우미 ─────────
+
+    private int[] PropsOf(int item) => (uint)item < (uint)Craft.ItemProps.Length ? Craft.ItemProps[item] : new int[Craft.Properties.Count];
+    private int Prop(int item, int prop) => Craft.Prop(item, prop);
+    private bool IsMade(int item) => (uint)item < (uint)Craft.Catalog.Items.Count && Craft.Catalog.Items[item].Kind == "made";
+
+    public int CarryWeight(Person p) { int w = 0; foreach (var c in p.Carry) w += Prop(c.Item, Craft.P_weight) * c.Count; return w; }
+    public int CarryCapOf(Person p) { int cap = CarryCap; foreach (var c in p.Carry) { if (Prop(c.Item, Craft.P_holds) >= 3) cap += 8; } return cap + Ability(p, PeopleData.Str) / 2; }
+
+    /// <summary>들고 있는 것 중 속성 prop 이 가장 높은 것(min 이상). except 두 개는 빼고. 없으면 −1.</summary>
+    private int BestCarried(Person p, int prop, int min = 1, int except1 = -1, int except2 = -1)
+    {
+        int best = -1, bv = min - 1;
+        foreach (var c in p.Carry)
+        {
+            if (c.Item == except1 || c.Item == except2) continue;
+            int v = Prop(c.Item, prop);
+            if (v > bv || (v == bv && best >= 0 && c.Item < best)) { bv = v; best = c.Item; }
+        }
+        return best;
+    }
+
+    /// <summary>들고 있는 도구 중 가장 좋은 것(날이 섰거나 단단한 만든 것). 없으면 −1.</summary>
+    public int BestTool(Person p, int prop, int min)
+    {
+        int best = -1, bv = min - 1;
+        foreach (var c in p.Carry)
+        {
+            int v = Prop(c.Item, prop);
+            if (v > bv) { bv = v; best = c.Item; }
+        }
+        return best;
+    }
+
+    public bool HasHardTool(Person p) { foreach (var c in p.Carry) if (IsMade(c.Item) && Prop(c.Item, Craft.P_hardness) >= 4 && Prop(c.Item, Craft.P_sharp) >= 2) return true; return false; }
+    public bool HasSharpTool(Person p) => BestTool(p, Craft.P_sharp, 2) >= 0;
+
+    private void WearTool(Person p, int tool, Pcg32 rng)
+    {
+        if (tool < 0 || !IsMade(tool)) return;
+        int tough = Prop(tool, Craft.P_toughness);
+        if (rng.NextInt(100) < 100 / (8 + tough * 10)) p.RemoveCarry(tool, 1);
+    }
+
+    // ───────── 판단에서 ─────────
+
+    /// <summary>실험을 해 볼 만한가(점수). 바람이 세거나 호기심이 많을 때, 낮에, 쉬었다가.</summary>
+    private int ExperimentScore(Person p, ProvinceLife life)
+    {
+        if (p.Stage(Now) < LifeStage.Child || life.IsNight(Now)) return int.MinValue;
+        long cd = ExperimentCooldown * (p.HasTrait(T_curious) ? 1 : p.HasTrait(T_stubborn) ? 4 : 2);
+        if (Now - p.LastExperiment < cd) return int.MinValue;
+        int w = StrongestWish(p);
+        int s = (w >= 0 ? p.Wish[w] / 3 : 0) + (p.HasTrait(T_curious) ? 12 : 0) - (p.HasTrait(T_stubborn) ? 10 : 0) + (Ability(p, PeopleData.Int) - 5);
+        if (w < 0 && !p.HasTrait(T_curious)) return int.MinValue;
+        return s;
+    }
+
+    /// <summary>바람이 있고 아는 법이 있으면 만든다(점수).</summary>
+    private int CraftScore(Person p)
+    {
+        if (p.Known.Count == 0 || p.Stage(Now) < LifeStage.Child) return int.MinValue;
+        int w = StrongestWish(p);
+        return w < 0 ? int.MinValue : p.Wish[w] / 2 + 8;
+    }
+
+    /// <summary>실험 시작(또는 재료부터 모으기). 못 하면 false.</summary>
+    private bool TryExperiment(Person p)
+    {
+        var rng = Rng(p.Cell);
+        int wish = StrongestWish(p);
+        if (wish < 0) wish = rng.NextInt(Craft.Wishes.Count); // 호기심: 아무 바람이나
+        return Plan(p, wish, known: false, rng);
+    }
+
+    private bool TryCraftKnown(Person p)
+    {
+        var rng = Rng(p.Cell);
+        // 바람 센 순서로 아는 법을 찾는다
+        var order = Enumerable.Range(0, Craft.Wishes.Count).Where(w => p.Wish[w] > 0).OrderByDescending(w => p.Wish[w]).ThenBy(w => w).ToList();
+        foreach (int w in order) if (Plan(p, w, known: true, rng)) return true;
+        return false;
+    }
+
+    private bool ServesWish(CraftRule r, WishDef w)
+    {
+        if (r.Result < 0) return false;
+        foreach (int pr in w.Props) if (Prop(r.Result, pr) > 0) return true;
+        if (w.Index == W_warmth && (r.Result == I_ember || r.Result == I_campfire || r.Result == I_hearth)) return true;
+        return false;
+    }
+
+    /// <summary>
+    /// 계획: 바람 wish 에 맞는 행동 · 재료를 고른다. known 이면 아는 법 가운데서(없으면 false). 재료가 없으면 재료부터 얻으러 간다(Material).
+    /// 불이 필요하면 불가로 간다. 계획이 서면 Experiment/Craft 로 걸어가거나 제자리에서 시작한다.
+    /// </summary>
+    private bool Plan(Person p, int wish, bool known, Pcg32 rng)
+    {
+        var life = Life(p.Cell);
+        var wd = Craft.Wishes[wish];
+        int here = p.Tile(Now);
+        p.PlanAction = p.PlanInput = p.PlanWith = p.PlanTool = p.PlanRule = -1; p.PlanWish = wish; p.PlanHeat = 0;
+        CraftRule? rule = null;
+        int action;
+        Clue? follow = null;
+        if (known)
+        {
+            // 아는 법 중 이 바람에 맞고 재료가 있는 것(들고 있는 것으로 주 재료 조건이 맞는 것 우선)
+            CraftRule? best = null; int bs = int.MinValue;
+            foreach (var k in p.Known)
+            {
+                var r = Craft.Rules[k.Rule];
+                if (!ServesWish(r, wd) || r.Result == I_ember && !NeedsFire(p, life)) continue;
+                if (r.Result == I_hearth && life.Fires.TryGetValue(NearestFireAny(life, here), out var hf) && hf.Kind == 2) continue;
+                int sc = HasInputFor(p, r) ? 20 : 0;
+                sc += r.Chance;
+                if (r.Heat > 0 && life.NearestFire(here % S, here / S, Now, 60) < 0) continue;
+                if (sc > bs) { bs = sc; best = r; }
+            }
+            if (best is null) return false;
+            rule = best; action = rule.Action;
+        }
+        else
+        {
+            // 단서를 따라가기: 이 바람에 맞는 규칙의 단서가 있으면 반쯤은 그 행동을 다시(모자랐던 것을 바꿔서)
+            for (int i = p.Clues.Count - 1; i >= 0 && follow is null; i--)
+            {
+                var c = p.Clues[i];
+                var r = Craft.Rules[c.Rule];
+                if (ServesWish(r, wd) && Array.IndexOf(wd.Actions, r.Action) >= 0 && rng.NextInt(100) < 55) follow = c;
+            }
+            action = follow is { } f ? Craft.Rules[f.Rule].Action : PickAction(p, wd, life, here, rng);
+            if (action < 0) return false;
+        }
+        // 불이 필요한 바람인데 불이 없다 → 먼저 불을 얻어야 한다(따뜻함 바람과 같은 실험)
+        if (!known && wd.NeedsFire && life.NearestFire(here % S, here / S, Now, 60) < 0)
+        {
+            AddWish(p, W_warmth, 10);
+            wd = Craft.Wishes[W_warmth]; wish = W_warmth; p.PlanWish = wish;
+            action = follow is { } f2 && ServesWish(Craft.Rules[f2.Rule], wd) ? Craft.Rules[f2.Rule].Action : PickAction(p, wd, life, here, rng);
+            if (action < 0) return false;
+        }
+        // 불이 있어야 하나
+        bool needFire = rule is not null ? rule.Heat > 0 : wd.NeedsFire || action == A_roast || action == A_melt || action == A_boil || action == A_pile || (action == A_burn && p.CarryCount(I_ember) == 0);
+        if (action == A_burn && p.CarryCount(I_ember) == 0 && rule is null) { needFire = false; }
+        // 단서가 "불이 모자람"이면: 모닥불이 있고 돌이 있으면 화덕을 쌓아 본다
+        if (follow is { Key: "heat" } && !known)
+        {
+            int ft = life.NearestFire(here % S, here / S, Now, 60);
+            if (ft >= 0 && life.Fires[ft].Kind == 1 && p.CarryCount(I_stone) + CountCarried(p, Craft.P_hardness, 3, Craft.P_weight, 3) >= 4) { action = A_pile; needFire = true; }
+            else if (ft >= 0 && life.Fires[ft].Kind == 2 && !life.Fires[ft].Charcoal && p.CarryCount(I_charcoal) > 0) { return StartTend(p, ft, I_charcoal, Why.Clue); }
+        }
+        // 재료 고르기
+        var inPref = InputPrefs(action, wish, p);
+        int input = PickCarried(p, inPref, -1, -1, rule?.Input);
+        if (follow is { } fc && input >= 0 && Craft.PropIndex(fc.Key) is int pk && pk >= 0 && Prop(input, pk) <= Prop(fc.Input, pk))
+        {
+            // 단서: 그 속성이 더 높은 다른 재료로
+            int alt = BestCarried(p, pk, Prop(fc.Input, pk) + 1, fc.Input);
+            if (alt >= 0) input = alt; else { if (StartMaterialFor(p, pk, Prop(fc.Input, pk) + 1, Why.Clue)) return true; }
+        }
+        if (input < 0)
+        {
+            // 재료가 없다 → 그 속성이 높은 것을 얻으러
+            foreach (int pr in inPref) if (StartMaterialFor(p, pr, 2, WishWhy(wish))) return true;
+            return false;
+        }
+        int with = -1;
+        var withPref = WithPrefs(action, wish);
+        if (withPref.Length > 0 || rule is { HasWith: true })
+        {
+            with = PickCarried(p, withPref, input, -1, rule?.With);
+            if (with < 0 && rule is { HasWith: true }) { foreach (var (pr, _) in rule.With) if (StartMaterialFor(p, pr, rule.With[pr], Why.KnowHow)) return true; return false; }
+            if (with < 0 && (action == A_strike && wish == W_warmth || action == A_grind) && !known) { foreach (int pr in withPref) if (StartMaterialFor(p, pr, 3, WishWhy(wish))) return true; return false; }
+        }
+        int tool = -1;
+        if (action == A_strike || action == A_break || action == A_grind) tool = BestCarried(p, Craft.P_hardness, 3, input, with);
+        else if (action == A_cut) tool = BestCarried(p, Craft.P_sharp, 2, input, with);
+        if (rule is { HasTool: true } && tool < 0) { foreach (var (pr, mn) in rule.Tool) if (StartMaterialFor(p, pr, mn, Why.KnowHow)) return true; return false; }
+        if (needFire)
+        {
+            int ft = life.NearestFire(here % S, here / S, Now, 60);
+            if (ft < 0) return false;
+            int spot = Beside(p, ft);
+            p.PlanAction = action; p.PlanInput = input; p.PlanWith = with; p.PlanTool = tool; p.PlanRule = rule?.Index ?? -1;
+            if (spot != here && !WalkTo(p, spot)) return false;
+            SetWhy(p, known ? Act.Craft : Act.Experiment, known ? Why.KnowHow : follow is not null ? Why.Clue : WishWhy(wish), wish);
+            p.Target = ft;
+            if (spot == here) BeginWork(p);
+            return true;
+        }
+        p.PlanAction = action; p.PlanInput = input; p.PlanWith = with; p.PlanTool = tool; p.PlanRule = rule?.Index ?? -1;
+        SetWhy(p, known ? Act.Craft : Act.Experiment, known ? Why.KnowHow : follow is not null ? Why.Clue : WishWhy(wish), wish);
+        p.Target = here;
+        BeginWork(p);
+        return true;
+    }
+
+    /// <summary>바람의 행동 중 지금 해 볼 수 있는 것(태우기는 불씨가 있을 때, 불을 쓰는 행동은 불이 가까울 때)에서 하나.</summary>
+    private int PickAction(Person p, WishDef wd, ProvinceLife life, int here, Pcg32 rng)
+    {
+        bool fire = life.NearestFire(here % S, here / S, Now, 60) >= 0, ember = p.CarryCount(I_ember) > 0;
+        var ok = new List<int>();
+        foreach (int a in wd.Actions)
+        {
+            if (a == A_burn && !ember && !fire) continue;
+            if ((a == A_roast || a == A_melt || a == A_boil || a == A_pile) && !fire) continue;
+            ok.Add(a);
+        }
+        return ok.Count == 0 ? -1 : ok[rng.NextInt(ok.Count)];
+    }
+
+    private bool NeedsFire(Person p, ProvinceLife life) => life.NearestFire(p.Tile(Now) % S, p.Tile(Now) / S, Now, 25) < 0;
+    private int NearestFireAny(ProvinceLife life, int here) => life.NearestFire(here % S, here / S, Now, 60, litOnly: false);
+
+    private int CountCarried(Person p, int prop, int min, int prop2, int min2)
+    {
+        int n = 0;
+        foreach (var c in p.Carry) if (Prop(c.Item, prop) >= min && Prop(c.Item, prop2) >= min2) n += c.Count;
+        return n;
+    }
+
+    private bool HasInputFor(Person p, CraftRule r)
+    {
+        foreach (var c in p.Carry)
+        {
+            bool ok = true;
+            foreach (var (pr, mn) in r.Input) if (Prop(c.Item, pr) < mn) { ok = false; break; }
+            if (ok) foreach (var (pr, mx) in r.InputMax) if (Prop(c.Item, pr) > mx) { ok = false; break; }
+            if (ok) return true;
+        }
+        return false;
+    }
+
+    /// <summary>행동 × 바람에 따라 주 재료로 고를 때 보는 속성(앞이 중요).</summary>
+    private int[] InputPrefs(int action, int wish, Person p)
+    {
+        var c = Craft;
+        if (action == A_strike)
+        {
+            if (wish == W_warmth) return new[] { c.P_hardness };
+            if (wish == W_shiny && BestCarried(p, c.P_malleable, 4) >= 0) return new[] { c.P_malleable };
+            if (wish == W_warmth || BestCarried(p, c.P_splits, 3) < 0 && BestCarried(p, c.P_burns, 3) >= 0 && HasSharpTool(p) && wish == W_warmth) return new[] { c.P_burns };
+            return new[] { c.P_sharpens, c.P_splits };
+        }
+        if (action == A_break) return wish == W_cooking ? new[] { c.P_hardness, c.P_edible } : new[] { c.P_hardness, c.P_toughness };
+        if (action == A_grind) return wish == W_warmth ? new[] { c.P_burns, c.P_toughness } : new[] { c.P_sharpens, c.P_sharp, c.P_hardness };
+        if (action == A_cut) return new[] { c.P_toughness, c.P_splits };
+        if (action == A_tear) return new[] { c.P_tears, c.P_fibrous };
+        if (action == A_twist) return wish == W_hardTool ? new[] { c.P_sharp, c.P_hardness } : new[] { c.P_fibrous };
+        if (action == A_weave) return new[] { c.P_bends, c.P_fibrous, c.P_tears };
+        if (action == A_shape) return new[] { c.P_moldable };
+        if (action == A_dry) return wish == W_cooking ? new[] { c.P_edible } : wish == W_container ? new[] { c.P_moldable, c.P_fires_hard } : new[] { c.P_fibrous, c.P_dries };
+        if (action == A_roast) return wish == W_cooking ? new[] { c.P_edible } : wish == W_container ? new[] { c.P_fires_hard } : new[] { c.P_toughness };
+        if (action == A_burn) return new[] { c.P_burns };
+        if (action == A_melt) return new[] { c.P_melts, c.P_reduces };
+        if (action == A_boil) return new[] { c.P_edible };
+        if (action == A_pile) return new[] { c.P_hardness, c.P_weight };
+        return new[] { c.P_edible };
+    }
+
+    private int[] WithPrefs(int action, int wish)
+    {
+        var c = Craft;
+        if (action == A_strike) return wish == W_warmth ? new[] { c.P_hardness } : Array.Empty<int>();
+        if (action == A_grind) return wish == W_warmth ? new[] { c.P_burns } : new[] { c.P_hardness };
+        if (action == A_twist && wish == W_hardTool) return new[] { c.P_bends, c.P_toughness };
+        if (action == A_boil) return new[] { c.P_holds, c.P_waterproof };
+        if (action == A_burn) return new[] { c.P_warm };
+        return Array.Empty<int>();
+    }
+
+    /// <summary>들고 있는 것 중 prefs 속성이 높은 것(앞 속성이 우선, 둘 다 0 이면 없음). must = 규칙 조건(있으면 그것을 만족하는 것 우선).</summary>
+    private int PickCarried(Person p, int[] prefs, int except1, int except2, SortedDictionary<int, int>? must)
+    {
+        int best = -1, bs = 0;
+        foreach (var c in p.Carry)
+        {
+            if (c.Item == except1 || c.Item == except2) continue;
+            int s = 0, k = prefs.Length;
+            foreach (int pr in prefs) { s += Prop(c.Item, pr) * k * 4; k--; }
+            if (must is not null)
+            {
+                bool ok = true;
+                foreach (var (pr, mn) in must) if (Prop(c.Item, pr) < mn) { ok = false; break; }
+                if (ok) s += 100; else if (prefs.Length == 0) continue;
+            }
+            if (s > bs) { bs = s; best = c.Item; }
+        }
+        return best;
+    }
+
+    private Why WishWhy(int wish) =>
+        wish == W_warmth ? Why.WantWarmth : wish == W_sharp ? Why.WantSharp : wish == W_hardTool ? Why.WantHardTool : wish == W_container ? Why.WantContainer :
+        wish == W_cooking ? Why.WantCooking : wish == W_carry ? Why.WantCarry : Why.WantShiny;
+
+    /// <summary>제자리에서 일을 시작한다(걸리는 시간 = 규칙의 시간 또는 실험 45~75분, 손재주 · 근면에 따라).</summary>
+    private void BeginWork(Person p)
+    {
+        var rng = Rng(p.Cell);
+        long min = p.PlanRule >= 0 ? Craft.Rules[p.PlanRule].TimeMin : 45 + rng.NextInt(30);
+        long dur = min * GameTime.TicksPerHour / 60 * WorkPercent(p) / 100;
+        DoStill(p, Math.Max(600, dur));
+    }
+
+    // ───────── 재료 얻기 ─────────
+
+    /// <summary>속성 prop 이 min 이상인 재료를 가까운 곳에서 얻으러 간다(주울 것 · 오브젝트의 다루는 법). 못 찾으면 false.</summary>
+    private bool StartMaterialFor(Person p, int prop, int min, Why why)
+    {
+        var life = Life(p.Cell);
+        if (CarryWeight(p) >= CarryCapOf(p)) { AddWish(p, W_carry, 15); return false; }
+        p.Position(Now, out int px, out int py);
+        int hx = px / 1000, hy = py / 1000;
+        // 1) 땅에 놓인 물건(죽은 사람이 남긴 것 등) 바로 곁
+        foreach (var (t, list) in life.Items)
+        {
+            if (Cheb(t, hy * S + hx) > 20 || !life.Paths.Reachable(hy * S + hx, t)) continue;
+            foreach (var (item, _) in list)
+                if (Prop(item, prop) >= min)
+                {
+                    if (!WalkTo(p, t)) break;
+                    SetWhy(p, Act.Material, why); p.Target = t; p.TargetB = -2; p.PlanItem = item;
+                    return true;
+                }
+        }
+        // 2) 주울 것(돌 · 도토리 — 몫이 있음)
+        bool sharp = HasSharpTool(p);
+        int bestTile = -1; long bd = long.MaxValue; int bestUse = -1, bestItem = -1;
+        int carryTile = life.NearestCarryWhere(hx, hy, Now, 30, h => Prop(h.ItemIndex, prop) >= min);
+        if (carryTile >= 0) { bestTile = carryTile; bd = ProvinceLife.D2(carryTile, hx, hy); bestUse = -1; bestItem = life.HarvestAt(carryTile)!.ItemIndex; }
+        // 3) 오브젝트의 다루는 법(베기는 날카로운 도구가 있어야)
+        var cat = Craft.Catalog;
+        int mt = life.NearestMaterial(hx, hy, 30, o =>
+        {
+            foreach (var u in cat.Objects[o].Uses)
+            {
+                if (u.Action.Id == "cut" && !sharp) continue;
+                if (u.Action.Id == "pick" || u.Action.Id == "gather") continue; // 먹을 것 · 주울 것은 몫으로
+                foreach (var y in u.Yields) if (Prop(Craft.ItemIndex(y.Id), prop) >= min) return true;
+            }
+            return false;
+        });
+        if (mt >= 0 && ProvinceLife.D2(mt, hx, hy) < bd)
+        {
+            int o = life.Map.ObjectAt(mt);
+            for (int ui = 0; ui < cat.Objects[o].Uses.Count && bestUse < 0; ui++)
+            {
+                var u = cat.Objects[o].Uses[ui];
+                if (u.Action.Id == "cut" && !sharp || u.Action.Id == "pick" || u.Action.Id == "gather") continue;
+                foreach (var y in u.Yields) { int it = Craft.ItemIndex(y.Id); if (Prop(it, prop) >= min) { bestTile = mt; bestUse = ui; bestItem = it; break; } }
+            }
+        }
+        if (bestTile < 0)
+        {
+            // 베어야 얻는 것(나무)인데 도구가 없다 → 날카로움이 아쉽다
+            if (!sharp && life.NearestMaterial(hx, hy, 30, o => cat.Objects[o].Uses.Any(u => u.Action.Id == "cut" && u.Yields.Any(y => Prop(Craft.ItemIndex(y.Id), prop) >= min))) >= 0) AddWish(p, W_sharp, 25);
+            return false;
+        }
+        int goal = bestUse < 0 ? bestTile : Beside(p, bestTile);
+        if (!WalkTo(p, goal)) return false;
+        SetWhy(p, Act.Material, why);
+        p.Target = bestTile; p.TargetB = bestUse; p.PlanItem = bestItem;
+        return true;
+    }
+
+    /// <summary>재료 자리에 닿았다: 조금 걸린 뒤 얻는다.</summary>
+    private void ArriveMaterial(Person p) => DoStill(p, (p.TargetB >= 0 ? 300L : 200L) * WorkPercent(p) / 100);
+
+    private void FinishMaterial(Person p)
+    {
+        var life = Life(p.Cell);
+        int t = p.Target;
+        if (p.TargetB == -2)
+        {
+            // 땅에 놓인 것을 집는다
+            if (life.Items.TryGetValue(t, out var list))
+            {
+                int k = list.FindIndex(c => c.Item == p.PlanItem);
+                if (k >= 0)
+                {
+                    int n = Math.Min(list[k].Count, 3);
+                    p.AddCarry(p.PlanItem, n);
+                    if (list[k].Count == n) list.RemoveAt(k); else list[k] = (p.PlanItem, list[k].Count - n);
+                    if (list.Count == 0) life.Items.Remove(t);
+                }
+            }
+            return;
+        }
+        if (p.TargetB < 0)
+        {
+            if (life.HarvestAt(t) is { } h && life.Take(t, 1, Now) > 0) p.AddCarry(h.ItemIndex, 1);
+            return;
+        }
+        int o = life.Map.ObjectAt(t);
+        if (o < 0 || p.TargetB >= Craft.Catalog.Objects[o].Uses.Count) return;
+        var use = Craft.Catalog.Objects[o].Uses[p.TargetB];
+        var rng = Rng(p.Cell);
+        foreach (var y in use.Yields)
+        {
+            int it = Craft.ItemIndex(y.Id);
+            if (it < 0) continue;
+            p.AddCarry(it, use.Action.Id == "cut" ? 2 : 1);
+        }
+        if (use.Action.Id == "cut") WearTool(p, BestTool(p, Craft.P_sharp, 2), rng);
+    }
+
+    // ───────── 실험 · 만들기의 끝 ─────────
+
+    /// <summary>실험 · 만들기가 끝났다: 판정하고 결과를 남긴다.</summary>
+    private void FinishWork(Person p)
+    {
+        var life = Life(p.Cell);
+        var rng = Rng(p.Cell);
+        int here = p.Tile(Now);
+        int action = p.PlanAction, input = p.PlanInput, with = p.PlanWith, tool = p.PlanTool, wish = p.PlanWish;
+        p.LastExperiment = Now;
+        p.Experiments++;
+        if (action < 0 || input < 0 || p.CarryCount(input) == 0) return;
+        if (with >= 0 && p.CarryCount(with) == 0) with = -1;
+        if (tool >= 0 && p.CarryCount(tool) == 0) tool = -1;
+        int heat = life.HeatAt(here, Now);
+        int tinderItem = BestCarried(p, Craft.P_burns, 1, input, with);
+        int tinder = tinderItem >= 0 ? Prop(tinderItem, Craft.P_burns) : 0;
+        bool known = p.PlanRule >= 0;
+        int skill = known ? Craft.Rules[p.PlanRule].Skill : -1;
+        int bonus = (Ability(p, PeopleData.Dex) - 5) * 3 + (Ability(p, PeopleData.Int) - 5) * 2 + (skill >= 0 ? p.SkillLevel(skill) * 3 : 0) + (known ? 30 : 0);
+        var outcome = Craft.Judge(action, PropsOf(input), with >= 0 ? PropsOf(with) : null, tool >= 0 ? PropsOf(tool) : null, heat, tinder, rng.NextInt(100), bonus);
+        if (known) Stats.Crafts++; else Stats.Experiments++;
+        WearTool(p, tool, rng);
+        if (outcome.Rule is null) { AddThought(p, H_failedTry); return; }
+        var rule = outcome.Rule;
+        if (outcome.Success)
+        {
+            // 재료를 쓴다
+            if (rule.Uses > 0) p.RemoveCarry(input, Math.Min(rule.Uses, p.CarryCount(input)));
+            if (rule.WithUses > 0 && with >= 0) p.RemoveCarry(with, Math.Min(rule.WithUses, p.CarryCount(with)));
+            if (rule.Tinder > 0 && tinderItem >= 0) p.RemoveCarry(tinderItem, 1);
+            if (rule.Skill >= 0) GainSkill(p, rule.Skill, known ? 10 : 25);
+            ApplyResult(p, rule, here, rng);
+            if (!known || !p.Knows(rule.Index)) Learn(p, rule, wish, input, with, -1);
+            else AddThought(p, H_madeThing);
+            // 바람이 조금 풀린다
+            if (wish >= 0) p.Wish[wish] = Math.Max(0, p.Wish[wish] - 40);
+            TeachWatchers(p, rule, wish, input, with);
+            return;
+        }
+        if (outcome.IsPartial)
+        {
+            var pd = outcome.Partial!;
+            Stats.Partials++;
+            if (pd.Result >= 0)
+            {
+                p.RemoveCarry(input, 1);
+                p.AddCarry(pd.Result, 1);
+            }
+            p.Clues.Add(new Clue { Rule = rule.Index, Key = pd.Key, Tick = Now, Input = input });
+            if (p.Clues.Count > Person.ClueMemory) p.Clues.RemoveAt(0);
+            if (!Discoveries.ContainsKey(rule.Index) || Discoveries[rule.Index].Lost)
+            {
+                if (!Partials.TryGetValue(rule.Index, out var pr)) Partials[rule.Index] = pr = (0, new List<string>());
+                pr.Count++;
+                if (pr.Texts.Count < 4 && !pr.Texts.Contains(pd.Text)) pr.Texts.Add(pd.Text);
+                Partials[rule.Index] = pr;
+            }
+            AddThought(p, H_halfSuccess);
+            AddBio(p, BioKind.PartialSuccess, rule.Index, input);
+            if (rule.Skill >= 0) GainSkill(p, rule.Skill, 6);
+            return;
+        }
+        AddThought(p, H_failedTry);
+    }
+
+    private void GainSkill(Person p, int skill, int xp)
+    {
+        if (skill < 0) return;
+        if (p.HasTrait(T_nervous)) xp = xp * 11 / 10;
+        p.SkillXp[skill] += xp;
+    }
+
+    /// <summary>결과를 세계에 놓는다: 물건은 들고(무게가 넘으면 땅에), 불씨는 바로 불을 피워 보고, 모닥불 · 화덕은 타일에.</summary>
+    private void ApplyResult(Person p, CraftRule rule, int here, Pcg32 rng)
+    {
+        var life = Life(p.Cell);
+        int res = rule.Result;
+        if (res == I_ember)
+        {
+            p.AddCarry(I_ember, 1); p.EmberTick = Now;
+            TryLightWithEmber(p, here, rng);
+            return;
+        }
+        if (res == I_campfire)
+        {
+            int fuel = p.PlanInput;
+            long dur = FuelTicks(fuel);
+            if (p.CarryCount(I_ember) > 0) { p.RemoveCarry(I_ember, 1); p.EmberTick = -1; }
+            life.LightFire(here, 1, dur, Now, p.Id);
+            Stats.FiresLit++;
+            AddBio(p, BioKind.LitFire, -1, here);
+            return;
+        }
+        if (res == I_hearth)
+        {
+            int ft = p.Target >= 0 && life.Fires.ContainsKey(p.Target) ? p.Target : life.NearestFire(here % S, here / S, Now, 3);
+            if (ft >= 0)
+            {
+                var f = life.Fires[ft]; f.Kind = 2; life.Fires[ft] = f;
+                AddBio(p, BioKind.MadeThing, -1, I_hearth);
+            }
+            return;
+        }
+        if (res == I_charcoal && p.Target >= 0 && life.Fires.TryGetValue(p.Target, out var hf) && hf.Kind == 2)
+        {
+            // 가둔 불에서 태운 나무: 숯이 남고 불도 좀 더 탄다
+            hf.Fuel += 2 * GameTime.TicksPerHour; life.Fires[p.Target] = hf;
+        }
+        int count = rule.Count;
+        if (CarryWeight(p) + Prop(res, Craft.P_weight) * count > CarryCapOf(p) + 6) life.Drop(here, res, count);
+        else p.AddCarry(res, count);
+        AddBio(p, BioKind.MadeThing, -1, res);
+    }
+
+    /// <summary>땔감 하나가 타는 시간.</summary>
+    private long FuelTicks(int item)
+    {
+        int b = Prop(item, Craft.P_burns), w = Prop(item, Craft.P_weight);
+        if (item == I_charcoal) return 8 * GameTime.TicksPerHour;
+        return (long)((1 + w * 2) * (b >= 4 ? 1.0 : 0.6) * GameTime.TicksPerHour);
+    }
+
+    /// <summary>들고 있는 불씨로 불을 피운다(땔감이 있어야). 피웠으면 true.</summary>
+    private bool TryLightWithEmber(Person p, int here, Pcg32 rng)
+    {
+        if (p.CarryCount(I_ember) == 0) return false;
+        int fuel = BestCarried(p, Craft.P_burns, 3, I_ember);
+        if (fuel < 0) return false;
+        var life = Life(p.Cell);
+        if (!life.Walk[here]) return false;
+        if (R_campfire is null) return false;
+        var outcome = Craft.Judge(A_burn, PropsOf(fuel), PropsOf(I_ember), null, life.HeatAt(here, Now), 0, 0, 0);
+        if (!outcome.Success) { p.Clues.Add(new Clue { Rule = R_campfire.Index, Key = outcome.FailedKey, Tick = Now, Input = fuel }); return false; }
+        p.RemoveCarry(fuel, 1);
+        p.RemoveCarry(I_ember, 1); p.EmberTick = -1;
+        life.LightFire(here, 1, FuelTicks(fuel) + GameTime.TicksPerHour, Now, p.Id);
+        Stats.FiresLit++;
+        AddBio(p, BioKind.LitFire, -1, here);
+        if (!p.Knows(R_campfire.Index)) Learn(p, R_campfire, W_warmth, fuel, I_ember, -1);
+        TeachWatchers(p, R_campfire, W_warmth, fuel, I_ember);
+        return true;
+    }
+
+    // ───────── 아는 것 · 발견 ─────────
+
+    private void Learn(Person p, CraftRule rule, int wish, int input, int with, int from)
+    {
+        if (p.Knows(rule.Index)) return;
+        p.Known.Add(new Knowledge { Rule = rule.Index, Tick = Now, Wish = wish, Input = input, With = with, LearnedFrom = from });
+        bool worldFirst = !Discoveries.TryGetValue(rule.Index, out var d);
+        if (from < 0)
+        {
+            Stats.Discoveries++;
+            AddThought(p, H_discovered);
+            AddBio(p, BioKind.Discovered, rule.Index, wish);
+            if (worldFirst)
+            {
+                d = new Discovery { Rule = rule.Index, Person = p.Id, Cell = p.Cell, Wish = wish, Tick = Now, LangId = p.LangId };
+                if (Partials.TryGetValue(rule.Index, out var pr)) { d.PartialsBefore = pr.Count; d.PartialTexts.AddRange(pr.Texts); Partials.Remove(rule.Index); }
+                Discoveries[rule.Index] = d;
+                Notify(WorldEventKind.Discovery, p, rule.Index, $"세계에서 처음: {Hangul.I(DisplayName(p))} {Craft.ItemName(rule.Result)}{Verb(rule)} — {WishName(wish)} 때문에 {Craft.ActionName(rule.Action)}를 해 보다가" + (d.PartialsBefore > 0 ? $" (그 전에 거의 될 듯한 일 {d.PartialsBefore}번)" : ""));
+                GiveNickname(p, rule);
+            }
+            else if (d!.Lost)
+            {
+                d.Lost = false; d.RefoundCount++; Stats.Refound++;
+                if (Partials.TryGetValue(rule.Index, out var pr2)) { d.PartialsBefore += pr2.Count; Partials.Remove(rule.Index); }
+                Notify(WorldEventKind.Discovery, p, rule.Index, $"{Hangul.I(DisplayName(p))} 잊혔던 {Craft.ItemName(rule.Result)}{Verb(rule)} 다시 찾아냈습니다 ({d.LostCount}번째 잃고 되찾음)");
+            }
+        }
+        else
+        {
+            Stats.Watched++;
+            AddBio(p, BioKind.LearnedWatching, from, rule.Index);
+        }
+        // 그 무리의 말에 낱말이 생긴다(처음 알게 된 무리) — 보고 배웠으면 가르친 사람의 말에서 빌려 온다
+        NewWordFor(p, rule, from);
+        long key = (long)p.LangId * 1000 + rule.Index;
+        if (!GroupFirst.ContainsKey(key))
+        {
+            GroupFirst[key] = Now;
+            if (!worldFirst && from < 0) Notify(WorldEventKind.Discovery, p, rule.Index, $"이 무리에서 처음: {Hangul.I(DisplayName(p))} {Craft.ItemName(rule.Result)}{Verb(rule)}");
+        }
+    }
+
+    private string Verb(CraftRule r) => r.Result == I_campfire ? "을 피웠습니다" : r.Result == I_ember ? "를 얻었습니다" : r.Result == I_hearth ? "을 만들었습니다" : Hangul.J(Craft.ItemName(r.Result), "을", "를") + " 만들었습니다";
+    public string WishName(int wish) => (uint)wish < (uint)Craft.Wishes.Count ? Craft.Wishes[wish].Name : "호기심";
+
+    /// <summary>곁에서 본 사람(6타일 안, 깨어 있는 아이 이상)은 따라 할 수 있다 — 간단히, 그 자리에서 본 경우만.</summary>
+    private void TeachWatchers(Person p, CraftRule rule, int wish, int input, int with)
+    {
+        var life = Life(p.Cell);
+        int here = p.Tile(Now);
+        foreach (var q in life.People)
+        {
+            if (q.Dead || q.Id == p.Id || q.Asleep || q.Carrier >= 0 || q.Stage(Now) < LifeStage.Child || q.Knows(rule.Index)) continue;
+            if (Cheb(q.Tile(Now), here) > 6) continue;
+            Learn(q, rule, wish, input, with, p.Id);
+        }
+    }
+
+    /// <summary>하루 경계: 아는 사람이 다 죽은 발견은 사라진다(E5 의 되찾음은 다시 발견해야).</summary>
+    private void CheckLostDiscoveries()
+    {
+        var known = new HashSet<int>();
+        foreach (var p in _all) if (!p.Dead) foreach (var k in p.Known) known.Add(k.Rule);
+        foreach (var (rule, d) in Discoveries)
+        {
+            if (d.Lost || known.Contains(rule)) continue;
+            d.Lost = true; d.LostTick = Now; d.LostCount++; Stats.Lost++;
+            var who = Get(d.Person);
+            Notify(WorldEventKind.DiscoveryLost, who ?? _all[0], rule, $"{Craft.ItemName(Craft.Rules[rule].Result)} 만드는 법이 사라졌습니다 — 아는 사람이 모두 죽었습니다");
+        }
+    }
+
+    /// <summary>아는 사람 수(살아 있는).</summary>
+    public int Knowers(int rule) { int n = 0; foreach (var p in _all) if (!p.Dead && p.Knows(rule)) n++; return n; }
+
+    // ───────── 불 ─────────
+
+    /// <summary>추위 · 밤: 불가로 간다(알거나 보이는 불). 갔으면 true.</summary>
+    private bool TryWarmByFire(Person p, Why why)
+    {
+        var life = Life(p.Cell);
+        int here = p.Tile(Now);
+        int ft = life.NearestFire(here % S, here / S, Now, 60);
+        if (ft < 0) return false;
+        int spot = Beside(p, ft, 2);
+        if (spot == here || Cheb(spot, ft) > 2) { if (Cheb(here, ft) <= 2) { SetWhy(p, Act.Warm, why, FeltNow(p)); p.Target = ft; DoStill(p, GameTime.TicksPerHour); AddThought(p, H_byFire); return true; } return false; }
+        if (!WalkTo(p, spot)) return false;
+        SetWhy(p, Act.Warm, why, FeltNow(p));
+        p.Target = ft;
+        return true;
+    }
+
+    /// <summary>불이 보인다(사람이 피운 것이든 자연의 것이든): 따뜻함이 아쉬운 사람은 불씨를 얻으러 간다. 불씨가 있으면 땔감을 얹어 불을 피운다.</summary>
+    private bool TryFireWork(Person p, ProvinceLife life, int here, Pcg32 rng)
+    {
+        if (p.Stage(Now) < LifeStage.Child) return false;
+        // 불씨를 들고 있다 → 땔감이 있으면 피우고, 없으면 땔감부터
+        if (p.CarryCount(I_ember) > 0)
+        {
+            if (Now - p.EmberTick > EmberLife) { p.RemoveCarry(I_ember, 1); p.EmberTick = -1; AddThought(p, H_fireDied); }
+            else
+            {
+                if (BestCarried(p, Craft.P_burns, 3, I_ember) < 0) { if (StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel)) return true; }
+                else if (life.NearestFire(here % S, here / S, Now, 4) < 0 || !life.Walk[here]) { if (TryLightWithEmber(p, here, rng)) { Decide(p); return true; } }
+                else
+                {
+                    // 바로 곁에 이미 불이 있다 — 조금 떨어진 곳(자는 사람들 쪽)에 피운다
+                    int t = SpotAway(p, life, here, 6);
+                    if (t >= 0 && WalkTo(p, t)) { SetWhy(p, Act.TakeFire, Why.FireNear); p.Target = -1; return true; }
+                }
+            }
+        }
+        int fire = life.NearestFire(here % S, here / S, Now, SightTiles + 10);
+        if (fire < 0) return false;
+        bool wants = p.Wish[W_warmth] >= 25 || (FeltNow(p) < 110 && Cheb(fire, here) > 8);
+        if (!wants) return false;
+        // 이미 그 불 곁에 있으면 몸을 녹이는 것으로 충분
+        if (Cheb(fire, here) <= 3) return false;
+        if (BestCarried(p, Craft.P_burns, 3) < 0 && !StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel)) return TryWarmByFire(p, Why.Cold);
+        if (p.Act == Act.Material) return true;
+        int spot = Beside(p, fire);
+        if (!WalkTo(p, spot)) return false;
+        SetWhy(p, Act.TakeFire, Why.TakeFire);
+        p.Target = fire;
+        return true;
+    }
+
+    private int SpotAway(Person p, ProvinceLife life, int here, int dist)
+    {
+        var rng = Rng(p.Cell);
+        for (int tries = 0; tries < 8; tries++)
+        {
+            int x = here % S + rng.NextInt(-dist, dist + 1), y = here / S + rng.NextInt(-dist, dist + 1);
+            if ((uint)x >= S || (uint)y >= S) continue;
+            int t = y * S + x;
+            if (life.Walk[t] && life.Region[t] == life.Region[here] && life.NearestFire(x, y, Now, 4) < 0 && !life.Fires.ContainsKey(t)) return t;
+        }
+        return -1;
+    }
+
+    /// <summary>불가에 닿았다: 불씨를 얻는다(그 자리에서 보고 배운 것 — 불을 옮겨 오는 법).</summary>
+    private void ArriveTakeFire(Person p)
+    {
+        var life = Life(p.Cell);
+        if (p.Target < 0) { Decide(p); return; } // 떨어진 자리에 왔다 → 다시 판단(불씨로 피운다)
+        if (!life.Fires.TryGetValue(p.Target, out var f) || !f.Lit(Now)) { if (!life.IsVolcanoFire(p.Target)) { Decide(p); return; } }
+        p.AddCarry(I_ember, 1); p.EmberTick = Now;
+        Stats.FiresTaken++;
+        AddBio(p, BioKind.SawFire, f.Lighter, p.Target);
+        DoStill(p, 300);
+    }
+
+    /// <summary>불이 꺼져 가면 땔감을 넣는다(아는 사람이).</summary>
+    private bool TryTendFire(Person p)
+    {
+        var life = Life(p.Cell);
+        if (R_campfire is null || !p.Knows(R_campfire.Index)) return false;
+        int here = p.Tile(Now);
+        int ft = life.NearestFire(here % S, here / S, Now, 40);
+        if (ft < 0 || life.Fires[ft].Remaining(Now) > 3 * GameTime.TicksPerHour) return false;
+        int fuel = BestCarried(p, Craft.P_burns, 3, I_ember);
+        if (fuel < 0) return StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel);
+        return StartTend(p, ft, fuel, Why.Fuel);
+    }
+
+    private bool StartTend(Person p, int ft, int fuel, Why why)
+    {
+        int here = p.Tile(Now);
+        int spot = Beside(p, ft);
+        p.PlanItem = fuel;
+        if (Cheb(here, ft) <= 1) { SetWhy(p, Act.TendFire, why); p.Target = ft; StandStill(p); DoStill(p, 200); return true; }
+        if (!WalkTo(p, spot)) return false;
+        SetWhy(p, Act.TendFire, why); p.Target = ft;
+        return true;
+    }
+
+    private void FinishTend(Person p)
+    {
+        var life = Life(p.Cell);
+        if (!life.Fires.TryGetValue(p.Target, out var f) || p.CarryCount(p.PlanItem) == 0) return;
+        p.RemoveCarry(p.PlanItem, 1);
+        long add = FuelTicks(p.PlanItem);
+        if (p.PlanItem == I_charcoal && f.Kind == 2) f.Charcoal = true;
+        if (f.Lit(Now)) { f.Fuel += add; }
+        else { f.Stamp = Now; f.Fuel = add; f.Charcoal = p.PlanItem == I_charcoal && f.Kind == 2; }
+        life.Fires[p.Target] = f;
+    }
+
+    /// <summary>하루 경계(지방마다): 비가 오면 바깥의 불이 꺼진다 · 오래 꺼진 모닥불 자리는 없어진다 · 들불 · 번개.</summary>
+    private void FiresDaily(int cell, ProvinceLife life)
+    {
+        var rng = Rng(cell);
+        var planet = _w.Planet;
+        int precip = planet.PrecipMm[cell];
+        bool rain = rng.NextInt(10_000) < Math.Min(6_000, precip * 10_000 / 3650);
+        List<int>? remove = null;
+        foreach (var (t, f0) in life.Fires)
+        {
+            var f = f0;
+            if (rain && f.Lit(Now) && life.Shelter[t] < 3)
+            {
+                f.Fuel = Math.Max(0, Now - f.Stamp); life.Fires[t] = f;
+                if (Get(f.Lighter) is { Dead: false } l && l.Cell == cell) { AddThought(l, H_fireDied); AddBio(l, BioKind.FireDied, -1, t); }
+            }
+            else if (!f.Lit(Now) && f.Kind == 1 && Now - (f.Stamp + f.Fuel) > 10 * GameTime.TicksPerDay) (remove ??= new()).Add(t);
+        }
+        if (remove is not null) foreach (int t in remove) life.Fires.Remove(t);
+        // 자연의 불: 마른 더운 땅은 들불, 어디든 드물게 번개 — 사람이 보는 곳(사는 사람 둘레)에
+        bool alive = false; foreach (var q in life.People) if (!q.Dead) { alive = true; break; }
+        if (!alive) return;
+        int temp = planet.Temp10[cell];
+        int chance = temp > 200 && precip < 900 ? 40 : 10; // 10,000 분의(하루)
+        if (rng.NextInt(10_000) >= chance) return;
+        Person? someone = null; int n = 0;
+        foreach (var q in life.People) if (!q.Dead) { n++; if (rng.NextInt(n) == 0) someone = q; }
+        if (someone is null) return;
+        int ht = someone.Tile(Now);
+        for (int tries = 0; tries < 12; tries++)
+        {
+            int x = ht % S + rng.NextInt(-12, 13), y = ht / S + rng.NextInt(-12, 13);
+            if ((uint)x >= S || (uint)y >= S) continue;
+            int t = y * S + x;
+            if (!life.Walk[t] || life.Fires.ContainsKey(t) || life.Map.Ground[t] is not (Ground.Grass or Ground.Soil or Ground.Sand)) continue;
+            life.LightFire(t, 1, 8 * GameTime.TicksPerHour, Now, -1);
+            Stats.Wildfires++;
+            Notify(WorldEventKind.Wildfire, someone, -1, (chance == 40 ? "마른 풀에 들불이 났습니다" : "번개가 쳐 불이 났습니다") + $" — {LandLabelOr(cell, "한 땅")}에서 {Hangul.I(DisplayName(someone))} 불을 보았습니다");
+            foreach (var q in life.People) if (!q.Dead && Cheb(q.Tile(Now), t) <= SightTiles + 6) { AddWish(q, W_warmth, 10); AddBio(q, BioKind.SawFire, -1, t); }
+            break;
+        }
+    }
+
+    // ───────── 캐기 ─────────
+
+    /// <summary>돌 도구가 있으면 바위를 캔다(반짝이는 돌이 아쉽거나 · 단단한 도구가 아쉬우거나 · 궁금하면). 갔으면 true.</summary>
+    private bool TryMine(Person p)
+    {
+        if (!HasHardTool(p)) return false;
+        var life = Life(p.Cell);
+        int here = p.Tile(Now);
+        bool ore = p.Wish[W_shiny] > 0;
+        int t = life.NearestStone(here % S, here / S, 35, ore);
+        if (t < 0 && !ore) return false;
+        if (t < 0) t = life.NearestStone(here % S, here / S, 35, false);
+        if (t < 0) return false;
+        int spot = Beside(p, t);
+        if (spot == t) return false;
+        if (Cheb(spot, here) > 1 && !WalkTo(p, spot)) return false;
+        SetWhy(p, Act.Mine, life.Map.OreAt(t) >= 0 ? Why.MineOre : Why.MineStone);
+        p.Target = t;
+        if (Cheb(spot, here) <= 1) { StandStill(p); ArriveMine(p); }
+        return true;
+    }
+
+    private void ArriveMine(Person p) => DoStill(p, (long)(2 * GameTime.TicksPerHour) * WorkPercent(p) / 100);
+
+    private void FinishMine(Person p)
+    {
+        var life = Life(p.Cell);
+        int t = p.Target;
+        if (t < 0 || !life.Mine(t)) return;
+        var rng = Rng(p.Cell);
+        var rocks = RockCatalog.Default;
+        int rock = life.Map.Rock[t];
+        int here = p.Tile(Now);
+        if (rock < rocks.Rocks.Count) foreach (var y in rocks.Rocks[rock].Yields) DropOrCarry(p, life, here, Craft.ItemIndex(y.Id), 2);
+        int ore = life.Map.OreAt(t);
+        if (ore >= 0) { foreach (var y in rocks.Ores[ore].Yields) DropOrCarry(p, life, here, Craft.ItemIndex(y.Id), 2); AddWish(p, W_shiny, 30); }
+        life.RevealAround(t, 2);
+        Stats.Mined++; p.Mined++;
+        AddBio(p, BioKind.Mined, ore, t);
+        AddThought(p, H_madeThing);
+        GainSkill(p, PeopleData.Gathering, 8);
+        WearTool(p, BestTool(p, Craft.P_hardness, 4), rng);
+        p.Wish[W_hardTool] = Math.Max(0, p.Wish[W_hardTool] - 20);
+    }
+
+    private void DropOrCarry(Person p, ProvinceLife life, int here, int item, int n)
+    {
+        if (item < 0) return;
+        if (CarryWeight(p) + Prop(item, Craft.P_weight) * n > CarryCapOf(p)) life.Drop(here, item, n);
+        else p.AddCarry(item, n);
+    }
+
+    // ───────── 들고 있는 것 먹기 · 익히기 · 그릇의 물 ─────────
+
+    /// <summary>들고 있는 먹을 것(독이 적은 것 우선). 없으면 −1.</summary>
+    private int BestCarriedFood(Person p, bool desperate)
+    {
+        int best = -1, bs = 0;
+        foreach (var c in p.Carry)
+        {
+            int e = Prop(c.Item, Craft.P_edible), poison = Prop(c.Item, Craft.P_poison);
+            if (e <= 0 || (!desperate && e < 2 && poison > 0)) continue;
+            int s = e * 10 - poison * (desperate ? 2 : 12) + (c.Item == I_coconut && !HasHardTool(p) ? -30 : 0);
+            if (s > bs) { bs = s; best = c.Item; }
+        }
+        return best;
+    }
+
+    private void FinishEatCarried(Person p)
+    {
+        int item = p.PlanItem;
+        if (item < 0 || p.CarryCount(item) == 0) return;
+        int e = Prop(item, Craft.P_edible), poison = Prop(item, Craft.P_poison);
+        int want = Math.Clamp((Person.Full - p.Food) / Math.Max(1, e * 5000), 1, Math.Min(4, p.CarryCount(item)));
+        p.RemoveCarry(item, want);
+        p.Food = Clamp(p.Food + (long)want * e * 5000);
+        p.Water = Clamp(p.Water + (long)want * (item == I_crackedCoconut ? 25_000 : 2_000));
+        var rng = Rng(p.Cell);
+        if (IsMade(item) && poison == 0 && e >= 4) { AddThought(p, H_cookedMeal); Stats.CookedMeals++; }
+        if (poison > 0 && rng.NextInt(100) < poison * 18) BadStomach(p, item);
+        if (item == I_coconut) AddWish(p, W_hardTool, 20);
+        if (p.Food >= 85_000) AddThought(p, H_ate);
+    }
+
+    private void BadStomach(Person p, int item)
+    {
+        AddThought(p, H_badStomach);
+        p.Food = Math.Max(0, p.Food - 12_000);
+        AddWish(p, W_cooking, 35);
+        Stats.BadStomachs++;
+        AddBio(p, BioKind.BadStomach, -1, item);
+    }
+
+    /// <summary>배가 고프고 · 익히는 법을 알고 · 날것을 들고 있고 · 불이 가까우면 불가로 가서 익혀 먹는다.</summary>
+    private bool TryCook(Person p, Why why)
+    {
+        if (!KnowsAnyRoast(p)) return false;
+        int raw = -1;
+        foreach (var c in p.Carry) if (Prop(c.Item, Craft.P_edible) > 0 && !IsMade(c.Item) && c.Item != I_coconut) { raw = c.Item; break; }
+        if (raw < 0) return false;
+        var life = Life(p.Cell);
+        int here = p.Tile(Now);
+        int ft = life.NearestFire(here % S, here / S, Now, 45);
+        if (ft < 0) return false;
+        p.PlanItem = raw;
+        int spot = Beside(p, ft);
+        if (Cheb(here, ft) <= 1) { SetWhy(p, Act.Cook, why, p.Food / 1000); p.Target = ft; StandStill(p); DoStill(p, 1_000L * WorkPercent(p) / 100); return true; }
+        if (!WalkTo(p, spot)) return false;
+        SetWhy(p, Act.Cook, why, p.Food / 1000); p.Target = ft;
+        return true;
+    }
+
+    public bool KnowsAnyRoast(Person p) { foreach (var k in p.Known) if (Craft.Rules[k.Rule].Action == A_roast && Prop(Craft.Rules[k.Rule].Result, Craft.P_edible) > 0) return true; return false; }
+
+    private void FinishCook(Person p)
+    {
+        var life = Life(p.Cell);
+        int here = p.Tile(Now);
+        int heat = life.HeatAt(here, Now);
+        if (heat <= 0) return;
+        var rng = Rng(p.Cell);
+        // 들고 있는 날것을 모두 익힌다(규칙으로 판정 — 익힐 수 없는 것은 그대로)
+        var raws = p.Carry.Where(c => Prop(c.Item, Craft.P_edible) > 0 && !IsMade(c.Item) && c.Item != I_coconut).Select(c => c.Item).ToList();
+        int cooked = -1;
+        foreach (int raw in raws)
+        {
+            var outcome = Craft.Judge(A_roast, PropsOf(raw), null, null, heat, 0, 0, 0);
+            if (!outcome.Success || outcome.Rule is null) continue;
+            int n = p.CarryCount(raw);
+            p.RemoveCarry(raw, n);
+            p.AddCarry(outcome.Rule.Result, n);
+            cooked = outcome.Rule.Result;
+            if (!p.Knows(outcome.Rule.Index)) Learn(p, outcome.Rule, W_cooking, raw, -1, -1);
+            GainSkill(p, outcome.Rule.Skill, 4);
+        }
+        if (cooked >= 0) { p.PlanItem = cooked; FinishEatCarried(p); p.Wish[W_cooking] = Math.Max(0, p.Wish[W_cooking] - 20); }
+    }
+
+    /// <summary>그릇이 있으면 물가에서 물을 담아 둔다.</summary>
+    private void FillPots(Person p)
+    {
+        int cap = 0;
+        foreach (var c in p.Carry) if (Prop(c.Item, Craft.P_holds) >= 1 && Prop(c.Item, Craft.P_waterproof) >= 2) cap += Prop(c.Item, Craft.P_holds) * c.Count;
+        p.PotWater = Math.Min(8, cap);
+    }
+
+    public bool HasContainer(Person p) { foreach (var c in p.Carry) if (Prop(c.Item, Craft.P_holds) >= 3) return true; return false; }
+    public bool HasWaterContainer(Person p) { foreach (var c in p.Carry) if (Prop(c.Item, Craft.P_holds) >= 1 && Prop(c.Item, Craft.P_waterproof) >= 2) return true; return false; }
+
+    // ───────── 둘러보며 바람이 생기는 것 ─────────
+
+    /// <summary>둘러보다 광맥 · 바위를 보면 호기심 많은 사람은 반짝이는 돌이 궁금하다.</summary>
+    private void SeeAround(Person p, ProvinceLife life, int hx, int hy)
+    {
+        if (!p.HasTrait(T_curious) && p.Wish[W_shiny] == 0 && p.Wish[W_hardTool] == 0) return;
+        if (Now - p.WishSince[W_shiny] < GameTime.TicksPerDay) return; // 하루에 한 번만 둘러본다(비용)
+        p.WishSince[W_shiny] = Now;
+        int ore = life.NearestStone(hx, hy, SightTiles, true);
+        if (ore >= 0) { AddWish(p, W_shiny, p.HasTrait(T_curious) ? 15 : 6); p.WishSince[W_shiny] = Now; if (!HasHardTool(p)) AddWish(p, W_hardTool, 10); }
+    }
+
+    /// <summary>발견 목록용: 규칙마다 아는 사람 수 · 발견 정보.</summary>
+    public IEnumerable<(Discovery D, int Knowers)> DiscoveryList()
+    {
+        foreach (var (rule, d) in Discoveries) yield return (d, Knowers(rule));
+    }
+}

@@ -18,6 +18,8 @@
     <EmbeddedResource Include="../data/rocks.json" LogicalName="data/rocks.json" />
     <EmbeddedResource Include="../data/people.json" LogicalName="data/people.json" />
     <EmbeddedResource Include="../data/language.json" LogicalName="data/language.json" />
+    <EmbeddedResource Include="../data/properties.json" LogicalName="data/properties.json" />
+    <EmbeddedResource Include="../data/crafting.json" LogicalName="data/crafting.json" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Wtw.Sim.Tests" />

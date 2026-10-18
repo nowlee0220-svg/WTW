@@ -24,6 +24,12 @@ public sealed class PersonCard
     public List<(int Id, string Name, string Kind, int Opinion, int Grudge, int Favor, bool Alive, int Understand)> Relations = new();
     public List<string> Story = new();
     public string Carry = "";
+    /// <summary>(E4) 별명(뜻 · 까닭), 바람, 아는 법(무엇을 · 언제 · 왜 · 어떻게 · 누구에게서), 단서, 들고 있는 도구 · 그릇의 물.</summary>
+    public string Nickname = "", NicknameMeaning = "", NicknameReason = "";
+    public List<(string Name, int Strength)> Wishes = new();
+    public List<string> Knowledge = new();
+    public List<string> Clues = new();
+    public List<(string Word, string Meaning, string Origin)> NewWords = new();
 }
 
 /// <summary>사람 목록 한 줄.</summary>
@@ -94,9 +100,30 @@ public sealed partial class PeopleSim
             Act.BreakLeave => p.Asleep ? "혼자 떠나 잠" : "혼자 떠나 있음",
             Act.EatCorpse => "시신을 먹는 중",
             Act.Cross => CrossText(p),
+            // (E4)
+            Act.Experiment => w ? $"{PlanText(p)} 해 보러 불가로 가는 중" : $"{PlanText(p)} 해 보는 중",
+            Act.Craft => w ? $"{Hangul.Eul(PlanResult(p))} 만들러 불가로 가는 중" : $"{Hangul.Eul(PlanResult(p))} 만드는 중 ({PlanText(p)})",
+            Act.Material => w ? $"{Hangul.Eul(ItemName(p.PlanItem))} 얻으러 가는 중" : $"{Hangul.Eul(ItemName(p.PlanItem))} 얻는 중",
+            Act.TakeFire => w ? (p.Target < 0 ? "불을 피울 자리로 가는 중" : "불씨를 얻으러 불이 있는 곳으로 가는 중") : "불씨를 얻는 중",
+            Act.TendFire => w ? "불에 땔감을 넣으러 가는 중" : "불에 땔감을 넣는 중",
+            Act.Mine => w ? "바위를 캐러 가는 중" : "바위를 캐는 중 (돌 도구로)",
+            Act.Cook => w ? $"{Hangul.Eul(ItemName(p.PlanItem))} 익히러 불가로 가는 중" : $"{Hangul.Eul(ItemName(p.PlanItem))} 불에 익혀 먹는 중",
+            Act.EatCarried => $"들고 있던 {Hangul.Eul(ItemName(p.PlanItem))} 먹는 중",
+            Act.DrinkCarried => "그릇에 담아 온 물을 마시는 중",
             _ => "둘러보는 중",
         };
     }
+
+    private string PlanText(Person p)
+    {
+        if (p.PlanAction < 0 || p.PlanInput < 0) return "이것저것";
+        string s = Hangul.Eul(ItemName(p.PlanInput));
+        if (p.PlanWith >= 0) s = $"{Hangul.Gwa(ItemName(p.PlanInput))} {Hangul.Eul(ItemName(p.PlanWith))}";
+        if (p.PlanTool >= 0) s += $" {Hangul.Ro(ItemName(p.PlanTool))}";
+        return $"{s} {Craft.ActionName(p.PlanAction)}";
+    }
+
+    private string PlanResult(Person p) => p.PlanRule >= 0 ? Craft.ItemName(Craft.Rules[p.PlanRule].Result) : "무언가";
 
     /// <summary>(E3b) 경계를 넘으러 가는 사람: 어디로 · 무엇 때문에(실제로 고른 까닭 그대로).</summary>
     private string CrossText(Person p)
@@ -161,8 +188,36 @@ public sealed partial class PeopleSim
             Why.Explore => "궁금해서 — 경계 너머 땅이 보고 싶다(호기심)",
             Why.GoBack => "이 땅에 혼자 남아 쓸쓸해서 — 사람이 있던 땅으로",
             Why.FollowFamily => p.WhyArg > 0 && Get(p.WhyArg) is { } lead ? $"{Hangul.I(DisplayName(lead))} 떠나서 가족이 함께 간다" : "가족이 이웃 땅에 있어서",
+            // (E4)
+            Why.WantWarmth => $"추워서 — 따뜻한 것이 있었으면 (바람 {WishStrength(p, "warmth")}): 잘 타는 것 · 단단한 돌을 부딪쳐 본다",
+            Why.WantSharp => $"날카로운 것이 있었으면 — 나무를 베지 못해서 (바람 {WishStrength(p, "sharpness")}): 잘 쪼개지고 날이 서는 돌을 쳐 본다",
+            Why.WantHardTool => $"단단한 도구가 있었으면 — 딱딱한 것을 못 깨서 (바람 {WishStrength(p, "hard_tool")})",
+            Why.WantContainer => $"담을 그릇이 있었으면 — 물가가 멀어서 (바람 {WishStrength(p, "container")}): 휘는 것을 엮고 진흙을 빚어 본다",
+            Why.WantCooking => $"익혀 먹었으면 — 날것에 배탈이 나서 (바람 {WishStrength(p, "cooking")})",
+            Why.WantCarry => $"더 많이 나를 수 있었으면 (바람 {WishStrength(p, "carry")})",
+            Why.WantShiny => $"반짝이는 돌이 궁금해서 (바람 {WishStrength(p, "shiny")}): 세찬 불에 넣어 본다",
+            Why.KnowHow => $"{WishName(arg)}이(가) 아쉬운데 만드는 법을 알아서",
+            Why.Clue => "전에 거의 될 듯했던 단서를 따라서 — " + (p.Clues.Count > 0 ? ClueText(p.Clues[^1]) : ""),
+            Why.Fuel => "불이 꺼져 가서 — 땔감을 넣어 지킨다",
+            Why.TakeFire => "불이 보여서 — 불씨를 얻어 오면 추위를 피할 수 있다",
+            Why.FireNear => p.Act == Act.Sleep ? "불가에서 자려고 — 밤에 덜 춥고 어둠이 덜 무섭다" : "불씨를 들고 있어서 — 자는 곳 가까이에 피운다",
+            Why.Material => "만들 재료가 모자라서",
+            Why.MineOre => "반짝이는 광맥이 보여서 — 돌 도구로 캔다",
+            Why.MineStone => "돌이 더 있었으면 — 돌 도구로 바위를 캔다",
+            Why.CookFood => "익히면 더 배가 차고 배탈이 안 나서",
             _ => "",
         } + HowText(p);
+    }
+
+    public string ClueText(Clue c) => $"{Craft.Rules[c.Rule].Name}: {(Craft.Rules[c.Rule].Partial.TryGetValue(c.Key, out var pd) ? pd.Text + " — " + pd.Hint : Craft.GenericHints.GetValueOrDefault(c.Key, c.Key))} ({PeopleText.Date(c.Tick)}, {ItemName(c.Input)}으로)";
+
+    public string KnowledgeText(Knowledge k)
+    {
+        var r = Craft.Rules[k.Rule];
+        string how = k.With >= 0 ? $"{Hangul.Gwa(ItemName(k.Input))} {Hangul.Eul(ItemName(k.With))} {Craft.ActionName(r.Action)}" : $"{Hangul.Eul(ItemName(k.Input))} {Craft.ActionName(r.Action)}";
+        if (r.Heat > 0) how += $" ({Craft.HeatName(r.Heat)}에서)";
+        string from = k.LearnedFrom < 0 ? $"{WishName(k.Wish)}이(가) 아쉬워 스스로 알아냄" : $"{Hangul.I(NameOf(k.LearnedFrom))} 하는 것을 곁에서 봄";
+        return $"{Craft.ItemName(r.Result)} — {how} · {PeopleText.Date(k.Tick)} · {from}";
     }
 
     /// <summary>물 · 먹을 것을 어떻게 찾아가는지 덧붙임(실제로 하는 일과 같게).</summary>
@@ -297,7 +352,14 @@ public sealed partial class PeopleSim
             if (lang.Parent >= 0) c.Speech += $" · 갈라져 나온 말(말 {lang.Parent})과 알아듣기 {LanguageUnderstanding(lang.Id, lang.Parent)}%";
             foreach (int k in lang.Known) c.Vocabulary.Add((WordOf(p, k), Lang.Concepts[k].Meaning));
         }
-        c.Carry = p.Carry.Count == 0 ? "없음" : string.Join(", ", p.Carry.Select(x => $"{ItemName(x.Item)} {x.Count}"));
+        c.Carry = p.Carry.Count == 0 ? "없음" : string.Join(", ", p.Carry.Select(x => $"{ItemName(x.Item)} {x.Count}")) + (p.PotWater > 0 ? $" · 그릇의 물 {p.PotWater}모금" : "") + $" (무게 {CarryWeight(p)}/{CarryCapOf(p)})";
+        // (E4) 별명 · 바람 · 아는 법 · 단서 · 새 낱말
+        if (p.Nickname.Length > 0) { c.Nickname = p.Nickname; c.NicknameMeaning = string.Join(" ", p.NicknameConcepts.Where(x => (uint)x < Lang.Concepts.Count).Select(x => Lang.Concepts[x].Meaning)); c.NicknameReason = p.NicknameReason; }
+        for (int w = 0; w < Craft.Wishes.Count; w++) if (p.Wish[w] > 0) c.Wishes.Add((Craft.Wishes[w].Name, p.Wish[w]));
+        foreach (var k in p.Known) c.Knowledge.Add(KnowledgeText(k));
+        foreach (var cl in p.Clues.AsEnumerable().Reverse()) c.Clues.Add(ClueText(cl));
+        if (Languages.TryGetValue(p.LangId, out var lang2))
+            foreach (int k in lang2.Known) if (!Lang.Concepts[k].Base) c.NewWords.Add((WordOf(p, k), Lang.Concepts[k].Meaning, WordOrigin(lang2, k)));
         foreach (var b in p.Bio) c.Story.Add($"{PeopleText.Date(b.Tick)} — {BioLine(p, b)}");
         return c;
     }
@@ -321,6 +383,19 @@ public sealed partial class PeopleSim
         BioKind.LearnedSpeech => $"{NameOf(b.Other)}의 말을 배워 쓰기 시작했다",
         BioKind.FoundWater => "물가를 찾아냈다",
         BioKind.Moved => MovedLine(p, b),
+        // (E4)
+        BioKind.Discovered => $"{WishName(b.Param)}이(가) 아쉬워 이것저것 해 보다 {Craft.ItemName(Craft.Rules[b.Other].Result)} 만드는 법을 알아냈다 ({Craft.Rules[b.Other].Name})",
+        BioKind.LearnedWatching => $"{Hangul.I(NameOf(b.Other))} {Craft.ItemName(Craft.Rules[b.Param].Result)} 만드는 것을 곁에서 보고 따라 할 수 있게 되었다",
+        BioKind.PartialSuccess => $"{Hangul.Eul(ItemName(b.Param))} 다루다 거의 될 듯했다 — {(Craft.Rules[b.Other].Partial.Count > 0 ? Craft.Rules[b.Other].Name : "")}",
+        BioKind.MadeThing => $"{Hangul.Eul(ItemName(b.Param))} 만들었다",
+        BioKind.LitFire => "불을 피웠다",
+        BioKind.FireDied => "비에 불이 꺼졌다",
+        BioKind.Mined => b.Other >= 0 ? $"돌 도구로 바위를 캐 {RockCatalog.Default.Ores[b.Other].Name}을 드러냈다" : "돌 도구로 바위를 캤다",
+        BioKind.Nicknamed => $"{Hangul.Rago($"'{p.Nickname}'")} 불리게 되었다 (뜻: {string.Join(" ", p.NicknameConcepts.Where(x => (uint)x < Lang.Concepts.Count).Select(x => Lang.Concepts[x].Meaning))} — {p.NicknameReason})",
+        BioKind.NewWord => (uint)b.Param < Lang.Concepts.Count ? $"무리의 말에 '{Lang.Concepts[b.Param].Meaning}'을(를) 뜻하는 낱말 '{WordOf(p, b.Param)}'이(가) 생겼다" : "무리의 말에 새 낱말이 생겼다",
+        BioKind.BorrowedWord => (uint)b.Param < Lang.Concepts.Count ? $"{NameOf(b.Other)}의 말에서 '{Lang.Concepts[b.Param].Meaning}'을(를) 뜻하는 낱말 '{WordOf(p, b.Param)}'을(를) 빌려 왔다" : "다른 말에서 낱말을 빌려 왔다",
+        BioKind.SawFire => b.Other >= 0 ? $"{NameOf(b.Other)}의 불에서 불씨를 얻었다" : "자연의 불을 보고 불씨를 얻었다",
+        BioKind.BadStomach => $"날 {Hangul.Eul(ItemName(b.Param))} 먹고 배탈이 났다",
         BioKind.NamedLand => LandNames.TryGetValue(b.Param, out var ln) && ln.Find(n => n.Namer == p.Id) is { } mine
             ? $"머물던 땅을 {Hangul.Rago($"'{mine.Word}'")} 부르기 시작했다 (뜻: {LandMeaning(mine)} — {mine.Reason})" : "머물던 땅에 이름을 붙였다",
         _ => "",

@@ -210,12 +210,15 @@ public sealed partial class PeopleSim
             int g = PeopleData.Gathering;
             if (Now - p.LastGather > 3 * GameTime.TicksPerDay && p.SkillXp[g] > 0) p.SkillXp[g] = Math.Max(0, p.SkillXp[g] - p.SkillLevel(g) * 3);
             PurgeThoughts(p);
+            CraftDaily(p);
             MoveIntent(p, rng);
             // 안아 줄 사람이 없는 아기
             if (p.Carrier >= 0 && Get(p.Carrier) is not { Dead: false }) ReassignCarrier(p);
         }
         if (Now / GameTime.TicksPerDay % GameTime.DaysPerYear == 0) LanguageYear();
         NameLands();
+        foreach (var (cell, life) in Provinces) FiresDaily(cell, life);
+        CheckLostDiscoveries();
         SleepEmptyProvinces();
     }
 
@@ -298,6 +301,13 @@ public sealed partial class PeopleSim
         AliveCount--;
         Stats.Deaths[(int)cause]++;
         int deathTile = (y / 1000) * S + x / 1000;
+        // (E4) 들고 있던 것은 그 자리에 남는다
+        if (p.Carry.Count > 0 && (uint)deathTile < HexFrame.TileCount)
+        {
+            var lifeHere = Life(p.Cell);
+            foreach (var (item, n) in p.Carry) if (item != I_ember) lifeHere.Drop(deathTile, item, n);
+            p.Carry.Clear(); p.PotWater = 0; p.EmberTick = -1;
+        }
         if (cause == DeathCause.Thirst && !Life(p.Cell).HasDrinkFrom(deathTile)) Stats.NoWaterDeaths++;
         if (cause == DeathCause.Starvation && !Life(p.Cell).HasFoodFrom(deathTile)) Stats.NoFoodDeaths++;
         AddBio(p, BioKind.Died, -1, (int)cause);

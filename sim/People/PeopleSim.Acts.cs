@@ -90,6 +90,7 @@ public sealed partial class PeopleSim
         int here = p.Tile(Now);
         p.Position(Now, out int px, out int py);
         int hx = px / 1000, hy = py / 1000;
+        SeeAround(p, life, hx, hy);
 
         // 정신 붕괴 중
         if (p.BreakUntil > Now && p.Food > 5_000 && p.Water > 5_000 && p.Rest > UrgentRest) { ContinueBreak(p); return; }
@@ -98,7 +99,8 @@ public sealed partial class PeopleSim
         // 급한 것부터
         if (p.Rest < UrgentRest) { StartSleep(p, here, Why.Exhausted, collapse: true); return; }
         int felt = FeltNow(p);
-        if (p.Hypothermia > 10_000 && felt < 60 && TryWarm(p, Why.VeryCold)) return;
+        if (felt < 110) AddWish(p, W_warmth, felt < 60 ? 12 : 5);
+        if (p.Hypothermia > 10_000 && felt < 60 && (TryWarmByFire(p, Why.VeryCold) || TryWarm(p, Why.VeryCold))) return;
         if (p.Heatstroke > 10_000 && felt > 400 && TryWarm(p, Why.Hot)) return;
         if (p.Water < UrgentWater && TryDrink(p, Why.VeryThirsty)) return;
         if (p.Food < UrgentFood && TryEat(p, p.Food <= 0 ? Why.Starving : Why.VeryHungry)) return;
@@ -117,6 +119,9 @@ public sealed partial class PeopleSim
 
         // (E3b) 떠나고 싶은 마음이 있으면 떠난다(집안과 함께)
         if (p.MoveWhy != Why.None && TryMove(p)) return;
+
+        // (E4) 불씨가 있거나 불이 보이면(따뜻함이 아쉬울 때) 불을 옮겨 온다 · 피운다
+        if (TryFireWork(p, life, here, rng)) return;
 
         // 아이는 어른을 따라다닌다
         if (stage == LifeStage.Child && Guardian(p) is { } g)
@@ -139,6 +144,11 @@ public sealed partial class PeopleSim
         int carried = 0; foreach (var c in p.Carry) carried += c.Count;
         if (carried < 6) Opt(8, 3 + (p.HasTrait(T_curious) ? 10 : 0) - (p.HasTrait(T_stubborn) ? 3 : 0));
         Opt(9, 6);
+        // (E4) 실험 · 아는 법대로 만들기 · 불 지키기 · 캐기
+        int ex = ExperimentScore(p, life); if (ex > int.MinValue) Opt(10, ex);
+        int cs = CraftScore(p); if (cs > int.MinValue) Opt(11, cs);
+        if (p.Known.Count > 0 && !life.IsNight(Now)) Opt(12, 14);
+        if ((p.Wish[W_shiny] >= 20 || p.Wish[W_hardTool] >= 40 || p.HasTrait(T_curious)) && HasHardTool(p) && !life.IsNight(Now)) Opt(13, 8 + p.Wish[W_shiny] / 4);
 
         bool ok = best switch
         {
@@ -150,6 +160,10 @@ public sealed partial class PeopleSim
             6 => TryWarm(p, felt > 320 ? Why.Hot : Why.Cold),
             7 => TryWander(p, p.HasTrait(T_curious) ? Why.Curious : Why.Nothing),
             8 => TryGather(p),
+            10 => TryExperiment(p),
+            11 => TryCraftKnown(p),
+            12 => TryTendFire(p),
+            13 => TryMine(p),
             _ => false,
         };
         if (!ok && !TryWander(p, Why.Nothing)) StartRest(p, Why.Nothing);
@@ -217,6 +231,7 @@ public sealed partial class PeopleSim
     /// <summary>추위 · 더위 피하기: 더 나은 그늘(동굴 → 바위 그늘 → 나무 그늘)로.</summary>
     private bool TryWarm(Person p, Why why)
     {
+        if (why != Why.Hot && TryWarmByFire(p, why)) return true;
         var life = Life(p.Cell);
         p.Position(Now, out int px, out int py);
         int hx = px / 1000, hy = py / 1000, here = hy * S + hx;
@@ -265,6 +280,12 @@ public sealed partial class PeopleSim
             if (life.Paths.Reachable(here, gt)) { spot = Beside(p, gt); reason = Why.FamilyNear; }
         }
         bool coldNight = life.Mean10 - life.Range10 / 2 < 120;
+        if (spot < 0 && coldNight)
+        {
+            // (E4) 불이 있으면 불가에서 잔다
+            int ft = life.NearestFire(hx, hy, Now, (int)FireSleepRange);
+            if (ft >= 0 && life.Paths.Reachable(here, Beside(p, ft, 2))) { spot = Beside(p, ft, 2); reason = Why.FireNear; }
+        }
         if (spot < 0 && coldNight)
         {
             // 추운 밤에는 동굴이 가장 따뜻하다(늘 연평균 근처) — 가까운 동굴이 있으면 그리로, 없으면 바위 그늘
@@ -327,7 +348,9 @@ public sealed partial class PeopleSim
         else if (p.SleepShelter >= 2 || p.Huddle) AddThought(p, H_slept);
         else AddThought(p, H_rough);
         if (partnerNear) AddThought(p, H_withPartner);
-        if (p.SleepShelter == 0 && !p.Huddle && Ability(p, PeopleData.Nerve) <= 3) AddThought(p, H_dark);
+        bool fireNear = Life(p.Cell).NearestFire(tile % S, tile / S, Now, 4) >= 0;
+        if (fireNear) AddThought(p, H_firelight);
+        else if (p.SleepShelter == 0 && !p.Huddle && Ability(p, PeopleData.Nerve) <= 3) AddThought(p, H_dark);
         if (partnerNear && p.Female) TryConceive(p, Get(p.Partner)!);
         p.Huddle = false;
     }
@@ -391,7 +414,8 @@ public sealed partial class PeopleSim
                 StartSleep(p, here, p.Why, collapse: false);
                 return;
             case Act.Warm:
-                if (life.IsNight(Now)) { StartSleep(p, here, Why.Cold, collapse: false); return; }
+                if (p.Target >= 0 && life.Fires.ContainsKey(p.Target)) { AddThought(p, H_byFire); p.Wish[W_warmth] = Math.Max(0, p.Wish[W_warmth] - 30); }
+                if (life.IsNight(Now)) { StartSleep(p, here, p.Target >= 0 && life.Fires.ContainsKey(p.Target) ? Why.FireNear : Why.Cold, collapse: false); return; }
                 DoStill(p, GameTime.TicksPerHour + rng.NextInt((int)GameTime.TicksPerHour));
                 return;
             case Act.Wander:
@@ -414,6 +438,25 @@ public sealed partial class PeopleSim
             case Act.Cross when here == p.Target:
                 ArriveAtBorder(p);
                 return;
+            // (E4)
+            case Act.Experiment or Act.Craft:
+                BeginWork(p);
+                return;
+            case Act.Material:
+                ArriveMaterial(p);
+                return;
+            case Act.TakeFire:
+                ArriveTakeFire(p);
+                return;
+            case Act.TendFire:
+                DoStill(p, 200);
+                return;
+            case Act.Mine:
+                ArriveMine(p);
+                return;
+            case Act.Cook:
+                DoStill(p, 1_000L * WorkPercent(p) / 100);
+                return;
             default:
                 Decide(p);
                 return;
@@ -433,16 +476,30 @@ public sealed partial class PeopleSim
                 int got = h is null ? 0 : life.Take(p.Target, Math.Max(1, p.TargetB), Now);
                 if (h is not null && got > 0)
                 {
+                    if (p.PlanItem == 1)
+                    {
+                        // (E4) 익혀 먹으려고 들고 간다
+                        p.AddCarry(h.ItemIndex, got); p.PlanItem = -1;
+                        GainGather(p, got);
+                        break;
+                    }
                     p.Food = Clamp(p.Food + (long)got * h.Nutrition);
                     p.Water = Clamp(p.Water + (long)got * h.Water);
                     GainGather(p, got);
                     if (p.Food >= 85_000) AddThought(p, H_ate);
+                    // (E4) 날것의 독(버섯) → 가끔 배탈 → 익히기가 아쉽다 · 딱딱한 열매(야자)는 깨야 제대로 먹는다 → 단단한 도구가 아쉽다
+                    int poison = Craft.Prop(h.ItemIndex, Craft.P_poison);
+                    if (poison > 0 && Rng(p.Cell).NextInt(100) < poison * 15) BadStomach(p, h.ItemIndex);
+                    if (Craft.Prop(h.ItemIndex, Craft.P_hardness) >= 4) { AddWish(p, W_hardTool, 20); if (HasHardTool(p) && p.CarryCount(h.ItemIndex) == 0) p.AddCarry(h.ItemIndex, 1); }
+                    // (E4) 그릇이 있으면 남는 몫을 담아 둔다
+                    if (p.PlanItem == 2 && life.StockAt(p.Target, Now) > 0) { int extra = life.Take(p.Target, Math.Min(3, life.StockAt(p.Target, Now)), Now); p.AddCarry(h.ItemIndex, extra); p.PlanItem = -1; }
                 }
                 break;
             }
             case Act.Drink when done:
                 p.Water = Person.Full;
                 p.Dehydration = Math.Max(0, p.Dehydration - 20_000);
+                FillPots(p);
                 break;
             case Act.Gather when done:
             {
@@ -463,6 +520,28 @@ public sealed partial class PeopleSim
                 break;
             case Act.Rest when p.HasTrait(T_lazy) && done:
                 AddThought(p, H_lazyRest);
+                break;
+            // (E4)
+            case Act.Experiment or Act.Craft when done:
+                FinishWork(p);
+                break;
+            case Act.Material when done:
+                FinishMaterial(p);
+                break;
+            case Act.TendFire when done:
+                FinishTend(p);
+                break;
+            case Act.Mine when done:
+                FinishMine(p);
+                break;
+            case Act.Cook when done:
+                FinishCook(p);
+                break;
+            case Act.EatCarried when done:
+                FinishEatCarried(p);
+                break;
+            case Act.DrinkCarried when done:
+                if (p.PotWater > 0) { p.PotWater--; p.Water = Clamp(p.Water + 45_000); p.Dehydration = Math.Max(0, p.Dehydration - 10_000); }
                 break;
         }
         if (p.Asleep) WakeUp(p);

@@ -84,6 +84,9 @@ public sealed partial class PeopleSim
         if (life.Drink[here]) { SetWhy(p, Act.Drink, why, arg); p.How = 0; p.Target = here; p.SearchMiss = 0; DoStill(p, 150); return true; }
         // 1) 보임
         int tile = life.NearestDrink(hx, hy, SightTiles);
+        // (E4) 그릇에 담아 온 물이 있고 물가가 보이지 않으면 그것을 마신다 · 물이 멀면 그릇이 아쉽다
+        if (tile < 0 && p.PotWater > 0) { SetWhy(p, Act.DrinkCarried, why, arg); p.Target = here; StandStill(p); DoStill(p, 100); return true; }
+        if (tile < 0) AddWish(p, W_container, 8);
         byte how = 0; int howArg = -1;
         // 1-1) 경계 너머 보임 → 넘어간다
         if (tile < 0 && SeenAcross(p, life, px, py) is { } far)
@@ -116,6 +119,15 @@ public sealed partial class PeopleSim
         var life = Life(p.Cell);
         p.Position(Now, out int px, out int py);
         int hx = px / 1000, hy = py / 1000, here = hy * S + hx;
+        p.PlanItem = -1;
+        // (E4) 들고 있는 먹을 것이 있으면 그것부터(익힌 것 · 말린 것 · 바구니에 담아 둔 것) — 날것은 익히는 법을 알고 불이 가까우면 익혀서
+        if (TryCook(p, why)) return true;
+        int carried = BestCarriedFood(p, desperate: p.Food < UrgentFood);
+        if (carried >= 0 && (p.Food < UrgentFood || life.NearestFood(hx, hy, Now, SightTiles) < 0 || Craft.IsCookedOrKept(carried)))
+        {
+            SetWhy(p, Act.EatCarried, why, p.Food / 1000); p.PlanItem = carried; p.Target = here; StandStill(p); DoStill(p, 250);
+            return true;
+        }
         if (p.Food <= 0 && p.HasTrait(T_cannibal))
         {
             Person? best = null; long bd = long.MaxValue;
@@ -156,6 +168,9 @@ public sealed partial class PeopleSim
             p.SearchMiss = 0;
             var hd = life.HarvestAt(tile);
             p.TargetB = hd is null ? 1 : (int)Math.Clamp((Person.Full - p.Food) / Math.Max(1, hd.Nutrition), 1, 5);
+            // (E4) 익히는 법을 알고 불이 가까우면 들고 가서 익힌다 · 그릇이 있으면 남는 몫을 담아 둔다
+            if (hd is not null && KnowsAnyRoast(p) && Craft.Prop(hd.ItemIndex, Craft.P_edible) > 0 && hd.ItemIndex != I_coconut && life.NearestFire(hx, hy, Now, 45) >= 0) p.PlanItem = 1;
+            else if (hd is not null && HasContainer(p) && p.Scarcity == 0) p.PlanItem = 2;
             return true;
         }
         // 4) 찾아다님(초록이 짙은 쪽으로 — 이웃 지방도)

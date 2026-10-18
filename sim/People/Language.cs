@@ -96,8 +96,10 @@ public sealed class Language
     public int Length = 1;
     /// <summary>이 무리가 아는 뜻(낱말이 있는 뜻). 처음엔 기본 뜻들 — E4 부터 늘어난다.</summary>
     public readonly SortedSet<int> Known = new();
-    /// <summary>뜻 → 다른 시드(나중에 낱말이 바뀌거나 빌려 오면). 지금은 비어 있다.</summary>
+    /// <summary>뜻 → 다른 시드(낱말이 바뀌었거나 빌려 왔으면).</summary>
     public readonly SortedDictionary<int, ulong> Overrides = new();
+    /// <summary>(E4) 낱말이 어디서 왔나: 뜻 → (어느 말에서 — −1 이면 이 무리가 지어냄, 언제). 처음 낱말은 적지 않는다.</summary>
+    public readonly SortedDictionary<int, (int FromLang, long Tick)> Origins = new();
 
     /// <summary>(E3b) 이 말에서 낱말이 새로 바뀐 횟수(정해진 순서대로 바꾼다).</summary>
     public int Changes;
