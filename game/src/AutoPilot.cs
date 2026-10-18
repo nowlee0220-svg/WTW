@@ -132,6 +132,7 @@ public sealed class AutoPilot
                 case "--existingcard": _existingCard = int.Parse(v); break;
                 case "--crossnofollow": _waitCross = true; _crossNoFollow = true; break;
                 case "--livebake": ProvinceView.BakeGround = v != "0"; break;
+                case "--look": _look = v; break;
                 case "--discoveries": _showDiscoveries = true; break;
                 case "--pausemeasure": _pauseMeasure = double.Parse(v, inv); break;
             }
@@ -232,6 +233,7 @@ public sealed class AutoPilot
             ArrangeProvince();
         }
         if (_provinceReady) _sinceProvince += delta;
+        if (_provinceReady && _showDiscoveries && _people is null && !_discShown) { _discShown = true; _main.ShowDiscoveriesForTest(); }
         if (_enterExit > 0) { if (_ready) EnterExit(delta); return; }
         if (_elapsed > 1.0 && (_ready || StayOnNewWorld)) // 시작 직후는 빼고 잰다
         {
@@ -242,6 +244,12 @@ public sealed class AutoPilot
         if (_elapsed > (PreRunYears is int pr ? 120 + pr * 6 : 120) && !_ready) { Finish(false, "AUTOPILOT 시간 초과 (세계가 만들어지지 않음?)"); return; }
         if (_selftest) { if (_ready && snap is not null) { if (_people is not null && !_spawned) { if (_provinceReady) PeopleSteps(delta, snap); } else SelfTest(delta, snap); } }
         else if (_people is not null) { if (_provinceReady) PeopleSteps(delta, snap); }
+        else if (_look is not null && _provinceReady && snap is not null && !_lookDone)
+        {
+            _lookWait += delta;
+            if (Look(snap) || _lookWait > 60) { _lookDone = true; _sinceProvince = 0; }
+            return;
+        }
         else if (_existingCard is int ec && _provinceReady && snap is not null && !_existingDone)
         {
             // 이미 사는 사람(미리 돌린 세계)의 큰 카드: 가운데 지방에서 옮겨 온 적이 많은 어른 — 화면은 이야기를 볼 수 있게
@@ -258,6 +266,50 @@ public sealed class AutoPilot
         }
 
         else if (_shotPath is not null && (StayOnNewWorld ? _elapsed : _enter is not null ? (_provinceReady ? _sinceProvince : -1) : (_ready ? _sinceReady : -1)) >= _shotAfter) Finish(true, "");
+    }
+
+    /// <summary>(E4) 스크린샷: fire 불 둘레 · tool 도구를 든 사람 · pot 그릇 · experiment 실험하는 사람(큰 카드) — 찾을 때까지 2배속으로 돌린다.</summary>
+    private bool Look(WorldSnapshot snap)
+    {
+        var pv = _main.Province;
+        var host = _main.Host!;
+        int center = pv.Center;
+        if (_look == "fire")
+        {
+            if (snap.Fires.TryGetValue(center, out var fires) && fires.FirstOrDefault(f => f.Lit) is { Kind: > 0 } f)
+            {
+                var lp = pv.LayoutOf(center, f.Tile % HexFrame.Size, f.Tile / HexFrame.Size)!.Value;
+                pv.LookAt(lp.X, lp.Y, _pzoom ?? 1.2f);
+                host.SetSpeed(1);
+                return true;
+            }
+            if (host.SpeedLevel != 3) host.SetSpeed(3);
+            return false;
+        }
+        for (int i = 0; i < snap.PeopleCount; i++)
+        {
+            var v = snap.People[i];
+            if (v.Dead || v.Cell != center || v.Carrier >= 0) continue;
+            bool ok = _look switch
+            {
+                "tool" => v.Tool >= 0 && !v.Asleep,
+                "pot" => v.Vessel >= 0 && Wtw.Sim.Data.CraftData.Default.Catalog.Items[v.Vessel].Id == "pot" && !v.Asleep,
+                "experiment" => v.Act is Wtw.Sim.People.Act.Experiment or Wtw.Sim.People.Act.Craft && !v.Walking,
+                _ => false,
+            };
+            if (!ok || pv.PersonWorld(v.Id) is not { } wp) continue;
+            float z = _pzoom ?? 1.6f;
+            double shift = _look == "experiment" || _cardTab is not null ? (PersonCardPanel.Width / 2.0) / z / ProvinceView.TilePx : 0;
+            pv.LookAt(wp.X / ProvinceView.TilePx + shift, wp.Y / ProvinceView.TilePx - 0.6, z);
+            if (_look == "experiment" || _cardTab is not null) { _main.OpenCardForTest(v.Id); _main.CardPanel.SetTab(_cardTab ?? 0); }
+            if (_follow) pv.Follow(v.Id);
+            host.SetSpeed(1);
+            if (_look == "experiment") host.SetPaused(true);
+            GD.Print($"LOOK {_look} person={v.Id} {v.Name}");
+            return true;
+        }
+        if (host.SpeedLevel != 2) host.SetSpeed(2);
+        return false;
     }
 
     private void SelfTest(double delta, WorldSnapshot snap)
@@ -626,6 +678,9 @@ public sealed class AutoPilot
 
     private int _hoverTarget = -1;
     private bool _showDiscoveries;
+    private string? _look;
+    private bool _lookDone, _discShown;
+    private double _lookWait;
     private double? _pauseMeasure;
     private bool _focusTalk;
     private bool _cave;

@@ -310,6 +310,7 @@ public sealed class PersonView
     public int Tool = -1, Vessel = -1;
     public bool Ember, Working;
     public string Nickname = "";
+    private static int _ember = -1;
     /// <summary>말풍선: 그 사람의 말로 된 낱말과 뜻(이야기할 때만).</summary>
     public string Say = "", SayMeaning = "";
     public LifeStage Stage;
@@ -333,11 +334,12 @@ public sealed class PersonView
         // (E4) 든 것: 날 · 단단함이 가장 좋은 만든 도구, 가장 큰 그릇
         Tool = -1; Vessel = -1; Ember = false;
         var craft = Data.CraftData.Default;
+        if (_ember < 0) _ember = craft.ItemIndex("ember");
         int bt = 0, bv = 0;
         foreach (var (item, _) in p.Carry)
         {
             if (craft.Catalog.Items[item].Kind != "made") { continue; }
-            if (item == craft.ItemIndex("ember")) { Ember = true; continue; }
+            if (item == _ember) { Ember = true; continue; }
             int t = craft.Prop(item, craft.P_sharp) * 2 + craft.Prop(item, craft.P_hardness);
             if (craft.Prop(item, craft.P_sharp) > 0 && t > bt) { bt = t; Tool = item; }
             int v = craft.Prop(item, craft.P_holds);
