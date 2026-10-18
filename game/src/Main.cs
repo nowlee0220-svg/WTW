@@ -158,7 +158,7 @@ public partial class Main : Node
             w.EnsurePlanet(Progress);
             if (_auto.PreRunYears is int years) // 자동 확인용(같은 조건이면 저장해 둔 것을 다시 쓴다)
             {
-                string cache = ProjectSettings.GlobalizePath($"user://prerun-{seed}-{years}-{_auto.PreHomes}-{_auto.PreFamilies}.wtw");
+                string cache = ProjectSettings.GlobalizePath($"user://prerun-{seed}-{config.Climate}-{config.LandCells}-{years}-{_auto.PreHomes}-{_auto.PreFamilies}-{File.GetLastWriteTimeUtc(typeof(GameWorld).Assembly.Location).Ticks}.wtw");
                 if (File.Exists(cache)) { w = SaveGame.LoadFile(cache); w.EnsurePlanet(Progress); GD.Print($"PRERUN cached {cache}"); }
                 else { AutoPilot.PreRun(w, years, _auto.PreFamilies, Progress, _auto.PreHomes); Directory.CreateDirectory(Path.GetDirectoryName(cache)!); SaveGame.SaveFile(w, cache); }
             }

@@ -304,7 +304,7 @@ public sealed class AutoPilot
             bool ok = _look switch
             {
                 "tool" => v.Tool >= 0 && !v.Asleep,
-                "pot" => v.Vessel >= 0 && Wtw.Sim.Data.CraftData.Default.Catalog.Items[v.Vessel].Id == "pot" && !v.Asleep,
+                "pot" => v.Vessel >= 0 && Wtw.Sim.Data.CraftData.Default.Catalog.Items[v.Vessel].Id.EndsWith("pot") && !v.Asleep,
                 "experiment" => v.Act is Wtw.Sim.People.Act.Experiment or Wtw.Sim.People.Act.Craft && !v.Walking,
                 _ => false,
             };

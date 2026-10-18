@@ -79,6 +79,8 @@ public static class DiscoverBench
         sb.AppendLine("  바람(살아 있는 사람 합): " + string.Join(" · ", ps.Craft.Wishes.Select(x => $"{x.Name} {wishes[x.Index]}")));
         int fires = 0; foreach (var (_, l) in ps.Provinces) fires += l.Fires.Count(f => f.Value.Lit(w.Now));
         sb.AppendLine($"  지금 타는 불 {fires}개");
+        int dup = ps.All.Where(q => !q.Dead).Sum(q => q.Clues.Count - q.Clues.Select(c => (c.Rule, c.Key)).Distinct().Count());
+        sb.AppendLine($"  같은 단서 겹침 {dup} · 단서 키: " + string.Join(", ", ps.All.Where(q => !q.Dead).SelectMany(q => q.Clues).GroupBy(c => ps.Craft.Rules[c.Rule].Id + "/" + c.Key).OrderByDescending(g => g.Count()).Take(6).Select(g => g.Key + " " + g.Count())));
         sb.AppendLine("  계획: " + string.Join(" · ", st.PlanWhy.Select((v, i) => $"{i}:{v}")));
         sb.AppendLine("  규칙별 성공: " + string.Join(" · ", ps.Craft.Rules.Where(r => st.RuleDone[r.Index] > 0).Select(r => $"{r.Id} {st.RuleDone[r.Index]}")));
         return sb.ToString();
