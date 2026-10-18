@@ -30,6 +30,7 @@ public partial class Main : Node
     private PersonCardPanel _cardPanel = null!;
     private PeopleListPanel _list = null!;
     private AlertsPanel _alerts = null!;
+    private DiscoveryPanel _discoveries = null!;
     private int _hoverPerson = -1;
     private double _cardTimer, _listTimer, _hoverTimer;
     private string _cardSig = "";
@@ -92,6 +93,7 @@ public partial class Main : Node
         _hud.ExitProvinceRequested += ExitProvince;
         _hud.ResourceViewRequested += SetResourceView;
         _hud.SpawnToolRequested += SetSpawnTool;
+        _hud.DiscoveriesRequested += ToggleDiscoveries;
 
         _legend = new Legend { Theme = theme, Visible = false };
         ui.AddChild(_legend);
@@ -117,6 +119,10 @@ public partial class Main : Node
         _alerts = new AlertsPanel { Theme = theme };
         ui.AddChild(_alerts);
         _alerts.AlertPicked += OnAlertPicked;
+        _discoveries = new DiscoveryPanel { Theme = theme };
+        ui.AddChild(_discoveries);
+        _discoveries.CloseRequested += () => _discoveries.Visible = false;
+        _discoveries.PersonPicked += (pid, cell) => { _discoveries.Visible = false; OnAlertPicked(pid, cell); };
         _personHover = new PersonHoverCard { Theme = theme };
         ui.AddChild(_personHover);
         _province.LabelBlockers = LabelBlockers;
@@ -270,6 +276,7 @@ public partial class Main : Node
         foreach (var r in _hud.Blockers()) yield return r;
         if (_info.Visible) yield return _info.GetGlobalRect();
         if (_cardPanel.Visible) yield return _cardPanel.GetGlobalRect();
+        if (_discoveries.Visible) yield return _discoveries.GetGlobalRect();
         if (_list.Visible) yield return _list.GetGlobalRect();
         if (_alerts.Visible && _alerts.GetChildCount() > 0) yield return _alerts.GetGlobalRect();
         if (_panel.Visible) yield return _panel.GetGlobalRect();
@@ -395,10 +402,17 @@ public partial class Main : Node
         _auto.OnSpawned();
     }
 
+    private void ToggleDiscoveries()
+    {
+        _discoveries.Visible = !_discoveries.Visible;
+        if (_discoveries.Visible) { _panel.Visible = false; _cardPanel.Close(); if (_snap is not null) _discoveries.Fill(_snap); }
+    }
+
     private void OpenCard(int id)
     {
         if (_host is null || id < 0) return;
         _panel.Visible = false;
+        _discoveries.Visible = false;
         _cardPanel.Open(id);
         _cardPanel.SetFollowing(_province.FollowPerson == id);
         _province.Select(id);
@@ -428,7 +442,8 @@ public partial class Main : Node
     private void UpdatePeopleUi(WorldSnapshot snap, double delta)
     {
         var vp = GetViewport().GetVisibleRect().Size;
-        _alerts.RightMargin = _cardPanel.Visible ? PersonCardPanel.Width + 24 : _panel.Visible ? CellPanel.Width + 24 : 12;
+        _alerts.RightMargin = _cardPanel.Visible ? PersonCardPanel.Width + 24 : _discoveries.Visible ? DiscoveryPanel.Width + 24 : _panel.Visible ? CellPanel.Width + 24 : 12;
+        if (_discoveries.Visible) _discoveries.Fill(snap);
         _alerts.Update(snap, Time.GetTicksMsec() / 1000.0, vp);
         if (_host is null) return;
         // 큰 카드
@@ -438,7 +453,7 @@ public partial class Main : Node
             var c = _host.Card(0);
             if (c is not null && c.Id == _cardPanel.PersonId)
             {
-                string sig = $"{c.Activity}|{c.Why}|{c.Mood}|{c.Age}|{string.Join(",", c.Needs.Select(n => n.Value / 2))}|{c.Thoughts.Count}|{c.Relations.Count}|{c.Story.Count}|{c.Body.Count}|{string.Join(",", c.Relations.Select(r => r.Opinion / 3))}|{c.Alive}";
+                string sig = $"{c.Activity}|{c.Why}|{c.Mood}|{c.Age}|{string.Join(",", c.Needs.Select(n => n.Value / 2))}|{c.Thoughts.Count}|{c.Relations.Count}|{c.Story.Count}|{c.Body.Count}|{string.Join(",", c.Relations.Select(r => r.Opinion / 3))}|{c.Alive}|{c.Knowledge.Count}|{c.Clues.Count}|{string.Join(",", c.Wishes.Select(w => w.Strength / 5))}|{c.Carry}";
                 if (sig != _cardSig) { _cardSig = sig; _cardPanel.Fill(c); }
             }
             if (_cardTimer <= 0) { _cardTimer = 0.35; _host.RequestCard(_cardPanel.PersonId, 0); }
@@ -455,7 +470,7 @@ public partial class Main : Node
         }
         else if (_personHover.Visible) _personHover.Hide2();
         // 사람 목록: 오른쪽 칸이 비어 있을 때만(창끼리 겹치지 않게)
-        _list.Visible = _province.IsOpen && _province.ShownCount > 0 && !_cardPanel.Visible && !_panel.Visible;
+        _list.Visible = _province.IsOpen && _province.ShownCount > 0 && !_cardPanel.Visible && !_panel.Visible && !_discoveries.Visible;
         if (_list.Visible)
         {
             _listTimer -= delta;
@@ -503,8 +518,14 @@ public partial class Main : Node
             l.Add(("쓰는 말", $"{lv?.Label ?? $"말 {lang}"} — {speakers}명이 씀"));
             if (_globe.Mode == MapMode.Language && lv is not null)
             {
-                var reach = snap.CellLanguages.Where(x => x.Cell != c).Select(x => (x.Cell, U: snap.LanguageOf(x.LangId) is { } o ? Understand(lv, o) : 0)).OrderByDescending(x => x.U).Take(6).ToList();
-                if (reach.Count > 0) l.Add(("통하는 곳", string.Join(" · ", reach.Select(x => $"{snap.LandLabel(x.Cell) ?? $"칸 {x.Cell}"} {x.U}%"))));
+                // (E4) 목록 대신 개수 + 서로 다른 이름 몇 개(같은 이름이 겹치지 않게)
+                var reach = snap.CellLanguages.Where(x => x.Cell != c).Select(x => (x.Cell, U: snap.LanguageOf(x.LangId) is { } o ? Understand(lv, o) : 0)).Where(x => x.U >= 60).OrderByDescending(x => x.U).ThenBy(x => x.Cell).ToList();
+                if (reach.Count > 0)
+                {
+                    var near = reach.Select(x => snap.LandLabel(x.Cell)).Where(n => n is not null).Distinct().Take(3).ToList();
+                    l.Add(("통하는 곳", $"잘 통하는 칸 {reach.Count}곳(지도에서 밝게)" + (near.Count > 0 ? " — " + string.Join(" · ", near) + (reach.Count > near.Count ? " …" : "") : "")));
+                }
+                else l.Add(("통하는 곳", "잘 통하는(60% 이상) 다른 칸이 없다"));
             }
         }
         if (l.Count == 0 && snap.OpenedCells.Contains(c)) l.Add(("사는 사람", "지금은 아무도 없다(전에 사람이 살았던 땅)"));
@@ -583,6 +604,29 @@ public partial class Main : Node
             _auto.OnNotice(n);
         }
         _auto.Tick(delta, snap);
+        Throttle();
+    }
+
+    // ───────── (E4) 안 움직이면 덜 그리기 ─────────
+
+    private double _lastInput;
+    public override void _Input(InputEvent e)
+    {
+        if (e is InputEventMouseMotion or InputEventMouseButton or InputEventKey) _lastInput = Time.GetTicksMsec() / 1000.0;
+    }
+
+    /// <summary>
+    /// 멈춤 + 1.5초 동안 손대지 않음 → 초당 10번만 그린다. 창이 뒤에 있으면 초당 5번. 그 밖에는 제한 없음(모니터 주사율).
+    /// 시뮬은 멈춰 있고 화면에 움직이는 것은 물결 · 불꽃 · 숨쉬기 정도라 초당 10번이면 충분하다.
+    /// </summary>
+    private void Throttle()
+    {
+        if (_host is null) return;
+        double now = Time.GetTicksMsec() / 1000.0;
+        bool idle = _host.Paused && now - _lastInput > 1.5 && !_province.Loading && !_province.Baking && _making is null;
+        bool away = !_auto.Active && !GetWindow().HasFocus();
+        int fps = away ? 5 : idle ? 10 : 0;
+        if (Engine.MaxFps != fps) Engine.MaxFps = fps;
     }
 
     public override void _UnhandledInput(InputEvent e)
@@ -593,6 +637,7 @@ public partial class Main : Node
         {
             if (_newWorld.Visible) { if (_host is not null && !_newWorld.Busy) _newWorld.Visible = false; }
             else if (_province.SpawnTool != 0) SetSpawnTool(0);
+            else if (_discoveries.Visible) _discoveries.Visible = false;
             else if (_cardPanel.Visible) CloseCard();
             else if (_province.IsOpen) { _panel.Visible = false; ExitProvince(); }
             else if (_panel.Visible) _globe.Select(-1);
@@ -611,6 +656,7 @@ public partial class Main : Node
             case Key.F5: Save(); break;
             case Key.F9: Load(); break;
             case Key.F12: _devDots = !_devDots; break; // 개발용: E0 점 시험 화면
+            case Key.D: ToggleDiscoveries(); break;
             case Key.Enter or Key.KpEnter when !_province.IsOpen && _globe.Selected >= 0: EnterProvince(_globe.Selected); break;
             case Key.Y when _province.IsOpen: SetResourceView(!_province.ResourceView); break;
             default:
@@ -635,6 +681,8 @@ public partial class Main : Node
     internal TileCard Card => _card;
     internal PersonCardPanel CardPanel => _cardPanel;
     internal PersonHoverCard PersonHover => _personHover;
+    internal DiscoveryPanel Discoveries => _discoveries;
+    internal void ShowDiscoveriesForTest() { if (!_discoveries.Visible) ToggleDiscoveries(); }
     internal void OpenCardForTest(int id) => OpenCard(id);
     internal void HoverPersonForTest(int id) { _hoverPerson = id; _hoverTimer = 0; }
     internal void SpawnForTest(int cell, int x, int y, bool family) => OnSpawnClicked(cell, x, y, family);

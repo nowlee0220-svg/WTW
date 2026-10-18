@@ -32,6 +32,16 @@ public partial class ProvinceView : Node2D
         public required ShaderMaterial Ground;
         public required ObjectSet Objects;
         public int[]? RevealedTiles;
+        /// <summary>(E4) 땅 자료(캐낸 자리를 바꾸려고 들고 있음) · 밤의 정도(0 낮 ~ 1 밤) · 다시 구워야 하나.</summary>
+        public required byte[] GroundBytes;
+        public float Night;
+        public bool Dirty;
+        /// <summary>(E4) 옛 방식으로 바로 그리는 땅 · 구운 땅 · 가까이 볼 때의 조각.</summary>
+        public MeshInstance2D? LiveNode, BakedNode;
+        public ShaderMaterial? BakedMat;
+        public ImageTexture? BakedTex;
+        public Node2D? ChunkRoot;
+        public readonly Dictionary<(int, int), Chunk> Chunks = new();
     }
 
     /// <summary>
@@ -100,7 +110,7 @@ public partial class ProvinceView : Node2D
 
         _world = new Node2D();
         AddChild(_world);
-        _cam = new Camera2D { Enabled = false };
+        _cam = new Camera2D { Enabled = false, IgnoreRotation = false };
         AddChild(_cam);
 
         _centerOutline = new Line2D { Width = 6, DefaultColor = new Color(1, 0.85f, 0.4f, 0.35f), Closed = true, Visible = false, ZIndex = 5 };
@@ -119,6 +129,8 @@ public partial class ProvinceView : Node2D
         _hexMesh = MakeHexMesh();
         _spriteMesh = MakeSpriteMesh();
         ReadyPeople();
+        ReadyCraft();
+        ReadyBake();
         Visible = false;
     }
 
@@ -130,6 +142,8 @@ public partial class ProvinceView : Node2D
         Art.EnsureProvinceArt();
         _planet = p;
         _center = cell;
+        _viewSteps = 0;
+        _cam.Rotation = 0;
         _neighbors = neighbors;
         Visible = true;
         _back.Visible = true;
@@ -150,6 +164,14 @@ public partial class ProvinceView : Node2D
     public void Recenter(int cell)
     {
         if (_planet is null || _center < 0 || cell == _center) return;
+        // (E4) 화면 방향을 그대로: 새 가운데 지방은 돌리지 않고 그리므로, 옛 배치에서 그 지방을 돌린 만큼 카메라를 거꾸로 돌린다
+        var (_, _, slots, _) = ProvinceGenerator.Slots(_planet, _center);
+        int slot = Array.IndexOf(slots, cell);
+        if (slot >= 0 && ProvinceLayout.Neighbor(_planet, _center, slot) is { } pl)
+        {
+            _viewSteps = ((_viewSteps - pl.Steps) % 6 + 6) % 6;
+            _cam.Rotation = _viewSteps * Mathf.Pi / 3;
+        }
         _center = cell;
         _snapToFollow = true;
         ClearCrossLabels();
@@ -157,6 +179,9 @@ public partial class ProvinceView : Node2D
     }
 
     private bool _snapToFollow;
+    /// <summary>(E4) 카메라를 돌린 양(60° 단위) — 경계를 넘어도 화면 방향이 그대로이게.</summary>
+    private int _viewSteps;
+    public float ViewRotation => _cam.Rotation;
 
     public void SetNeighbors(bool on)
     {
@@ -185,6 +210,8 @@ public partial class ProvinceView : Node2D
         foreach (var m in _markers) m.Visible = false;
         _overlay.Visible = false;
         _spawnTool = 0;
+        HideCraft();
+        _dugSeen.Clear();
     }
 
     private void Load(bool keepCamera)
@@ -204,9 +231,10 @@ public partial class ProvinceView : Node2D
 
     private void ClearShown()
     {
-        foreach (var s in _shown) { FreeObjects(s.Objects); _world.RemoveChild(s.Node); s.Node.QueueFree(); }
+        foreach (var s in _shown) { FreeObjects(s.Objects); FreeBake(s); _world.RemoveChild(s.Node); s.Node.QueueFree(); }
         _shown.Clear();
         _faded.Clear();
+        _dugSeen.Clear();
         foreach (var n in _labels.GetChildren()) { _labels.RemoveChild(n); n.QueueFree(); }
     }
 
@@ -232,7 +260,7 @@ public partial class ProvinceView : Node2D
         if (!_loadingKeepCamera)
         {
             _zoom = _targetZoom = _minZoom * (_neighbors ? 3 : 1);
-            _cam.Position = new Vector2(-(LeftReserve + 24) / 2f / _zoom, 0); // 지방이 정보 칸 오른쪽 빈 곳 가운데에 오게
+            _cam.Position = new Vector2(-(LeftReserve + 24) / 2f / _zoom, 0).Rotated(_cam.Rotation); // 지방이 정보 칸 오른쪽 빈 곳 가운데에 오게
         }
         _targetZoom = Math.Max(_targetZoom, _minZoom);
         _zoom = Math.Max(_zoom, _minZoom);
@@ -285,13 +313,16 @@ public partial class ProvinceView : Node2D
         mat.SetShaderParameter("palette_tex", Art.GroundPalette);
         mat.SetShaderParameter("noise_tex", Art.GroundNoise);
         // 해는 화면의 왼쪽 위 → 지방을 돌린 만큼 거꾸로 돌려 지도 좌표로
-        var light = new Vector2(-0.6f, -0.8f).Rotated(-node.Rotation);
+        var light = new Vector2(-0.6f, -0.8f).Rotated(_cam.Rotation - node.Rotation);
         mat.SetShaderParameter("light_dir", light);
         mat.SetShaderParameter("tile_px", TilePx);
-        node.AddChild(new MeshInstance2D { Mesh = _hexMesh, Material = mat, TextureFilter = TextureFilterEnum.Linear });
+        var live = new MeshInstance2D { Mesh = _hexMesh, Material = mat, TextureFilter = TextureFilterEnum.Linear };
+        node.AddChild(live);
 
         var objects = BuildObjects(pl, m, node);
-        return new Shown { Place = pl, Map = m, Node = node, Ground = mat, Objects = objects };
+        var sh = new Shown { Place = pl, Map = m, Node = node, Ground = mat, Objects = objects, GroundBytes = data, LiveNode = live };
+        SetupBake(sh);
+        return sh;
     }
 
     /// <summary>
@@ -332,6 +363,7 @@ public partial class ProvinceView : Node2D
         foreach (var sh in _shown)
         {
             sh.Ground.SetShaderParameter("res_view", on ? 1f : 0f);
+            Rebake(sh);
             FreeObjects(sh.Objects);
             _faded.Clear();
             sh.Objects = BuildObjects(sh.Place, sh.Map, sh.Node);
@@ -606,7 +638,9 @@ public partial class ProvinceView : Node2D
             double h = ProvinceReport.LocalHour(_planet, sh.Map.Cell, _tick);
             var tint = DaylightTint(ProvinceReport.SunAltitude(lat, h));
             var v = new Vector3(tint.R, tint.G, tint.B);
+            sh.Night = Mathf.Clamp((1f - tint.G) / 0.42f, 0f, 1f);
             sh.Ground.SetShaderParameter("daylight", v);
+            SetBakedDaylight(sh, v);
             sh.Objects.Mat.SetShaderParameter("daylight", v);
         }
     }
@@ -649,13 +683,14 @@ public partial class ProvinceView : Node2D
         if (Input.IsKeyPressed(Key.Right)) key.X += 1;
         if (Input.IsKeyPressed(Key.Up)) key.Y -= 1;
         if (Input.IsKeyPressed(Key.Down)) key.Y += 1;
-        if (key != Vector2.Zero) _cam.Position += key * 900 * dt / _zoom;
+        if (key != Vector2.Zero) _cam.Position += (key * 900 * dt / _zoom).Rotated(_cam.Rotation);
         ApplyCamera();
         _centerOutline.Width = 3.5f / _zoom;
         _hoverBox.Width = Math.Max(2f, 2.5f / _zoom);
         if (_mouseMoved && !_dragging) { _mouseMoved = false; UpdateHover(GetViewport().GetMousePosition()); }
         UpdateLabels();
         UpdateDaylight();
+        ProcessBake();
     }
 
     private Vector2 ScreenToWorld(Vector2 screen) => GetViewport().GetCanvasTransform().AffineInverse() * screen;
@@ -695,7 +730,7 @@ public partial class ProvinceView : Node2D
                 if (_dragging)
                 {
                     _dragMoved += mm.Relative.Length();
-                    var d = -mm.Relative / _zoom;
+                    var d = (-mm.Relative / _zoom).Rotated(_cam.Rotation);
                     _cam.Position += d;
                     double now = Time.GetTicksUsec() / 1e6;
                     _recent.Enqueue((now, d));

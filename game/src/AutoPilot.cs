@@ -131,6 +131,9 @@ public sealed class AutoPilot
                 case "--waitcross": _waitCross = true; break;
                 case "--existingcard": _existingCard = int.Parse(v); break;
                 case "--crossnofollow": _waitCross = true; _crossNoFollow = true; break;
+                case "--livebake": ProvinceView.BakeGround = v != "0"; break;
+                case "--discoveries": _showDiscoveries = true; break;
+                case "--pausemeasure": _pauseMeasure = double.Parse(v, inv); break;
             }
         }
     }
@@ -563,8 +566,14 @@ public sealed class AutoPilot
             if (_follow) pv.Follow(target);
             if (_cardTab is int tab) { _main.OpenCardForTest(target); _main.CardPanel.SetTab(tab); }
             if (_hoverPerson) { _hoverTarget = target; }
+            if (_showDiscoveries) _main.ShowDiscoveriesForTest();
             _cave = _enter == "cave";
             GD.Print($"PEOPLE ready alive={snap.AliveCount} target={target} local_hour={ProvinceReport.LocalHour(p, pv.Center, host.RenderTick):F1}");
+            return;
+        }
+        if (_pauseMeasure is double pm)
+        {
+            MeasureFrames(delta, pm);
             return;
         }
         if (_waitCross)
@@ -592,7 +601,32 @@ public sealed class AutoPilot
         if (_sincePeople >= _shotAfter && (_globeAfter is null || _globeDone)) Finish(true, $"PEOPLE alive={snap.AliveCount} total={snap.PeopleCount}");
     }
 
+    // (E4) 화면 한 장 그리는 시간: 1배속 pm 초 → 멈추고 1.5초 기다린 뒤 pm 초
+    private int _pmPhase;
+    private double _pmT;
+    private readonly List<double> _pmRun = new(), _pmPaused = new();
+
+    private void MeasureFrames(double delta, double pm)
+    {
+        var host = _main.Host!;
+        _pmT += delta;
+        switch (_pmPhase)
+        {
+            case 0 when _pmT > 3 && !_main.Province.Baking: _pmPhase = 1; _pmT = 0; break;
+            case 1: _pmRun.Add(delta); if (_pmT > pm) { _pmPhase = 2; _pmT = 0; host.SetPaused(true); } break;
+            case 2 when _pmT > 2.0: _pmPhase = 3; _pmT = 0; break;
+            case 3: _pmPaused.Add(delta); if (_pmT > pm) _pmPhase = 4; break;
+            case 4:
+                double Ms(List<double> l) => l.Count == 0 ? 0 : l.Average() * 1000;
+                GD.Print($"FRAMEMEASURE bake={ProvinceView.BakeGround} run_frames={_pmRun.Count} run_ms={Ms(_pmRun):F2} run_fps={(_pmRun.Count > 0 ? 1000 / Ms(_pmRun) : 0):F1} paused_frames={_pmPaused.Count} paused_fps={(_pmPaused.Count / pm):F1} bakes={ProvinceView.BakesDone} people={_lastSnap?.AliveCount}");
+                Finish(true, "");
+                break;
+        }
+    }
+
     private int _hoverTarget = -1;
+    private bool _showDiscoveries;
+    private double? _pauseMeasure;
     private bool _focusTalk;
     private bool _cave;
     private int _speedAfter = 1;

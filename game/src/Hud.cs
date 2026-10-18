@@ -18,6 +18,7 @@ public partial class Hud : Control
     public event Action? ExitProvinceRequested;    // 지방 화면 → 지구본
     public event Action<bool>? ResourceViewRequested; // 지방 화면: 자원 보기 켜기/끄기
     public event Action<int>? SpawnToolRequested;   // 지방 화면: 0 끔 · 1 사람 뿌리기 · 2 가족 뿌리기
+    public event Action? DiscoveriesRequested;      // (E4) 발견 목록
 
     private Label _date = null!, _speed = null!, _metrics = null!, _notice = null!;
     private readonly Button[] _speedButtons = new Button[Speed.Max + 1];
@@ -76,6 +77,8 @@ public partial class Hud : Control
             _speedButtons[s] = b;
             row.AddChild(b);
         }
+        row.AddChild(new VSeparator());
+        row.AddChild(MakeButton("발견", () => DiscoveriesRequested?.Invoke(), "이 세계에서 처음 나온 것들 — 누가 · 언제 · 왜 (키 D)"));
         row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
         // 지방 화면: 플레이어의 첫 권능 — 사람 뿌리기
         _spawnOne = MakeButton("사람 뿌리기", () => SpawnToolRequested?.Invoke(_spawnOne.ButtonPressed ? 1 : 0), "누르고 땅을 누르면 그 자리에 한 명 (나이 15~40, 아무것도 모름). 걸을 수 있는 땅에만.");

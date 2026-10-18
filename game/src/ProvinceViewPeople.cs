@@ -21,7 +21,7 @@ public partial class ProvinceView
     private sealed class PersonNode
     {
         public required Node2D Root;
-        public required Sprite2D Shadow, Body, Icon;
+        public required Sprite2D Shadow, Body, Icon, Tool;
         public int Id = -1;
         public Art.Facing Facing = Art.Facing.Front;
         public bool FlipLeft;
@@ -104,7 +104,7 @@ public partial class ProvinceView
             {
                 if (nl == _nameLabels.Count) _nameLabels.Add(NewOverlayLabel(false));
                 var l = _nameLabels[nl++];
-                l.Text = v.Dead ? v.Name + " †" : v.Name;
+                l.Text = (v.Dead ? v.Name + " †" : v.Name) + (v.Nickname.Length > 0 ? $" '{v.Nickname}'" : "");
                 l.Modulate = new Color(1, 1, 1, v.Dead ? 0.55f : 0.92f);
                 l.ResetSize();
                 l.Position = screen + new Vector2(-l.Size.X / 2, 6);
@@ -245,9 +245,10 @@ public partial class ProvinceView
         var shadow = new Sprite2D { Texture = Art.PersonShadow, Material = _premul };
         var body = new Sprite2D { Material = _premul, Centered = false };
         var icon = new Sprite2D { Material = _premul, Visible = false };
-        root.AddChild(shadow); root.AddChild(body); root.AddChild(icon);
+        var tool = new Sprite2D { Material = _premul, Visible = false };
+        root.AddChild(shadow); root.AddChild(body); root.AddChild(tool); root.AddChild(icon);
         _peopleRoot.AddChild(root);
-        var n = new PersonNode { Root = root, Shadow = shadow, Body = body, Icon = icon };
+        var n = new PersonNode { Root = root, Shadow = shadow, Body = body, Icon = icon, Tool = tool };
         _pool.Add(n);
         return n;
     }
@@ -272,6 +273,7 @@ public partial class ProvinceView
             _selRing.Visible = false;
             foreach (var m in _markers) m.Visible = false;
             _overlay.Visible = false;
+            HideCraft();
             return;
         }
         ApplyRevealed(snap);
@@ -319,6 +321,7 @@ public partial class ProvinceView
         if (_follow >= 0 && _loading is null && _indexOfId.TryGetValue(_follow, out int fi) && snap.People[fi].Cell != _center && !snap.People[fi].Dead)
             FollowCrossed?.Invoke(snap.People[fi].Cell);
         UpdateCrossLabels(snap);
+        UpdateCraft(snap);
         UpdateVisibilityAids();
         _ = used;
     }
@@ -342,7 +345,7 @@ public partial class ProvinceView
         // 방향: 지방을 돌린 만큼 걷는 방향도 돌려 화면 방향으로
         if (dx != 0 || dy != 0)
         {
-            var dir = new Vector2((float)dx, (float)dy).Rotated(sh.Node.Rotation);
+            var dir = new Vector2((float)dx, (float)dy).Rotated(sh.Node.Rotation - _cam.Rotation);
             if (Math.Abs(dir.X) > Math.Abs(dir.Y) * 0.8f) { node.Facing = Art.Facing.Side; node.FlipLeft = dir.X < 0; }
             else node.Facing = dir.Y > 0 ? Art.Facing.Front : Art.Facing.Back;
         }
@@ -384,6 +387,7 @@ public partial class ProvinceView
         node.Shadow.Scale = Vector2.One * (TilePx / 64f) * (v.Stage switch { LifeStage.Baby => 0.4f, LifeStage.Child => 0.65f, _ => 0.9f }) * (lying ? 1.4f : 1f);
         node.Shadow.Position = new Vector2(lying ? -0.1f * TilePx : 0, 0);
         node.Shadow.Visible = v.Carrier < 0 || v.Dead;
+        DrawHeld(node, v, lying);
         // 머리 위 표시
         var icon = node.Icon;
         Texture2D? it = null;
@@ -444,6 +448,7 @@ public partial class ProvinceView
             _revealedSeen[sh.Map.Cell] = tiles.Length;
             sh.RevealedTiles = tiles;
             sh.Ground.SetShaderParameter("data2_tex", MakeData2(sh.Map, tiles));
+            Rebake(sh);
         }
     }
 }

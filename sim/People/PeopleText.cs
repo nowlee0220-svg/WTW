@@ -196,7 +196,7 @@ public sealed partial class PeopleSim
             Why.WantCooking => $"익혀 먹었으면 — 날것에 배탈이 나서 (바람 {WishStrength(p, "cooking")})",
             Why.WantCarry => $"더 많이 나를 수 있었으면 (바람 {WishStrength(p, "carry")})",
             Why.WantShiny => $"반짝이는 돌이 궁금해서 (바람 {WishStrength(p, "shiny")}): 세찬 불에 넣어 본다",
-            Why.KnowHow => $"{WishName(arg)}이(가) 아쉬운데 만드는 법을 알아서",
+            Why.KnowHow => $"{Hangul.I(WishName(arg))} 아쉬운데 만드는 법을 알아서",
             Why.Clue => "전에 거의 될 듯했던 단서를 따라서 — " + (p.Clues.Count > 0 ? ClueText(p.Clues[^1]) : ""),
             Why.Fuel => "불이 꺼져 가서 — 땔감을 넣어 지킨다",
             Why.TakeFire => "불이 보여서 — 불씨를 얻어 오면 추위를 피할 수 있다",
@@ -216,7 +216,7 @@ public sealed partial class PeopleSim
         var r = Craft.Rules[k.Rule];
         string how = k.With >= 0 ? $"{Hangul.Gwa(ItemName(k.Input))} {Hangul.Eul(ItemName(k.With))} {Craft.ActionName(r.Action)}" : $"{Hangul.Eul(ItemName(k.Input))} {Craft.ActionName(r.Action)}";
         if (r.Heat > 0) how += $" ({Craft.HeatName(r.Heat)}에서)";
-        string from = k.LearnedFrom < 0 ? $"{WishName(k.Wish)}이(가) 아쉬워 스스로 알아냄" : $"{Hangul.I(NameOf(k.LearnedFrom))} 하는 것을 곁에서 봄";
+        string from = k.LearnedFrom < 0 ? $"{Hangul.I(WishName(k.Wish))} 아쉬워 스스로 알아냄" : $"{Hangul.I(NameOf(k.LearnedFrom))} 하는 것을 곁에서 봄";
         return $"{Craft.ItemName(r.Result)} — {how} · {PeopleText.Date(k.Tick)} · {from}";
     }
 
@@ -384,16 +384,16 @@ public sealed partial class PeopleSim
         BioKind.FoundWater => "물가를 찾아냈다",
         BioKind.Moved => MovedLine(p, b),
         // (E4)
-        BioKind.Discovered => $"{WishName(b.Param)}이(가) 아쉬워 이것저것 해 보다 {Craft.ItemName(Craft.Rules[b.Other].Result)} 만드는 법을 알아냈다 ({Craft.Rules[b.Other].Name})",
+        BioKind.Discovered => $"{Hangul.I(WishName(b.Param))} 아쉬워 이것저것 해 보다 {Craft.ItemName(Craft.Rules[b.Other].Result)} 만드는 법을 알아냈다 ({Craft.Rules[b.Other].Name})",
         BioKind.LearnedWatching => $"{Hangul.I(NameOf(b.Other))} {Craft.ItemName(Craft.Rules[b.Param].Result)} 만드는 것을 곁에서 보고 따라 할 수 있게 되었다",
-        BioKind.PartialSuccess => $"{Hangul.Eul(ItemName(b.Param))} 다루다 거의 될 듯했다 — {(Craft.Rules[b.Other].Partial.Count > 0 ? Craft.Rules[b.Other].Name : "")}",
+        BioKind.PartialSuccess => $"{Hangul.Eul(ItemName(b.Param))} 다뤄 보다 거의 될 듯했다 — {Craft.Rules[b.Other].Name}",
         BioKind.MadeThing => $"{Hangul.Eul(ItemName(b.Param))} 만들었다",
         BioKind.LitFire => "불을 피웠다",
         BioKind.FireDied => "비에 불이 꺼졌다",
-        BioKind.Mined => b.Other >= 0 ? $"돌 도구로 바위를 캐 {RockCatalog.Default.Ores[b.Other].Name}을 드러냈다" : "돌 도구로 바위를 캤다",
+        BioKind.Mined => b.Other >= 0 ? $"돌 도구로 바위를 캐 {Hangul.Eul(RockCatalog.Default.Ores[b.Other].Name)} 드러냈다" : "돌 도구로 바위를 캤다",
         BioKind.Nicknamed => $"{Hangul.Rago($"'{p.Nickname}'")} 불리게 되었다 (뜻: {string.Join(" ", p.NicknameConcepts.Where(x => (uint)x < Lang.Concepts.Count).Select(x => Lang.Concepts[x].Meaning))} — {p.NicknameReason})",
-        BioKind.NewWord => (uint)b.Param < Lang.Concepts.Count ? $"무리의 말에 '{Lang.Concepts[b.Param].Meaning}'을(를) 뜻하는 낱말 '{WordOf(p, b.Param)}'이(가) 생겼다" : "무리의 말에 새 낱말이 생겼다",
-        BioKind.BorrowedWord => (uint)b.Param < Lang.Concepts.Count ? $"{NameOf(b.Other)}의 말에서 '{Lang.Concepts[b.Param].Meaning}'을(를) 뜻하는 낱말 '{WordOf(p, b.Param)}'을(를) 빌려 왔다" : "다른 말에서 낱말을 빌려 왔다",
+        BioKind.NewWord => (uint)b.Param < Lang.Concepts.Count ? $"무리의 말에 {Hangul.Eul($"'{Lang.Concepts[b.Param].Meaning}'")} 뜻하는 낱말 {Hangul.I($"'{WordOf(p, b.Param)}'")} 생겼다" : "무리의 말에 새 낱말이 생겼다",
+        BioKind.BorrowedWord => (uint)b.Param < Lang.Concepts.Count ? $"{NameOf(b.Other)}의 말에서 {Hangul.Eul($"'{Lang.Concepts[b.Param].Meaning}'")} 뜻하는 낱말 {Hangul.Eul($"'{WordOf(p, b.Param)}'")} 빌려 왔다" : "다른 말에서 낱말을 빌려 왔다",
         BioKind.SawFire => b.Other >= 0 ? $"{NameOf(b.Other)}의 불에서 불씨를 얻었다" : "자연의 불을 보고 불씨를 얻었다",
         BioKind.BadStomach => $"날 {Hangul.Eul(ItemName(b.Param))} 먹고 배탈이 났다",
         BioKind.NamedLand => LandNames.TryGetValue(b.Param, out var ln) && ln.Find(n => n.Namer == p.Id) is { } mine

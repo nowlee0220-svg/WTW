@@ -785,14 +785,14 @@ public sealed partial class PeopleSim
                 d = new Discovery { Rule = rule.Index, Person = p.Id, Cell = p.Cell, Wish = wish, Tick = Now, LangId = p.LangId };
                 if (Partials.TryGetValue(rule.Index, out var pr)) { d.PartialsBefore = pr.Count; d.PartialTexts.AddRange(pr.Texts); Partials.Remove(rule.Index); }
                 Discoveries[rule.Index] = d;
-                Notify(WorldEventKind.Discovery, p, rule.Index, $"세계에서 처음: {Hangul.I(DisplayName(p))} {Craft.ItemName(rule.Result)}{Verb(rule)} — {WishName(wish)} 때문에 {Craft.ActionName(rule.Action)}를 해 보다가" + (d.PartialsBefore > 0 ? $" (그 전에 거의 될 듯한 일 {d.PartialsBefore}번)" : ""));
+                Notify(WorldEventKind.Discovery, p, rule.Index, $"세계에서 처음: {Hangul.I(DisplayName(p))} {Made(rule)} — {Hangul.I(WishName(wish))} 아쉬워 {Hangul.Eul(Craft.ActionName(rule.Action))} 해 보다가" + (d.PartialsBefore > 0 ? $" (그 전에 거의 될 듯한 일 {d.PartialsBefore}번)" : ""));
                 GiveNickname(p, rule);
             }
             else if (d!.Lost)
             {
                 d.Lost = false; d.RefoundCount++; Stats.Refound++;
                 if (Partials.TryGetValue(rule.Index, out var pr2)) { d.PartialsBefore += pr2.Count; Partials.Remove(rule.Index); }
-                Notify(WorldEventKind.Discovery, p, rule.Index, $"{Hangul.I(DisplayName(p))} 잊혔던 {Craft.ItemName(rule.Result)}{Verb(rule)} 다시 찾아냈습니다 ({d.LostCount}번째 잃고 되찾음)");
+                Notify(WorldEventKind.Discovery, p, rule.Index, $"{Hangul.I(DisplayName(p))} 잊혔던 {Hangul.Eul(Craft.ItemName(rule.Result))} 다시 찾아냈습니다 (잃은 적 {d.LostCount}번)");
             }
         }
         else
@@ -806,11 +806,16 @@ public sealed partial class PeopleSim
         if (!GroupFirst.ContainsKey(key))
         {
             GroupFirst[key] = Now;
-            if (!worldFirst && from < 0) Notify(WorldEventKind.Discovery, p, rule.Index, $"이 무리에서 처음: {Hangul.I(DisplayName(p))} {Craft.ItemName(rule.Result)}{Verb(rule)}");
+            if (!worldFirst && from < 0) Notify(WorldEventKind.Discovery, p, rule.Index, $"이 무리에서 처음: {Hangul.I(DisplayName(p))} {Made(rule)}");
         }
     }
 
-    private string Verb(CraftRule r) => r.Result == I_campfire ? "을 피웠습니다" : r.Result == I_ember ? "를 얻었습니다" : r.Result == I_hearth ? "을 만들었습니다" : Hangul.J(Craft.ItemName(r.Result), "을", "를") + " 만들었습니다";
+    /// <summary>"모닥불을 피웠습니다" · "불씨를 얻었습니다" · "구운 토기를 만들었습니다".</summary>
+    private string Made(CraftRule r)
+    {
+        string obj = Hangul.Eul(Craft.ItemName(r.Result));
+        return r.Result == I_campfire ? $"{obj} 피웠습니다" : r.Result == I_ember ? $"{obj} 얻었습니다" : $"{obj} 만들었습니다";
+    }
     public string WishName(int wish) => (uint)wish < (uint)Craft.Wishes.Count ? Craft.Wishes[wish].Name : "호기심";
 
     /// <summary>곁에서 본 사람(6타일 안, 깨어 있는 아이 이상)은 따라 할 수 있다 — 간단히, 그 자리에서 본 경우만.</summary>

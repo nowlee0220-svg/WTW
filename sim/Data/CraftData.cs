@@ -212,7 +212,7 @@ public sealed class CraftData
         "tool" => "손으로는 되지 않았다",
         "with" => "함께 쓸 것이 맞지 않았다",
         "tinder" => "불꽃만 튀고 붙지 않았다",
-        _ => $"{(PropIndex(key) >= 0 ? Properties[PropIndex(key)].Name : key)}이(가) 모자라 되지 않았다",
+        _ => $"{People.Hangul.I(PropIndex(key) >= 0 ? Properties[PropIndex(key)].Name : key)} 모자라 되지 않았다",
     };
 
     /// <summary>익혔거나 말려 둔 먹을 것(들고 다니며 먹는 것)인가.</summary>

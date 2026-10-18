@@ -152,6 +152,7 @@ public partial class PersonCardPanel : PanelContainer
         var hb = new VBoxContainer();
         _head.AddChild(hb);
         hb.AddChild(PeopleUi.L(c.Name, UiTheme.FontSizeBig + 2, UiTheme.Accent, bold: true, wrap: true));
+        if (c.Nickname.Length > 0) hb.AddChild(PeopleUi.L($"별명 '{c.Nickname}' — 뜻: {c.NicknameMeaning} ({c.NicknameReason})", UiTheme.FontSizeSmall, new Color(1f, 0.85f, 0.45f), wrap: true));
         hb.AddChild(PeopleUi.L(c.Unnamed ? "아직 이름이 없다 — 생김새로 부른다(함께 지내는 사람이 생기면 그 말로 이름을 지어 준다)" : $"이름의 뜻: {c.NameMeaning}", UiTheme.FontSizeSmall - 1, UiTheme.TextDim, wrap: true));
         hb.AddChild(PeopleUi.L($"{c.StageName} · {c.Age}살 · {c.Place}", UiTheme.FontSizeSmall + 1, UiTheme.TextDim));
         hb.AddChild(c.Alive ? PeopleUi.L($"기분 {c.Mood} — {c.MoodWord}", UiTheme.FontSizeSmall + 2, PeopleUi.MoodColor(c.Mood), bold: true) : PeopleUi.L("죽음", UiTheme.FontSizeSmall + 2, new Color(0.7f, 0.7f, 0.7f), bold: true));
@@ -199,7 +200,7 @@ public partial class PersonCardPanel : PanelContainer
             row.AddChild(PeopleUi.Bar(lv * 10 + prog / 10, 100, new Color(0.6f, 0.85f, 0.55f), 160));
             p.AddChild(row);
         }
-        p.AddChild(PeopleUi.L("지금 쓰이는 기술은 채집(열매 따기)뿐 — 나머지는 자리만 있다(사냥 · 불 · 도구는 다음 단계).", UiTheme.FontSizeSmall, UiTheme.TextDim, wrap: true));
+        p.AddChild(PeopleUi.L("쓰이는 기술: 채집 · 제작(돌 · 끈 · 그릇) · 요리 · 실험(불 · 숯 · 구리) · 건설(화덕). 사냥 · 농사 · 가르치기는 다음 단계.", UiTheme.FontSizeSmall, UiTheme.TextDim, wrap: true));
         p.AddChild(new HSeparator());
         p.AddChild(PeopleUi.L("특성 (마우스를 올리면 효과)", UiTheme.FontSizeSmall + 1, UiTheme.Accent, bold: true));
         foreach (var (name, eff) in c.Traits)
@@ -256,10 +257,36 @@ public partial class PersonCardPanel : PanelContainer
             p.AddChild(row);
         }
 
-        // ⑥ 지식
+        // ⑥ 지식 (E4: 아는 것 · 바람 · 단서 · 새 낱말)
         p = _pages[5]; Clear(p);
-        p.AddChild(PeopleUi.L("만드는 법(조합식): 아직 아는 것이 없다.", UiTheme.FontSizeSmall + 2, null, bold: true, wrap: true));
-        p.AddChild(PeopleUi.L("뿌려진 사람은 아무것도 모른다. 불 · 도구 · 토기 같은 조합식은 실험으로 알아내고(다음 단계), 가르치고 배워 퍼진다.", UiTheme.FontSizeSmall, UiTheme.TextDim, wrap: true));
+        if (c.Wishes.Count > 0)
+        {
+            p.AddChild(PeopleUi.L("바람 — \"~가 있었으면\" (이것 때문에 실험한다)", UiTheme.FontSizeSmall + 1, UiTheme.Accent, bold: true, wrap: true));
+            foreach (var (name, v) in c.Wishes.OrderByDescending(x => x.Strength))
+            {
+                var row = new HBoxContainer();
+                row.AddChild(PeopleUi.L(name, UiTheme.FontSizeSmall + 1)); row.GetChild<Label>(0).CustomMinimumSize = new Vector2(110, 0);
+                row.AddChild(PeopleUi.Bar(v, 100, new Color(0.95f, 0.72f, 0.35f), 200));
+                row.AddChild(PeopleUi.L($"{v}", UiTheme.FontSizeSmall, UiTheme.TextDim));
+                p.AddChild(row);
+            }
+            p.AddChild(new HSeparator());
+        }
+        p.AddChild(PeopleUi.L($"아는 것 ({c.Knowledge.Count}가지) — 무엇을 · 어떻게 · 언제 · 왜", UiTheme.FontSizeSmall + 1, UiTheme.Accent, bold: true, wrap: true));
+        if (c.Knowledge.Count == 0) p.AddChild(PeopleUi.L("아직 아는 것이 없다. 뿌려진 사람은 아무것도 모른다 — 아쉬운 것이 생기면 실험하고, 곁에서 본 것은 따라 할 수 있다.", UiTheme.FontSizeSmall, UiTheme.TextDim, wrap: true));
+        foreach (var k in c.Knowledge) p.AddChild(PeopleUi.L("• " + k, UiTheme.FontSizeSmall + 1, null, wrap: true));
+        if (c.Clues.Count > 0)
+        {
+            p.AddChild(new HSeparator());
+            p.AddChild(PeopleUi.L("단서 — 거의 될 듯했던 일(다음 실험이 따라간다)", UiTheme.FontSizeSmall + 1, UiTheme.Accent, bold: true, wrap: true));
+            foreach (var k in c.Clues.Take(8)) p.AddChild(PeopleUi.L("• " + k, UiTheme.FontSizeSmall, UiTheme.TextDim, wrap: true));
+        }
+        if (c.NewWords.Count > 0)
+        {
+            p.AddChild(new HSeparator());
+            p.AddChild(PeopleUi.L("새로 생긴 낱말 — 어디서 왔나", UiTheme.FontSizeSmall + 1, UiTheme.Accent, bold: true, wrap: true));
+            foreach (var (word, meaning, origin) in c.NewWords) p.AddChild(PeopleUi.L($"'{word}' = {meaning}" + (origin.Length > 0 ? $" — {origin}" : ""), UiTheme.FontSizeSmall + 1, null, wrap: true));
+        }
         p.AddChild(new HSeparator());
         p.AddChild(PeopleUi.L("아는 낱말 (이 사람의 말 — 왼쪽이 그 말, 오른쪽이 뜻)", UiTheme.FontSizeSmall + 1, UiTheme.Accent, bold: true, wrap: true));
         if (c.Speech.Length > 0) p.AddChild(PeopleUi.L(c.Speech, UiTheme.FontSizeSmall, UiTheme.TextDim, wrap: true));
@@ -271,7 +298,7 @@ public partial class PersonCardPanel : PanelContainer
             grid.AddChild(PeopleUi.L(meaning, UiTheme.FontSizeSmall, UiTheme.TextDim));
         }
         p.AddChild(grid);
-        p.AddChild(PeopleUi.L("새로 알게 된 것에 낱말이 생기는 것은 다음 단계부터. 문법은 없고 소리와 낱말만 있다.", UiTheme.FontSizeSmall - 1, UiTheme.TextDim, wrap: true));
+        p.AddChild(PeopleUi.L("문법은 없고 소리와 낱말만 있다. 가르치기 · 잊기 · 기록은 다음 단계(지식)에서.", UiTheme.FontSizeSmall - 1, UiTheme.TextDim, wrap: true));
 
         // ⑦ 이야기
         p = _pages[6]; Clear(p);
@@ -364,11 +391,13 @@ public partial class AlertsPanel : VBoxContainer
             if (e.Kind == WorldEventKind.Spawn) continue;
             var b = new Button { Text = $"{Icon(e.Kind)} {e.Text}  · {GameTime.Format(e.Tick)}", FocusMode = FocusModeEnum.None, Alignment = HorizontalAlignment.Left, TooltipText = "눌러서 그 사람으로" };
             b.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeSmall + 1);
-            b.AddThemeColorOverride("font_color", e.Kind switch { WorldEventKind.Death => new Color(1f, 0.6f, 0.55f), WorldEventKind.Birth => new Color(0.6f, 0.95f, 0.6f), WorldEventKind.Pair => new Color(1f, 0.75f, 0.85f), _ => new Color(0.75f, 0.8f, 1f) });
+            b.AddThemeColorOverride("font_color", e.Kind switch { WorldEventKind.Death => new Color(1f, 0.6f, 0.55f), WorldEventKind.Birth => new Color(0.6f, 0.95f, 0.6f), WorldEventKind.Pair => new Color(1f, 0.75f, 0.85f), WorldEventKind.Discovery => new Color(1f, 0.85f, 0.35f), WorldEventKind.DiscoveryLost => new Color(1f, 0.45f, 0.3f), WorldEventKind.Wildfire => new Color(1f, 0.6f, 0.3f), _ => new Color(0.75f, 0.8f, 1f) });
+            if (e.Kind is WorldEventKind.Discovery or WorldEventKind.DiscoveryLost) b.AddThemeFontOverride("font", UiTheme.Bold);
             int pid = e.Kind == WorldEventKind.Birth ? e.Other : e.Person, cell = e.Cell;
+            double life = e.Kind is WorldEventKind.Discovery or WorldEventKind.DiscoveryLost ? 90 : 40;
             b.Pressed += () => AlertPicked?.Invoke(pid, cell);
             AddChild(b);
-            _items.Add((b, now));
+            _items.Add((b, now + life - 40)); // 발견 알림은 더 오래 남는다
         }
         while (_items.Count > 6) { var (b, _) = _items[0]; _items.RemoveAt(0); RemoveChild(b); b.QueueFree(); }
         for (int i = _items.Count - 1; i >= 0; i--)
@@ -384,5 +413,5 @@ public partial class AlertsPanel : VBoxContainer
 
     public void Reset() { _primed = false; foreach (var (b, _) in _items) { RemoveChild(b); b.QueueFree(); } _items.Clear(); }
 
-    private static string Icon(WorldEventKind k) => k switch { WorldEventKind.Birth => "＋", WorldEventKind.Death => "†", WorldEventKind.Pair => "♥", WorldEventKind.Break => "!", _ => "·" };
+    private static string Icon(WorldEventKind k) => k switch { WorldEventKind.Birth => "＋", WorldEventKind.Death => "†", WorldEventKind.Pair => "♥", WorldEventKind.Break => "!", WorldEventKind.Discovery => "★", WorldEventKind.DiscoveryLost => "✕", WorldEventKind.Wildfire => "▲", _ => "·" };
 }
