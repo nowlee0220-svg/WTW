@@ -77,6 +77,8 @@ public static class DiscoverBench
         sb.AppendLine("  바람(살아 있는 사람 합): " + string.Join(" · ", ps.Craft.Wishes.Select(x => $"{x.Name} {wishes[x.Index]}")));
         int fires = 0; foreach (var (_, l) in ps.Provinces) fires += l.Fires.Count(f => f.Value.Lit(w.Now));
         sb.AppendLine($"  지금 타는 불 {fires}개");
+        sb.AppendLine("  계획: " + string.Join(" · ", st.PlanWhy.Select((v, i) => $"{i}:{v}")));
+        sb.AppendLine("  규칙별 성공: " + string.Join(" · ", ps.Craft.Rules.Where(r => st.RuleDone[r.Index] > 0).Select(r => $"{r.Id} {st.RuleDone[r.Index]}")));
         return sb.ToString();
     }
 

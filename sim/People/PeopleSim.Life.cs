@@ -217,7 +217,7 @@ public sealed partial class PeopleSim
         }
         if (Now / GameTime.TicksPerDay % GameTime.DaysPerYear == 0) LanguageYear();
         NameLands();
-        foreach (var (cell, life) in Provinces) FiresDaily(cell, life);
+        foreach (var (cell, life) in Provinces.ToList()) FiresDaily(cell, life);
         CheckLostDiscoveries();
         SleepEmptyProvinces();
     }
@@ -286,7 +286,7 @@ public sealed partial class PeopleSim
 
     // ───────── 죽음 ─────────
 
-    private void Kill(Person p, DeathCause cause)
+    internal void Kill(Person p, DeathCause cause)
     {
         if (p.Dead) return;
         Integrate(p, Now);

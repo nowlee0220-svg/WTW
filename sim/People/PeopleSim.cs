@@ -25,6 +25,10 @@ public sealed class PeopleStats
     public long LanguageSplits, WordChanges;
     public readonly long[] MoveWhy = new long[64];
     /// <summary>(E4) 실험 · 성공 · 부분 성공 · 아는 법대로 만든 횟수 · 불 피움 · 자연의 불에서 얻음 · 캐기 · 익힌 끼니 · 배탈 · 보고 배움 · 사라진 발견 · 되찾은 발견.</summary>
+    /// <summary>(E4 측정) 계획이 어디서 막혔나: [0 시도, 1 행동 없음, 2 재료 없음(구하러 감), 3 재료를 못 구함, 4 불 없음, 5 둘째 재료, 6 도구, 7 시작함, 8 실험 점수 없음, 9 고른 일이 실험].</summary>
+    public readonly long[] PlanWhy = new long[20];
+    /// <summary>(E4 측정) 규칙마다 성공한 횟수.</summary>
+    public readonly long[] RuleDone = new long[64];
     public long Experiments, Discoveries, Partials, Crafts, FiresLit, FiresTaken, Mined, CookedMeals, BadStomachs, Watched, Lost, Refound, Wildfires;
     /// <summary>물 · 먹을 것을 찾아간 방법별 횟수: [0 보임, 1 기억, 2 따라감, 3 찾아다님].</summary>
     public readonly long[] FindHow = new long[4];

@@ -130,9 +130,9 @@ public sealed partial class PeopleSim
             if (Cheb(gt, here) > 6 && rng.NextInt(100) < 80 && life.Paths.Reachable(here, gt) && WalkTo(p, Beside(p, gt, 2))) { SetWhy(p, Act.Follow, Why.FollowParent, g.Id); p.Target = g.Id; return; }
         }
 
-        // 하고 싶은 것 고르기 (점수 + 조금의 무작위)
-        int best = -1, bestScore = int.MinValue;
-        void Opt(int code, int score) { score += rng.NextInt(12); if (score > bestScore) { bestScore = score; best = code; } }
+        // 하고 싶은 것 고르기 (점수 + 조금의 무작위) — 1순위가 안 되면 다음 순위(세 번까지)
+        _opts.Clear();
+        void Opt(int code, int score) => _opts.Add((score + rng.NextInt(12), code));
         if (p.Food < 55_000) Opt(1, (55_000 - p.Food) / 500 + 20);
         if (p.Water < 50_000) Opt(2, (50_000 - p.Water) / 500 + 25);
         if (p.Social < 60_000) Opt(3, (60_000 - p.Social) / 600 + (p.HasTrait(T_eloquent) ? 8 : 0) + (p.HasTrait(T_blunt) ? -5 : 0));
@@ -145,29 +145,36 @@ public sealed partial class PeopleSim
         if (carried < 6) Opt(8, 3 + (p.HasTrait(T_curious) ? 10 : 0) - (p.HasTrait(T_stubborn) ? 3 : 0));
         Opt(9, 6);
         // (E4) 실험 · 아는 법대로 만들기 · 불 지키기 · 캐기
-        int ex = ExperimentScore(p, life); if (ex > int.MinValue) Opt(10, ex);
+        int ex = ExperimentScore(p, life); if (ex > int.MinValue) Opt(10, ex); else Stats.PlanWhy[8]++;
         int cs = CraftScore(p); if (cs > int.MinValue) Opt(11, cs);
-        if (p.Known.Count > 0 && !life.IsNight(Now)) Opt(12, 14);
+        if (p.Known.Count > 0) Opt(12, 14);
         if ((p.Wish[W_shiny] >= 20 || p.Wish[W_hardTool] >= 40 || p.HasTrait(T_curious)) && HasHardTool(p) && !life.IsNight(Now)) Opt(13, 8 + p.Wish[W_shiny] / 4);
-
-        bool ok = best switch
+        _opts.Sort((a, b) => b.Score != a.Score ? b.Score.CompareTo(a.Score) : a.Code.CompareTo(b.Code));
+        for (int k = 0; k < Math.Min(3, _opts.Count); k++)
         {
-            1 => TryEat(p, Why.Hungry),
-            2 => TryDrink(p, Why.Thirsty),
-            3 => TryTalk(p),
-            4 or 9 => StartRest(p, best == 4 ? Why.Bored : Why.Nothing),
-            5 => StartRest(p, Why.Exhausted),
-            6 => TryWarm(p, felt > 320 ? Why.Hot : Why.Cold),
-            7 => TryWander(p, p.HasTrait(T_curious) ? Why.Curious : Why.Nothing),
-            8 => TryGather(p),
-            10 => TryExperiment(p),
-            11 => TryCraftKnown(p),
-            12 => TryTendFire(p),
-            13 => TryMine(p),
-            _ => false,
-        };
-        if (!ok && !TryWander(p, Why.Nothing)) StartRest(p, Why.Nothing);
+            int best = _opts[k].Code;
+            bool ok = best switch
+            {
+                1 => TryEat(p, Why.Hungry),
+                2 => TryDrink(p, Why.Thirsty),
+                3 => TryTalk(p),
+                4 or 9 => StartRest(p, best == 4 ? Why.Bored : Why.Nothing),
+                5 => StartRest(p, Why.Exhausted),
+                6 => TryWarm(p, felt > 320 ? Why.Hot : Why.Cold),
+                7 => TryWander(p, p.HasTrait(T_curious) ? Why.Curious : Why.Nothing),
+                8 => TryGather(p),
+                10 => (Stats.PlanWhy[9]++ >= 0) && TryExperiment(p),
+                11 => TryCraftKnown(p),
+                12 => TryTendFire(p),
+                13 => TryMine(p),
+                _ => false,
+            };
+            if (ok) return;
+        }
+        if (!TryWander(p, Why.Nothing)) StartRest(p, Why.Nothing);
     }
+
+    private readonly List<(int Score, int Code)> _opts = new();
 
     /// <summary>아이가 따라다닐 어른: 어머니 → 아버지 → 안아 주던 사람.</summary>
     private Person? Guardian(Person p)
@@ -284,7 +291,8 @@ public sealed partial class PeopleSim
         {
             // (E4) 불이 있으면 불가에서 잔다
             int ft = life.NearestFire(hx, hy, Now, (int)FireSleepRange);
-            if (ft >= 0 && life.Paths.Reachable(here, Beside(p, ft, 2))) { spot = Beside(p, ft, 2); reason = Why.FireNear; }
+            if (ft >= 0 && TendBeforeSleep(p, life, ft)) return;
+            if (ft >= 0) { int b1 = Beside(p, ft, 1); if (b1 == ft) b1 = Beside(p, ft, 2); if (b1 != ft && life.Paths.Reachable(here, b1)) { spot = b1; reason = Why.FireNear; } }
         }
         if (spot < 0 && coldNight)
         {
@@ -350,7 +358,8 @@ public sealed partial class PeopleSim
         if (partnerNear) AddThought(p, H_withPartner);
         bool fireNear = Life(p.Cell).NearestFire(tile % S, tile / S, Now, 4) >= 0;
         if (fireNear) AddThought(p, H_firelight);
-        else if (p.SleepShelter == 0 && !p.Huddle && Ability(p, PeopleData.Nerve) <= 3) AddThought(p, H_dark);
+        else if (p.SleepShelter == 0 && !p.Huddle && Ability(p, PeopleData.Nerve) <= 3) { AddThought(p, H_dark); AddWish(p, W_warmth, 12); } // 어둠이 무서웠다 → 밝고 따뜻한 것이 있었으면
+        else if (p.SleptCold) AddWish(p, W_warmth, 15);
         if (partnerNear && p.Female) TryConceive(p, Get(p.Partner)!);
         p.Huddle = false;
     }
@@ -489,7 +498,7 @@ public sealed partial class PeopleSim
                     if (p.Food >= 85_000) AddThought(p, H_ate);
                     // (E4) 날것의 독(버섯) → 가끔 배탈 → 익히기가 아쉽다 · 딱딱한 열매(야자)는 깨야 제대로 먹는다 → 단단한 도구가 아쉽다
                     int poison = Craft.Prop(h.ItemIndex, Craft.P_poison);
-                    if (poison > 0 && Rng(p.Cell).NextInt(100) < poison * 15) BadStomach(p, h.ItemIndex);
+                    if (poison > 0 && Rng(p.Cell).NextInt(100) < poison * 6) BadStomach(p, h.ItemIndex);
                     if (Craft.Prop(h.ItemIndex, Craft.P_hardness) >= 4) { AddWish(p, W_hardTool, 20); if (HasHardTool(p) && p.CarryCount(h.ItemIndex) == 0) p.AddCarry(h.ItemIndex, 1); }
                     // (E4) 그릇이 있으면 남는 몫을 담아 둔다
                     if (p.PlanItem == 2 && life.StockAt(p.Target, Now) > 0) { int extra = life.Take(p.Target, Math.Min(3, life.StockAt(p.Target, Now)), Now); p.AddCarry(h.ItemIndex, extra); p.PlanItem = -1; }
@@ -525,8 +534,15 @@ public sealed partial class PeopleSim
             case Act.Experiment or Act.Craft when done:
                 FinishWork(p);
                 break;
+
             case Act.Material when done:
                 FinishMaterial(p);
+                break;
+            case Act.Experiment or Act.Craft:
+                Stats.PlanWhy[16]++;
+                break;
+            case Act.Material:
+                Stats.PlanWhy[17]++;
                 break;
             case Act.TendFire when done:
                 FinishTend(p);

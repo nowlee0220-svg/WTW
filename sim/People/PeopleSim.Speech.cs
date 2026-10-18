@@ -284,7 +284,7 @@ public sealed partial class PeopleSim
         var teacher = from >= 0 ? Get(from) : null;
         if (teacher is not null && teacher.LangId != p.LangId && Languages.TryGetValue(teacher.LangId, out var src) && src.Known.Contains(c))
         {
-            lang.Overrides[c] = src.WordSeed(Lang.Concepts[c]);
+            lang.Loans[c] = WordOf(teacher, c);
             lang.Origins[c] = (src.Id, Now);
             AddBio(p, BioKind.BorrowedWord, from, c);
         }

@@ -188,6 +188,7 @@ public static class SaveGame
             bw.Write(l.Overrides.Count); foreach (var (k, v) in l.Overrides) { bw.Write(k); bw.Write(v); }
             bw.Write(l.Changes);
             bw.Write(l.Origins.Count); foreach (var (k, v) in l.Origins) { bw.Write(k); bw.Write(v.FromLang); bw.Write(v.Tick); }
+            bw.Write(l.Loans.Count); foreach (var (k, v) in l.Loans) { bw.Write(k); bw.Write(v); }
         }
         bw.Write(ps.All.Count);
         foreach (var p in ps.All) WritePerson(bw, p);
@@ -327,7 +328,11 @@ public static class SaveGame
                 int nk = br.ReadInt32(); for (int k = 0; k < nk; k++) l.Known.Add(br.ReadInt32());
                 int no = br.ReadInt32(); for (int k = 0; k < no; k++) l.Overrides[br.ReadInt32()] = br.ReadUInt64();
                 if (version >= 6) l.Changes = br.ReadInt32();
-                if (version >= 7) { int nor = br.ReadInt32(); for (int k = 0; k < nor; k++) { int c = br.ReadInt32(); l.Origins[c] = (br.ReadInt32(), br.ReadInt64()); } }
+                if (version >= 7)
+                {
+                    int nor = br.ReadInt32(); for (int k = 0; k < nor; k++) { int c = br.ReadInt32(); l.Origins[c] = (br.ReadInt32(), br.ReadInt64()); }
+                    int nlo = br.ReadInt32(); for (int k = 0; k < nlo; k++) { int c = br.ReadInt32(); l.Loans[c] = br.ReadString(); }
+                }
                 ps.AddLoadedLanguage(l);
             }
         }

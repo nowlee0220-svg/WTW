@@ -168,12 +168,12 @@ public sealed class CraftData
     /// 판정. action 으로 input(속성 배열)을 with(둘째, null 가능) · tool(null 가능) · heat · tinderBurns 조건에서 다룬다.
     /// roll = 0~99 (성공 확률에 씀). 맞는 조건이 가장 많은 규칙을 고르고: 다 맞으면 성공, 주 재료 조건이 절반 넘게 맞으면 부분 성공(모자란 첫 조건의 단서).
     /// </summary>
-    public CraftOutcome Judge(int action, int[] input, int[]? with, int[]? tool, int heat, int tinderBurns, int roll, int bonusPercent = 0)
+    public CraftOutcome Judge(int action, int[] input, int[]? with, int[]? tool, int heat, int tinderBurns, int roll, int bonusPercent = 0, CraftRule? only = null)
     {
-        CraftRule? best = null; int bestOk = -1, bestTotal = 1; string bestKey = ""; bool bestFull = false;
+        CraftRule? best = null; int bestOk = 0, bestTotal = 1; string bestKey = ""; bool bestFull = false;
         foreach (var r in Rules)
         {
-            if (r.Action != action) continue;
+            if (r.Action != action || (only is not null && r != only)) continue;
             if (r.HasWith && with is null) continue; // 둘째 재료가 아예 없으면 이 규칙은 해 본 것이 아니다
             int ok = 0; string firstFail = "";
             void Check(bool pass, string key) { if (pass) ok++; else if (firstFail.Length == 0) firstFail = key; }
@@ -188,7 +188,10 @@ public sealed class CraftData
             // 주 재료 조건이 절반도 안 맞으면 이 규칙은 아예 아니다(절반 이상 맞으면 부분 성공이 될 수 있다)
             if (inputOk * 2 < r.Input.Count + r.InputMax.Count || inputOk == 0) continue;
             bool full = ok == total;
-            if (ok > bestOk || (ok == bestOk && full && !bestFull)) { best = r; bestOk = ok; bestTotal = total; bestKey = firstFail; bestFull = full; }
+            // 맞은 조건의 비율이 높은 규칙(같으면 다 맞은 것 → 조건이 많은 것 → 먼저 적은 것)
+            long a = (long)ok * bestTotal, b = (long)bestOk * total;
+            bool better = best is null || a > b || (a == b && full && !bestFull) || (a == b && full == bestFull && total > bestTotal);
+            if (better) { best = r; bestOk = ok; bestTotal = total; bestKey = firstFail; bestFull = full; }
         }
         if (best is null) return new CraftOutcome(null, false, null, "");
         if (bestFull)

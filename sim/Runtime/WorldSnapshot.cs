@@ -181,6 +181,7 @@ public sealed class WorldSnapshot
                 var copy = new Language { Id = l.Id, Seed = l.Seed, Parent = l.Parent, Born = l.Born, Length = l.Length, Sounds = (int[])l.Sounds.Clone(), Changes = l.Changes };
                 foreach (int k in l.Known) copy.Known.Add(k);
                 foreach (var (k, v) in l.Overrides) copy.Overrides[k] = v;
+                foreach (var (k, v) in l.Loans) copy.Loans[k] = v;
                 int depth = 0; int cur = l.Parent;
                 while (cur >= 0 && ps.Languages.TryGetValue(cur, out var par) && depth < 1000) { depth++; cur = par.Parent; }
                 arr.Add(new LanguageView(id, l.Parent, ps.RootLanguage(id), depth, n, copy, ps.LanguageLabel(id)));

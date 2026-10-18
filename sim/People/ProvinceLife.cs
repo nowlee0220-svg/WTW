@@ -232,7 +232,7 @@ public sealed class ProvinceLife
     public IReadOnlyList<int> VolcanoFireTiles => _volcanoFire;
     public bool IsVolcanoFire(int tile) => _volcanoFire.Contains(tile);
 
-    /// <summary>(E4) 불이 주는 따뜻함(0.1°C): 바로 곁 +8°C, 두 칸 +5°C, 세 칸 +2.5°C. 화덕은 조금 더.</summary>
+    /// <summary>(E4) 불이 주는 따뜻함(0.1°C): 바로 곁 +20°C, 두 칸 +12°C, 세 칸 +6°C, 네 칸 +2.5°C. 돌 화덕은 1.25배(불을 가둬 열이 덜 샌다).</summary>
     public int FireWarmth(int tile, long tick)
     {
         if ((uint)tile >= HexFrame.TileCount) return 0;
@@ -241,16 +241,16 @@ public sealed class ProvinceLife
         {
             if (!f.Lit(tick)) continue;
             int d = Math.Max(Math.Abs(ft % HexFrame.Size - tx), Math.Abs(ft / HexFrame.Size - ty));
-            int w = d <= 1 ? 80 : d == 2 ? 50 : d == 3 ? 25 : 0;
+            int w = d <= 1 ? 200 : d == 2 ? 120 : d == 3 ? 60 : d == 4 ? 25 : 0;
             if (f.Kind == 2) w = w * 5 / 4;
             best = Math.Max(best, w);
         }
-        if (_volcanoFire.Count > 0 && best < 80)
+        if (_volcanoFire.Count > 0 && best < 200)
             foreach (int ft in _volcanoFire)
             {
                 int d = Math.Max(Math.Abs(ft % HexFrame.Size - tx), Math.Abs(ft / HexFrame.Size - ty));
-                if (d <= 1) return 80;
-                if (d == 2) best = Math.Max(best, 50);
+                if (d <= 1) return 200;
+                if (d == 2) best = Math.Max(best, 120);
             }
         return best;
     }
@@ -352,6 +352,15 @@ public sealed class ProvinceLife
         foreach (int m in merge) { RegionHasDrink[reg] |= RegionHasDrink[m]; RegionHasFood[reg] |= RegionHasFood[m]; }
         Shelter[tile] = 2;
         Paths.SetWalkable(tile, 1);
+        // 캔 자리 둘레의 숨은 바위 속(광맥)이 드러난다
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                int nx = x + dx, ny = y + dy;
+                if ((uint)nx >= HexFrame.Size || (uint)ny >= HexFrame.Size) continue;
+                int n = ny * HexFrame.Size + nx;
+                if (Map.IsHidden(n)) Revealed.Add(n);
+            }
         _stone[Bk(x, y)].Remove(tile);
         return true;
     }

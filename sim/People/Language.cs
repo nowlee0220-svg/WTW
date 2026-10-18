@@ -98,6 +98,8 @@ public sealed class Language
     public readonly SortedSet<int> Known = new();
     /// <summary>뜻 → 다른 시드(낱말이 바뀌었거나 빌려 왔으면).</summary>
     public readonly SortedDictionary<int, ulong> Overrides = new();
+    /// <summary>(E4) 빌려 온 낱말: 뜻 → 그 말의 소리 그대로(빌려 온 때의 낱말).</summary>
+    public readonly SortedDictionary<int, string> Loans = new();
     /// <summary>(E4) 낱말이 어디서 왔나: 뜻 → (어느 말에서 — −1 이면 이 무리가 지어냄, 언제). 처음 낱말은 적지 않는다.</summary>
     public readonly SortedDictionary<int, (int FromLang, long Tick)> Origins = new();
 
@@ -169,6 +171,7 @@ public static class Words
     /// </summary>
     public static string Word(Language lang, sbyte[]? accent, ConceptDef c, LanguageData d, int minSyllables = 1)
     {
+        if (lang.Loans.TryGetValue(c.Index, out var loan) && loan.Length >= minSyllables) return loan;
         ulong s = lang.WordSeed(c);
         var rng = new Pcg32(s, StableHash.Mix(s + 0x77));
         bool pronoun = c.Kind == "사람";

@@ -52,18 +52,18 @@
     "chance":    "이번엔 안 됐다 — 손이 익으면 될 것 같다"
   },
   "wishes": [
-    { "id": "warmth",    "name": "따뜻함",   "props": ["burns"],                       "actions": ["strike", "grind", "burn"] },
+    { "id": "warmth",    "name": "따뜻함",   "props": ["burns", "hardness"],           "actions": ["strike", "grind", "burn", "pile"] },
     { "id": "sharpness", "name": "날카로움", "props": ["sharpens", "splits"],          "actions": ["strike", "break", "grind"] },
     { "id": "hard_tool", "name": "단단한 도구", "props": ["hardness", "toughness"],   "actions": ["break", "grind", "twist", "strike"] },
     { "id": "container", "name": "그릇",     "props": ["holds", "moldable", "bends", "fibrous", "waterproof"], "actions": ["weave", "shape", "dry", "roast"] },
-    { "id": "cooking",   "name": "익히기",   "props": ["edible"],                      "actions": ["roast", "dry", "boil"], "fire": true },
+    { "id": "cooking",   "name": "익히기",   "props": ["edible"],                      "actions": ["roast", "dry", "boil", "pile"], "fire": true },
     { "id": "carry",     "name": "나르기",   "props": ["fibrous", "bends", "holds"],   "actions": ["weave", "twist"] },
     { "id": "shiny",     "name": "반짝이는 돌", "props": ["melts", "reduces", "malleable"], "actions": ["melt", "strike"], "fire": true }
   ],
   "rules": [
     { "id": "flake",        "name": "돌을 깨뜨려 날을 낸다",     "action": "strike", "input": { "splits": 3, "sharpens": 3 }, "tool": { "hardness": 3 }, "result": "flake", "count": 2, "uses": 1, "time_min": 40, "skill": "crafting",
       "partial": { "sharpens": { "text": "쪼개지긴 했지만 날이 서지 않았다", "result": "broken_stone" }, "splits": { "text": "깨지지 않고 튕겨 나갔다" }, "tool": { "text": "손으로 쳐서는 깨지지 않았다" } } },
-    { "id": "scraper",      "name": "얇은 돌을 쳐서 긁개를 만든다", "action": "strike", "input": { "splits": 2, "sharpens": 2, "hardness": 2 }, "tool": { "hardness": 3 }, "result": "scraper", "count": 1, "uses": 1, "time_min": 40, "skill": "crafting",
+    { "id": "scraper",      "name": "얇은 돌을 쳐서 긁개를 만든다", "action": "strike", "input": { "splits": 3, "sharpens": 2, "hardness": 2 }, "input_max": { "sharpens": 3 }, "tool": { "hardness": 3 }, "result": "scraper", "count": 1, "uses": 1, "time_min": 40, "skill": "crafting",
       "partial": { "sharpens": { "text": "쪼개지긴 했지만 날이 서지 않았다", "result": "broken_stone" } } },
     { "id": "sparks",       "name": "단단한 돌을 부딪쳐 불씨를 얻는다", "action": "strike", "input": { "hardness": 4 }, "with": { "hardness": 4 }, "tinder": 5, "chance": 7, "result": "ember", "count": 1, "uses": 0, "time_min": 50, "skill": "research",
       "partial": { "tinder": { "text": "불꽃은 튀었지만 붙지 않았다", "hint": "더 마른 불쏘시개(마른 풀 · 자작나무 껍질)가 있어야 붙을 것 같다" }, "chance": { "text": "불꽃이 튀었지만 금방 꺼졐다", "hint": "불꽃이 튄다 — 더 해 보면 붙을 것 같다" }, "with": { "text": "돌이 부서지기만 했다" } } },
@@ -101,7 +101,7 @@
     { "id": "wet_pot",      "name": "진흙을 빚어 그릇 모양을 만든다", "action": "shape", "input": { "moldable": 4 }, "result": "wet_pot", "count": 1, "uses": 1, "time_min": 60, "skill": "crafting",
       "partial": { "moldable": { "text": "빚어지지 않고 부서졌다", "hint": "물에 무른 진흙이라야 빚어진다" } } },
 
-    { "id": "dry_pot",      "name": "빚은 그릇을 말린다",          "action": "dry", "input": { "moldable": 2, "fires_hard": 3 }, "result": "dry_pot", "count": 1, "uses": 1, "time_min": 180, "skill": "crafting" },
+    { "id": "dry_pot",      "name": "빚은 그릇을 말린다",          "action": "dry", "input": { "moldable": 2, "fires_hard": 3, "holds": 1 }, "result": "dry_pot", "count": 1, "uses": 1, "time_min": 180, "skill": "crafting" },
     { "id": "dry_grass",    "name": "풀을 말려 불쏘시개를 만든다",   "action": "dry", "input": { "fibrous": 3, "dries": 4 }, "result": "dry_grass", "count": 1, "uses": 1, "time_min": 120, "skill": "research" },
     { "id": "dried_fruit",  "name": "열매를 말려 둔다",            "action": "dry", "input": { "edible": 3, "rots": 2 }, "input_max": { "poison": 1 }, "result": "dried_fruit", "count": 1, "uses": 1, "time_min": 150, "skill": "cooking" },
 
