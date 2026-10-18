@@ -16,6 +16,9 @@ public sealed class PeopleStats
 {
     public long Decisions, Events, Paths, PathFails, Talks, Arguments, Pairs, Births, Breaks, Conceptions, Illnesses;
     public readonly long[] Deaths = new long[8];
+    /// <summary>(E4) 정신 붕괴: 나이 단계별 횟수 · 무너질 때 기분을 끌어내린 생각(생각 번호별 기분 합, 음수만).</summary>
+    public readonly long[] BreaksByStage = new long[4];
+    public readonly long[] BreakDrag = new long[256];
     public long GatherXpPassion, GatherXpPlain, GatherActsPassion, GatherActsPlain;
     /// <summary>목마름으로 죽었는데 그 사람이 닿을 수 있는 곳(지방 안 이어진 땅)에 민물이 없었다 · 굶어 죽었는데 먹을 것이 없었다.</summary>
     public long NoWaterDeaths, NoFoodDeaths;
@@ -178,6 +181,9 @@ public sealed partial class PeopleSim
 
     // ───────── 기분 ─────────
 
+    /// <summary>(E4) 사건으로 생긴 슬픈 생각(죽음 · 말다툼 · 노숙 …)을 모두 더해도 기분을 이만큼까지만 끌어내린다.</summary>
+    public const int SadCap = 35;
+
     public int MoodBase(Person p) => 44 + (p.HasTrait(T_optimist) ? 8 : 0) - (p.HasTrait(T_pessimist) ? 8 : 0);
 
     public int BreakThreshold(Person p)
@@ -211,7 +217,13 @@ public sealed partial class PeopleSim
         _tmpThoughts.Clear();
         StateThoughts(p, _tmpThoughts);
         foreach (int t in _tmpThoughts) m += Data.Thoughts[t].Mood;
-        foreach (var (def, count) in ActiveThoughtCounts(p)) m += Data.Thoughts[def].Mood * count;
+        int sad = 0;
+        foreach (var (def, count) in ActiveThoughtCounts(p))
+        {
+            int v = Data.Thoughts[def].Mood * count;
+            if (v < 0) sad += v; else m += v;
+        }
+        m += Math.Max(sad, -SadCap); // (E4) 슬픈 일이 겹쳐도 한꺼번에 끌어내리는 데는 한도가 있다
         return Math.Clamp(m, 0, 100);
     }
 

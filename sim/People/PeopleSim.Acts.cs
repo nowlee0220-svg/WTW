@@ -108,7 +108,14 @@ public sealed partial class PeopleSim
         // 정신 붕괴
         int mood = Mood(p);
         int thr = BreakThreshold(p);
-        if (mood < thr && Now - p.LastBreak > 2 * GameTime.TicksPerDay && rng.NextInt(1000) < (thr - mood) * 3) { StartBreak(p, mood); return; }
+        if (mood < thr && Now - p.LastBreak > 2 * GameTime.TicksPerDay)
+        {
+            // (E4) 아이는 훨씬 드물게(짧은 떼쓰기), 가족이 곁에 있으면 위로받아 덜 무너진다
+            int chance = (thr - mood) * 3;
+            if (stage == LifeStage.Child) chance /= 4;
+            if (FamilyNear(p, 8)) chance /= 2;
+            if (rng.NextInt(1000) < chance) { StartBreak(p, mood); return; }
+        }
 
         // 밤: 잔다
         long tod = life.LocalTickOfDay(Now);
@@ -730,8 +737,22 @@ public sealed partial class PeopleSim
     {
         var rng = Rng(p.Cell);
         Stats.Breaks++;
+        Stats.BreaksByStage[(int)p.Stage(Now)]++;
+        _tmpThoughts.Clear(); StateThoughts(p, _tmpThoughts);
+        foreach (int t in _tmpThoughts) if (Data.Thoughts[t].Mood < 0 && t < 256) Stats.BreakDrag[t] -= Data.Thoughts[t].Mood;
+        foreach (var (def, count) in ActiveThoughtCounts(p)) if (Data.Thoughts[def].Mood < 0 && def < 256) Stats.BreakDrag[def] -= Data.Thoughts[def].Mood * count;
         p.Breaks++;
         p.LastBreak = Now;
+        if (p.Stage(Now) == LifeStage.Child)
+        {
+            // 아이: 짧게 떼를 쓰고 만다
+            p.BreakUntil = Now + GameTime.TicksPerHour;
+            SetWhy(p, Act.BreakWander, Why.Break, mood);
+            DoStill(p, GameTime.TicksPerHour);
+            AddBio(p, BioKind.Break, -1, 0);
+            Notify(WorldEventKind.Break, p, -1, $"{Hangul.I(DisplayName(p))} 떼를 씁니다 (기분 {mood})");
+            return;
+        }
         int roll = rng.NextInt(100);
         int argue = 25 + (p.HasTrait(T_abrasive) ? 30 : 0) + (p.HasTrait(T_bloodlust) ? 20 : 0) - (p.HasTrait(T_kind) ? 15 : 0);
         int leave = 20 + (p.Social < 20_000 ? 10 : 0);
@@ -747,6 +768,19 @@ public sealed partial class PeopleSim
         }
         AddBio(p, BioKind.Break, -1, p.Act == Act.BreakArgue ? 1 : p.Act == Act.BreakLeave ? 2 : 0);
         Notify(WorldEventKind.Break, p, -1, $"{Hangul.I(DisplayName(p))} 무너졌습니다 — {kind} (기분 {mood})");
+    }
+
+    /// <summary>가족(짝 · 부모 · 자식)이 깨어 곁(r 타일 안)에 있나.</summary>
+    private bool FamilyNear(Person p, int r)
+    {
+        int here = p.Tile(Now);
+        foreach (var q in Life(p.Cell).People)
+        {
+            if (q.Id == p.Id || q.Dead || q.Asleep) continue;
+            bool fam = q.Id == p.Partner || q.Id == p.Mother || q.Id == p.Father || q.Mother == p.Id || q.Father == p.Id;
+            if (fam && Cheb(q.Tile(Now), here) <= r) return true;
+        }
+        return false;
     }
 
     private bool TryArgueBreak(Person p)

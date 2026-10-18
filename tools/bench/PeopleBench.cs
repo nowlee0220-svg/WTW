@@ -38,6 +38,7 @@ public static class PeopleBench
             case "driftmodel": DriftModel.Run(I("langs", 200), Sx("k", "0.05,0.1,0.2"), Sx("r", "0.02,0.03,0.04"), I("t", 3)); break;
             case "dialect": DialectBench.Run(I("seeds", 20), I("families", 3), I("years", 500), I("cap", 60), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "one": One(I("people", 10), I("years", 5), (ulong)I("seed", 1), Sx("cell", "home"), o.ContainsKey("family"), I("cap", 300)); break;
+            case "breaks": BreakBench.Run(I("seeds", 4), I("people", 10), I("years", 30), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home")); break;
             case "discover": DiscoverBench.Know = o.GetValueOrDefault("know") ?? ""; DiscoverBench.Run(I("seeds", 20), I("people", 10), I("years", 200), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300)); break;
             default: Console.WriteLine("모드: seeds | cap | one"); break;
         }
