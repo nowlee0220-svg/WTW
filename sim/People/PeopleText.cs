@@ -123,6 +123,19 @@ public sealed partial class PeopleSim
         return $"{s} {Craft.ActionName(p.PlanAction)}";
     }
 
+    /// <summary>(E4) 왜 이 재료로 이 일을 하나 — 지금 계획한 행동 그대로: 고른 재료에서 그 바람의 속성이 가장 높은 것을 짚는다.
+    /// 재료를 얻으러 가는 중이면 "무엇이 필요해서".</summary>
+    private string TryReason(Person p, string wishId)
+    {
+        var wd = Craft.Wishes.FirstOrDefault(w => w.Id == wishId);
+        if (p.Act == Act.Material) return p.PlanItem >= 0 ? $"{Hangul.Eul(ItemName(p.PlanItem))} 얻어 와서 해 볼 생각" : "쓸 만한 재료부터 찾는다";
+        if (wd is null || p.PlanAction < 0 || p.PlanInput < 0) return "손에 든 것으로 이것저것 해 본다";
+        int best = -1, bv = 0;
+        foreach (int pr in wd.Props) { int v = Prop(p.PlanInput, pr); if (v > bv) { bv = v; best = pr; } }
+        string why = best >= 0 ? $"{Hangul.Eun(ItemName(p.PlanInput))} '{Craft.Properties[best].Name}' {bv} — " : "";
+        return $"{why}{PlanText(p)} 해 본다";
+    }
+
     private string PlanResult(Person p) => p.PlanRule >= 0 ? Craft.ItemName(Craft.Rules[p.PlanRule].Result) : "무언가";
 
     /// <summary>(E3b) 경계를 넘으러 가는 사람: 어디로 · 무엇 때문에(실제로 고른 까닭 그대로).</summary>
@@ -189,13 +202,13 @@ public sealed partial class PeopleSim
             Why.GoBack => "이 땅에 혼자 남아 쓸쓸해서 — 사람이 있던 땅으로",
             Why.FollowFamily => p.WhyArg > 0 && Get(p.WhyArg) is { } lead ? $"{Hangul.I(DisplayName(lead))} 떠나서 가족이 함께 간다" : "가족이 이웃 땅에 있어서",
             // (E4)
-            Why.WantWarmth => $"추워서 — 따뜻한 것이 있었으면 (바람 {WishStrength(p, "warmth")}): 잘 타는 것 · 단단한 돌을 부딪쳐 본다",
-            Why.WantSharp => $"날카로운 것이 있었으면 — 나무를 베지 못해서 (바람 {WishStrength(p, "sharpness")}): 잘 쪼개지고 날이 서는 돌을 쳐 본다",
-            Why.WantHardTool => $"단단한 도구가 있었으면 — 딱딱한 것을 못 깨서 (바람 {WishStrength(p, "hard_tool")})",
-            Why.WantContainer => $"담을 그릇이 있었으면 — 물가가 멀어서 (바람 {WishStrength(p, "container")}): 휘는 것을 엮고 진흙을 빚어 본다",
-            Why.WantCooking => $"익혀 먹었으면 — 날것에 배탈이 나서 (바람 {WishStrength(p, "cooking")})",
-            Why.WantCarry => $"더 많이 나를 수 있었으면 (바람 {WishStrength(p, "carry")})",
-            Why.WantShiny => $"반짝이는 돌이 궁금해서 (바람 {WishStrength(p, "shiny")}): 세찬 불에 넣어 본다",
+            Why.WantWarmth => $"추워서 — 따뜻한 것이 있었으면 (바람 {WishStrength(p, "warmth")}): {TryReason(p, "warmth")}",
+            Why.WantSharp => $"날카로운 것이 있었으면 — 나무를 베지 못해서 (바람 {WishStrength(p, "sharpness")}): {TryReason(p, "sharpness")}",
+            Why.WantHardTool => $"단단한 도구가 있었으면 — 딱딱한 것을 못 깨서 (바람 {WishStrength(p, "hard_tool")}): {TryReason(p, "hard_tool")}",
+            Why.WantContainer => $"담을 그릇이 있었으면 — 물가가 멀어서 (바람 {WishStrength(p, "container")}): {TryReason(p, "container")}",
+            Why.WantCooking => $"익혀 먹었으면 — 날것에 배탈이 나서 (바람 {WishStrength(p, "cooking")}): {TryReason(p, "cooking")}",
+            Why.WantCarry => $"더 많이 나를 수 있었으면 (바람 {WishStrength(p, "carry")}): {TryReason(p, "carry")}",
+            Why.WantShiny => $"반짝이는 돌이 궁금해서 (바람 {WishStrength(p, "shiny")}): {TryReason(p, "shiny")}",
             Why.KnowHow => $"{Hangul.I(WishName(arg))} 아쉬운데 만드는 법을 알아서",
             Why.Clue => "전에 거의 될 듯했던 단서를 따라서 — " + (p.Clues.Count > 0 ? ClueText(p.Clues[^1]) : ""),
             Why.Fuel => "불이 꺼져 가서 — 땔감을 넣어 지킨다",

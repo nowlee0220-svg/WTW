@@ -15,7 +15,7 @@ public static class DiscoverBench
         public ulong Seed; public int Cell; public string Biome = "";
         public int Alive, Ever, Peak; public long[] Deaths = new long[8];
         public readonly SortedDictionary<string, int> FirstYear = new(); // 결과 아이템 → 처음 나온 해
-        public int Lost, Refound, Experiments, Discoveries, Partials, Crafts, FiresLit, FiresTaken, Mined, Cooked, Watched, Wildfires;
+        public int CraftFails, Lost, Refound, Experiments, Discoveries, Partials, Crafts, FiresLit, FiresTaken, Mined, Cooked, Watched, Wildfires;
         public List<int> PopByYear = new();
         public double Seconds; public long PersonDays;
         public int Known1y;
@@ -74,7 +74,7 @@ public static class DiscoverBench
             row.Lost += d.LostCount; row.Refound += d.RefoundCount;
         }
         var st = ps.Stats;
-        row.Experiments = (int)st.Experiments; row.Discoveries = (int)st.Discoveries; row.Partials = (int)st.Partials; row.Crafts = (int)st.Crafts;
+        row.Experiments = (int)st.Experiments; row.Discoveries = (int)st.Discoveries; row.Partials = (int)st.Partials; row.Crafts = (int)st.Crafts; row.CraftFails = (int)st.CraftFails;
         row.FiresLit = (int)st.FiresLit; row.FiresTaken = (int)st.FiresTaken; row.Mined = (int)st.Mined; row.Cooked = (int)st.CookedMeals; row.Watched = (int)st.Watched; row.Wildfires = (int)st.Wildfires;
         row.Known1y = ps.All.Count(q => !q.Dead && q.Known.Count > 0);
     }
@@ -96,6 +96,7 @@ public static class DiscoverBench
         int dup = ps.All.Where(q => !q.Dead).Sum(q => q.Clues.Count - q.Clues.Select(c => (c.Rule, c.Key)).Distinct().Count());
         sb.AppendLine($"  같은 단서 겹침 {dup} · 단서 키: " + string.Join(", ", ps.All.Where(q => !q.Dead).SelectMany(q => q.Clues).GroupBy(c => ps.Craft.Rules[c.Rule].Id + "/" + c.Key).OrderByDescending(g => g.Count()).Take(6).Select(g => g.Key + " " + g.Count())));
         sb.AppendLine("  계획: " + string.Join(" · ", st.PlanWhy.Select((v, i) => $"{i}:{v}")));
+        sb.AppendLine("  아는 법 헛손질(규칙/까닭): " + string.Join(" · ", st.FailKeys.OrderByDescending(x => x.Value).Take(10).Select(x => $"{x.Key} {x.Value}")));
         sb.AppendLine("  규칙별 성공: " + string.Join(" · ", ps.Craft.Rules.Where(r => st.RuleDone[r.Index] > 0).Select(r => $"{r.Id} {st.RuleDone[r.Index]}")));
         return sb.ToString();
     }
@@ -130,7 +131,7 @@ public static class DiscoverBench
         sb.AppendLine();
         sb.AppendLine($"- 멸종(끝 인구 0): {rows.Count(r => r.Alive == 0)}/{seeds} · 끝 인구 중앙값 {PeopleBench.Median(rows.Select(r => (double)r.Alive))} · 가장 많을 때 중앙값 {PeopleBench.Median(rows.Select(r => (double)r.Peak))}");
         sb.AppendLine($"- 죽음 원인(모든 시드 합 {deaths}): " + string.Join(" · ", new[] { (1, "굶주림"), (2, "목마름"), (3, "추위"), (4, "더위"), (5, "늙음"), (6, "병") }.Select(c => $"{c.Item2} {rows.Sum(r => r.Deaths[c.Item1]) * 100.0 / Math.Max(1, deaths):0}%")));
-        sb.AppendLine($"- 사라진 발견 {rows.Sum(r => r.Lost)} · 다시 찾아냄 {rows.Sum(r => r.Refound)} · 실험 {rows.Sum(r => r.Experiments):N0} · 거의 될 듯 {rows.Sum(r => r.Partials):N0} · 알아냄 {rows.Sum(r => r.Discoveries):N0} · 보고 배움 {rows.Sum(r => r.Watched):N0} · 불 피움 {rows.Sum(r => r.FiresLit):N0} · 불씨 얻음 {rows.Sum(r => r.FiresTaken):N0} · 들불 · 번개 {rows.Sum(r => r.Wildfires)} · 캠 {rows.Sum(r => r.Mined)} · 익힌 끼니 {rows.Sum(r => r.Cooked):N0}");
+        sb.AppendLine($"- 사라진 발견 {rows.Sum(r => r.Lost)} · 다시 찾아냄 {rows.Sum(r => r.Refound)} · 실험 {rows.Sum(r => r.Experiments):N0} · 그중 거의 될 듯 {rows.Sum(r => r.Partials):N0} · 아는 법대로 만들기 {rows.Sum(r => r.Crafts):N0}(그중 헛손질 {rows.Sum(r => r.CraftFails):N0}) · 알아냄 {rows.Sum(r => r.Discoveries):N0} · 보고 배움 {rows.Sum(r => r.Watched):N0} · 불 피움 {rows.Sum(r => r.FiresLit):N0} · 불씨 얻음 {rows.Sum(r => r.FiresTaken):N0} · 들불 · 번개 {rows.Sum(r => r.Wildfires)} · 캠 {rows.Sum(r => r.Mined)} · 익힌 끼니 {rows.Sum(r => r.Cooked):N0}");
         sb.AppendLine($"- 인구(10년마다, 시드 중앙값): " + string.Join(" · ", Enumerable.Range(0, years / 10 + 1).Select(i => PeopleBench.Median(rows.Select(r => (double)(i * 10 < r.PopByYear.Count ? r.PopByYear[i * 10] : 0))).ToString("0"))));
         sb.AppendLine($"- 사람 하루당 {rows.Sum(r => r.Seconds) * 1e6 / Math.Max(1, rows.Sum(r => r.PersonDays)):0}µs");
         Console.Write(sb.ToString());

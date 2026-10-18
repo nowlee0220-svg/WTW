@@ -327,14 +327,17 @@ public sealed partial class PeopleSim
         if (withPref.Length > 0 || rule is { HasWith: true })
         {
             with = PickCarried(p, withPref, input, -1, rule?.With);
+            if (rule is { HasWith: true } && with >= 0 && !MeetsAll(with, rule.With)) with = -1; // 아는 법: 맞는 것만
             if (with < 0 && rule is { HasWith: true }) { Stats.PlanWhy[5]++; return StartMaterialFor(p, rule.With, Why.KnowHow); }
             if (with < 0 && (action == A_strike && wish == W_warmth || action == A_grind) && !known) { foreach (int pr in withPref) if (StartMaterialFor(p, pr, 3, WishWhy(wish))) return true; return false; }
         }
         int tool = -1;
-        if (action == A_strike || action == A_break || action == A_grind) tool = BestCarried(p, Craft.P_hardness, 3, input, with);
+        if (action == A_strike || action == A_break || action == A_grind) tool = PickTool(p, input, with);
         else if (action == A_cut) tool = BestCarried(p, Craft.P_sharp, 2, input, with);
         // 같은 돌이 둘 있으면 하나로 다른 하나를 친다
-        if (tool < 0 && (action == A_strike || action == A_break) && p.CarryCount(input) >= 2 && Prop(input, Craft.P_hardness) >= 3) tool = input;
+        if (tool < 0 && (action == A_strike || action == A_break) && p.CarryCount(input) >= 2 && Prop(input, Craft.P_hardness) >= 3 && Prop(input, Craft.P_edible) == 0) tool = input;
+        if (rule is { HasTool: true } && (tool < 0 || !MeetsAll(tool, rule.Tool)))
+            tool = p.Carry.Where(c => c.Item != input && c.Item != with && MeetsAll(c.Item, rule.Tool)).Select(c => c.Item).DefaultIfEmpty(-1).First();
         if (rule is { HasTool: true } && tool < 0) { Stats.PlanWhy[6]++; return StartMaterialFor(p, rule.Tool, Why.KnowHow); }
         if (needFire)
         {
@@ -516,6 +519,26 @@ public sealed partial class PeopleSim
     }
 
     /// <summary>들고 있는 것 중 prefs 속성이 높은 것(앞 속성이 우선, 둘 다 0 이면 없음). must = 규칙 조건(있으면 그것을 만족하는 것 우선).</summary>
+    /// <summary>(E4) 치는 · 가는 도구: 먹을 것이 아니고, 다룰 재료보다 단단하거나 같은 것 가운데 가장 단단한 것. 없으면 −1.</summary>
+    private bool MeetsAll(int item, SortedDictionary<int, int> conds)
+    {
+        foreach (var (pr, mn) in conds) if (Prop(item, pr) < mn) return false;
+        return true;
+    }
+
+    private int PickTool(Person p, int input, int with)
+    {
+        int need = Math.Max(3, input >= 0 ? Prop(input, Craft.P_hardness) : 0);
+        int best = -1, bv = 0;
+        foreach (var c in p.Carry)
+        {
+            if (c.Item == input || c.Item == with || Prop(c.Item, Craft.P_edible) > 0) continue;
+            int v = Prop(c.Item, Craft.P_hardness);
+            if (v >= need && v > bv) { bv = v; best = c.Item; }
+        }
+        return best;
+    }
+
     private int PickCarried(Person p, int[] prefs, int except1, int except2, SortedDictionary<int, int>? must)
     {
         int best = -1, bs = 0;
@@ -524,6 +547,8 @@ public sealed partial class PeopleSim
             if (c.Item == except1 || c.Item == except2) continue;
             int s = 0, k = prefs.Length;
             foreach (int pr in prefs) { s += Prop(c.Item, pr) * k * 4; k--; }
+            // (E4) 먹을 것은 재료로 잘 쓰지 않는다(익히기가 아니면) — 도토리로 돌을 치는 따위를 줄인다
+            if (Prop(c.Item, Craft.P_edible) > 0 && Array.IndexOf(prefs, Craft.P_edible) < 0) { s -= 40; if (s <= 0 && must is null) continue; }
             if (must is not null)
             {
                 bool ok = true;
@@ -728,12 +753,20 @@ public sealed partial class PeopleSim
         if (outcome.IsPartial)
         {
             var pd = outcome.Partial!;
-            Stats.Partials++;
             if (pd.Result >= 0)
             {
                 p.RemoveCarry(input, 1);
                 p.AddCarry(pd.Result, 1);
             }
+            if (known)
+            {
+                // 아는 법인데 이번엔 잘 안 됐다 — 새 단서가 아니라 그냥 헛손질(따로 센다)
+                Stats.CraftFails++;
+                Stats.RuleFail[rule.Index]++; Stats.FailKeys[rule.Id + "/" + pd.Key] = Stats.FailKeys.GetValueOrDefault(rule.Id + "/" + pd.Key) + 1;
+                AddThought(p, H_failedTry);
+                return;
+            }
+            Stats.Partials++;
             AddClue(p, new Clue { Rule = rule.Index, Key = pd.Key, Tick = Now, Input = input });
             if (!Discoveries.ContainsKey(rule.Index) || Discoveries[rule.Index].Lost)
             {
