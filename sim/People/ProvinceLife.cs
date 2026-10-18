@@ -400,13 +400,15 @@ public sealed class ProvinceLife
     }
 
     /// <summary>(E4) 가장 가까운 재료 오브젝트(ok 가 참인 오브젝트 종류), 같은 이어진 땅. 없으면 −1.</summary>
+    private bool[] _okBuf = Array.Empty<bool>();
+
     public int NearestMaterial(int px, int py, int maxDist, Func<int, bool> ok)
     {
         int here = py * HexFrame.Size + px;
         int reg = (uint)here < HexFrame.TileCount ? Region[here] : -1;
         if (reg < 0) return -1;
         int best = -1; long bd = (long)maxDist * maxDist;
-        var okByObject = new bool[ObjectCatalog.Default.Objects.Count];
+        var okByObject = _okBuf.Length == ObjectCatalog.Default.Objects.Count ? _okBuf : (_okBuf = new bool[ObjectCatalog.Default.Objects.Count]);
         for (int o = 0; o < okByObject.Length; o++) okByObject[o] = ok(o);
         int bx = Math.Min(Buckets - 1, px / Bucket), by = Math.Min(Buckets - 1, py / Bucket);
         for (int r = 0; r < Buckets; r++)

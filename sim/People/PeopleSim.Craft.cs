@@ -177,7 +177,7 @@ public sealed partial class PeopleSim
     {
         var rng = Rng(p.Cell);
         // 바람 센 순서로 아는 법을 찾는다
-        var order = Enumerable.Range(0, Craft.Wishes.Count).Where(w => p.Wish[w] > 0).OrderByDescending(w => p.Wish[w]).ThenBy(w => w).ToList();
+        var order = Enumerable.Range(0, Craft.Wishes.Count).Where(w => p.Wish[w] > 0).OrderByDescending(w => p.Wish[w]).ThenBy(w => w).Take(2).ToList(); // 가장 센 바람 둘만
         foreach (int w in order) if (Plan(p, w, known: true, rng)) return true;
         p.LastCraftFail = Now;
         return false;
@@ -256,9 +256,10 @@ public sealed partial class PeopleSim
         }
         // 불이 있어야 하나
         bool needFire = rule is not null ? rule.Heat > 0 : wd.NeedsFire || action == A_roast || action == A_melt || action == A_boil || action == A_pile || (action == A_burn && p.CarryCount(I_ember) == 0);
-        if (action == A_burn && p.CarryCount(I_ember) == 0 && rule is null) { needFire = false; }
+        // 불씨 없이 태워 보기: 둘레에 타는 불이 있으면 그 불에 넣어 본다(숯은 가둔 불에서 나온다), 없으면 제자리에서
+        if (action == A_burn && p.CarryCount(I_ember) == 0 && rule is null) needFire = life.NearestFire(here % S, here / S, Now, 30) >= 0;
         // 단서가 "불이 모자람"이면: 모닥불이 있고 돌이 있으면 화덕을 쌓아 본다
-        if (follow is { Key: "heat" } && !known)
+        if (follow is { Key: "heat" or "rain" or "fuel" } && !known)
         {
             int ft = life.NearestFire(here % S, here / S, Now, 60);
             Fire hf = default;
@@ -395,7 +396,7 @@ public sealed partial class PeopleSim
             if (worst < 0) break;
             int n = Math.Max(1, p.CarryCount(worst) - 1);
             p.RemoveCarry(worst, n);
-            if (life.Walk[here]) life.Drop(here, worst, n);
+            if (life.Walk[here] && IsMade(worst)) life.Drop(here, worst, n); // 만든 것만 내려놓는다 — 흔한 돌 · 가지 · 풀은 그냥 버린다(자연으로)
         }
     }
 
@@ -576,13 +577,28 @@ public sealed partial class PeopleSim
     // ───────── 재료 얻기 ─────────
 
     /// <summary>속성 prop 이 min 이상인 재료를 가까운 곳에서 얻으러 간다(주울 것 · 오브젝트의 다루는 법). 못 찾으면 false.</summary>
-    private bool StartMaterialFor(Person p, int prop, int min, Why why) => StartMaterialFor(p, it => Prop(it, prop) >= min, prop, why);
+    private bool StartMaterialFor(Person p, int prop, int min, Why why)
+    {
+        long key = 1 + prop * 16L + min;
+        if (p.MissKey == key && Now - p.MissTick < MissMemory) return false; // 방금 둘레에 없었다
+        if (StartMaterialFor(p, it => Prop(it, prop) >= min, prop, why)) return true;
+        p.MissKey = key; p.MissTick = Now;
+        return false;
+    }
+
+    /// <summary>(E4) 재료를 찾았는데 둘레에 없었으면 이만큼은 같은 것을 다시 찾지 않는다(빠르기 — 사람이 기억한다).</summary>
+    private const long MissMemory = 12 * GameTime.TicksPerHour;
 
     /// <summary>조건(속성 → 최소값)을 모두 맞는 재료를 얻으러 간다.</summary>
     private bool StartMaterialFor(Person p, SortedDictionary<int, int> conds, Why why)
     {
         if (conds.Count == 0) return false;
-        return StartMaterialFor(p, it => { foreach (var (pr, mn) in conds) if (Prop(it, pr) < mn) return false; return true; }, conds.Keys.First(), why);
+        long key = 1000;
+        foreach (var (pr, mn) in conds) key = key * 131 + pr * 16 + mn;
+        if (p.MissKey == key && Now - p.MissTick < MissMemory) return false;
+        if (StartMaterialFor(p, it => { foreach (var (pr, mn) in conds) if (Prop(it, pr) < mn) return false; return true; }, conds.Keys.First(), why)) return true;
+        p.MissKey = key; p.MissTick = Now;
+        return false;
     }
 
     private bool StartMaterialFor(Person p, Func<int, bool> itemOk, int prop, Why why)
@@ -768,6 +784,10 @@ public sealed partial class PeopleSim
             }
             Stats.Partials++;
             AddClue(p, new Clue { Rule = rule.Index, Key = pd.Key, Tick = Now, Input = input });
+            // (E4) 곁(6타일)에서 본 사람도 그 단서를 얻는다
+            foreach (var q in life.People)
+                if (q.Id != p.Id && !q.Dead && !q.Asleep && q.Stage(Now) >= LifeStage.Child && Cheb(q.Tile(Now), here) <= 6 && !q.Knows(rule.Index))
+                    AddClue(q, new Clue { Rule = rule.Index, Key = pd.Key, Tick = Now, Input = input });
             if (!Discoveries.ContainsKey(rule.Index) || Discoveries[rule.Index].Lost)
             {
                 if (!Partials.TryGetValue(rule.Index, out var pr)) Partials[rule.Index] = pr = (0, new List<string>());
@@ -1057,6 +1077,9 @@ public sealed partial class PeopleSim
         if (!life.Fires.TryGetValue(p.Target, out var f) || p.CarryCount(p.PlanItem) == 0) return;
         p.RemoveCarry(p.PlanItem, 1);
         long add = FuelTicks(p.PlanItem);
+        if (f.Kind == 2) add = add * 3 / 2; // (E4) 가둔 불은 땔감이 오래 간다
+        else if (f.Lit(Now) && f.Remaining(Now) < GameTime.TicksPerHour && R_hearth is not null && !p.Knows(R_hearth.Index) && Rng(p.Cell).NextInt(100) < 25)
+            AddClue(p, new Clue { Rule = R_hearth.Index, Key = "fuel", Tick = Now, Input = p.PlanItem }); // 땔감이 금방 다 탄다
         if (p.PlanItem == I_charcoal && f.Kind == 2) f.Charcoal = true;
         if (f.Lit(Now)) { f.Fuel += add; }
         else { f.Stamp = Now; f.Fuel = add; f.Charcoal = p.PlanItem == I_charcoal && f.Kind == 2; }
@@ -1074,10 +1097,14 @@ public sealed partial class PeopleSim
         foreach (var (t, f0) in life.Fires.ToList())
         {
             var f = f0;
-            if (rain && f.Lit(Now) && life.Shelter[t] < 3)
+            if (rain && f.Lit(Now) && life.Shelter[t] < 3 && f.Kind == 1) // (E4) 돌로 가둔 불은 비에 꺼지지 않는다
             {
                 f.Fuel = Math.Max(0, Now - f.Stamp); life.Fires[t] = f;
-                if (Get(f.Lighter) is { Dead: false } l && l.Cell == cell) { AddThought(l, H_fireDied); AddBio(l, BioKind.FireDied, -1, t); }
+                if (Get(f.Lighter) is { Dead: false } l && l.Cell == cell)
+                {
+                    AddThought(l, H_fireDied); AddBio(l, BioKind.FireDied, -1, t);
+                    if (R_hearth is not null && !l.Knows(R_hearth.Index)) { AddClue(l, new Clue { Rule = R_hearth.Index, Key = "rain", Tick = Now, Input = I_stone }); AddWish(l, W_warmth, 10); }
+                }
             }
             else if (!f.Lit(Now) && f.Kind == 1 && Now - (f.Stamp + f.Fuel) > 10 * GameTime.TicksPerDay) (remove ??= new()).Add(t);
         }

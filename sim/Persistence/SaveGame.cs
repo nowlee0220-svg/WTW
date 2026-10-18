@@ -240,7 +240,7 @@ public static class SaveGame
         bw.Write(p.Known.Count); foreach (var k in p.Known) { bw.Write(k.Rule); bw.Write(k.Tick); bw.Write(k.Wish); bw.Write(k.Input); bw.Write(k.With); bw.Write(k.LearnedFrom); }
         bw.Write(p.Clues.Count); foreach (var c in p.Clues) { bw.Write(c.Rule); bw.Write(c.Key); bw.Write(c.Tick); bw.Write(c.Input); }
         bw.Write(p.PlanAction); bw.Write(p.PlanInput); bw.Write(p.PlanWith); bw.Write(p.PlanTool); bw.Write(p.PlanWish); bw.Write(p.PlanRule); bw.Write(p.PlanHeat); bw.Write(p.PlanItem);
-        bw.Write(p.LastExperiment); bw.Write(p.LastCraftFail); bw.Write(p.Experiments); bw.Write(p.EmberTick); bw.Write(p.PotWater); bw.Write(p.Mined);
+        bw.Write(p.LastExperiment); bw.Write(p.LastCraftFail); bw.Write(p.MissKey); bw.Write(p.MissTick); bw.Write(p.Experiments); bw.Write(p.EmberTick); bw.Write(p.PotWater); bw.Write(p.Mined);
         bw.Write(p.Nickname); bw.Write(p.NicknameConcepts.Length); foreach (int c in p.NicknameConcepts) bw.Write(c); bw.Write(p.NicknameReason);
     }
 
@@ -414,7 +414,7 @@ public static class SaveGame
             int nk = br.ReadInt32(); for (int k = 0; k < nk; k++) p.Known.Add(new Knowledge { Rule = br.ReadInt32(), Tick = br.ReadInt64(), Wish = br.ReadInt32(), Input = br.ReadInt32(), With = br.ReadInt32(), LearnedFrom = br.ReadInt32() });
             int ncl = br.ReadInt32(); for (int k = 0; k < ncl; k++) p.Clues.Add(new Clue { Rule = br.ReadInt32(), Key = br.ReadString(), Tick = br.ReadInt64(), Input = br.ReadInt32() });
             p.PlanAction = br.ReadInt32(); p.PlanInput = br.ReadInt32(); p.PlanWith = br.ReadInt32(); p.PlanTool = br.ReadInt32(); p.PlanWish = br.ReadInt32(); p.PlanRule = br.ReadInt32(); p.PlanHeat = br.ReadInt32(); p.PlanItem = br.ReadInt32();
-            p.LastExperiment = br.ReadInt64(); p.LastCraftFail = br.ReadInt64(); p.Experiments = br.ReadInt32(); p.EmberTick = br.ReadInt64(); p.PotWater = br.ReadInt32(); p.Mined = br.ReadInt32();
+            p.LastExperiment = br.ReadInt64(); p.LastCraftFail = br.ReadInt64(); p.MissKey = br.ReadInt64(); p.MissTick = br.ReadInt64(); p.Experiments = br.ReadInt32(); p.EmberTick = br.ReadInt64(); p.PotWater = br.ReadInt32(); p.Mined = br.ReadInt32();
             p.Nickname = br.ReadString(); p.NicknameConcepts = new int[br.ReadInt32()]; for (int k = 0; k < p.NicknameConcepts.Length; k++) p.NicknameConcepts[k] = br.ReadInt32(); p.NicknameReason = br.ReadString();
         }
         return p;

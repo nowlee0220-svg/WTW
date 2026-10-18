@@ -19,6 +19,12 @@ public static class ProvinceCache
     /// <summary>가장 최근에 쓴 행성의 지도 수.</summary>
     public static int Count { get { lock (Lock) return _last is not null && ByPlanet.TryGetValue(_last, out var l) ? l.Count : 0; } }
 
+    /// <summary>그 행성의 지도 수(다른 스레드가 다른 행성을 써도 흔들리지 않는다).</summary>
+    public static int CountFor(Planet.Planet p) { lock (Lock) return ByPlanet.TryGetValue(p, out var l) ? l.Count : 0; }
+
+    /// <summary>그 행성의 지도만 잊는다.</summary>
+    public static void Forget(Planet.Planet p) { lock (Lock) { ByPlanet.Remove(p); if (ReferenceEquals(_last, p)) _last = null; } }
+
     public static ProvinceMap Get(Planet.Planet p, int cell)
     {
         LinkedList<ProvinceMap> recent;

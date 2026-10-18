@@ -146,7 +146,7 @@ public sealed class CraftData
                     foreach (var p in pa.EnumerateObject())
                     {
                         string key = p.Name;
-                        if (key is not ("heat" or "tool" or "with" or "tinder" or "chance") && PI(key) < 0) problems.Add($"{where}: partial 의 '{key}' 을(를) 모릅니다.");
+                        if (key is not ("heat" or "tool" or "with" or "tinder" or "chance" or "rain" or "fuel") && PI(key) < 0) problems.Add($"{where}: partial 의 '{key}' 을(를) 모릅니다.");
                         string text = p.Value.TryGetProperty("text", out var tx) ? tx.GetString() ?? "" : "";
                         string hint = p.Value.TryGetProperty("hint", out var hi) ? hi.GetString() ?? "" : (hints.TryGetValue(key, out var g) ? g : "");
                         int pres = -1;

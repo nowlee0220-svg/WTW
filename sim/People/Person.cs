@@ -192,6 +192,8 @@ public sealed class Person
     public long LastExperiment = long.MinValue / 2;
     /// <summary>(E4) 아는 법으로 만들려다 재료가 없어 못 한 때 — 잠깐은 다시 계획하지 않는다.</summary>
     public long LastCraftFail = long.MinValue / 2;
+    /// <summary>(E4) 마지막으로 둘레에서 찾지 못한 재료(조건 열쇠)와 그때.</summary>
+    public long MissKey, MissTick = long.MinValue / 2;
     public int Experiments;
     /// <summary>들고 있는 불씨가 생긴 시각(−1 = 없음) — 두 시간이면 꺼진다.</summary>
     public long EmberTick = -1;

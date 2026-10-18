@@ -125,6 +125,6 @@
       "partial": { "with": { "text": "물을 담아 불에 올릴 것이 없었다", "hint": "물을 막는 그릇(토기)이 있어야 끓일 수 있다" } } },
 
     { "id": "hearth",       "name": "모닥불을 돌로 둘러 불을 가둔다", "action": "pile", "input": { "hardness": 3, "weight": 3 }, "heat": 1, "result": "hearth", "count": 1, "uses": 4, "time_min": 60, "skill": "building",
-      "partial": { "heat": { "text": "불이 없는 자리에 돌만 쌓였다" }, "hardness": { "text": "돌이 불에 바스러졌다" } } }
+      "partial": { "rain": { "text": "비에 불이 꺼져 버렸다", "hint": "돌로 둘러싸 가두면 비에도 꺼지지 않을 것 같다" }, "fuel": { "text": "땔감이 금방 다 타 버린다", "hint": "돌로 둘러싸 가두면 더 오래 탈 것 같다" }, "heat": { "text": "불이 없는 자리에 돌만 쌓였다" }, "hardness": { "text": "돌이 불에 바스러졌다" } } }
   ]
 }
