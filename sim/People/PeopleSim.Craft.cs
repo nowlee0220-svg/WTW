@@ -1049,7 +1049,7 @@ public sealed partial class PeopleSim
     private string Made(CraftRule r)
     {
         string obj = Hangul.Eul(Craft.ItemName(r.Result));
-        return r.Result == I_campfire ? $"{obj} 피웠습니다" : r.Result == I_ember ? $"{obj} 얻었습니다" : $"{obj} 만들었습니다";
+        return r.Result == I_campfire ? $"{obj} 피웠습니다" : r.Result == I_ember ? $"{obj} 얻었습니다" : r.Result == I_painting ? $"{obj} 그렸습니다" : $"{obj} 만들었습니다";
     }
     public string WishName(int wish) => (uint)wish < (uint)Craft.Wishes.Count ? Craft.Wishes[wish].Name : "호기심";
 

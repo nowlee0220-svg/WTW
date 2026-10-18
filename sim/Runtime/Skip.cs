@@ -102,6 +102,12 @@ public static class SkipGoals
     public static SkipGoal LandNamed() => new EventGoal(WorldEventKind.LandNamed, "땅에 이름이 붙을 때까지");
     /// <summary>말이 갈라질 때까지.</summary>
     public static SkipGoal LanguageSplit() => new EventGoal(WorldEventKind.Language, "말이 갈라질 때까지");
+    /// <summary>(E5) 지식이 세계에서 사라질 때까지(마지막으로 아는 사람이 죽거나 잊음).</summary>
+    public static SkipGoal KnowledgeLost() => new KindsGoal(new[] { WorldEventKind.DiscoveryLost }, "지식이 세계에서 사라질 때까지");
+    /// <summary>(E5) 한 무리에서 지식이 끊길 때까지.</summary>
+    public static SkipGoal KnowledgeGroupLost() => new KindsGoal(new[] { WorldEventKind.GroupLost, WorldEventKind.DiscoveryLost }, "한 무리에서 지식이 끊길 때까지");
+    /// <summary>(E5) 끊긴 지식을 되찾을 때까지 — 세계에서 다시 · 한 무리가 되찾음.</summary>
+    public static SkipGoal KnowledgeRefound() => new KindsGoal(new[] { WorldEventKind.Rediscovered, WorldEventKind.GroupRefound }, "끊긴 지식을 되찾을 때까지");
     /// <summary>인구가 n명이 될 때까지.</summary>
     public static SkipGoal Population(int n) => new PopulationGoal(n);
 
@@ -161,6 +167,12 @@ public static class SkipGoals
     {
         public override string Name => name;
         public override bool Reached(GameWorld w, IReadOnlyList<WorldEvent> events) => events.Any(e => e.Kind == kind);
+    }
+
+    private sealed class KindsGoal(WorldEventKind[] kinds, string name) : SkipGoal
+    {
+        public override string Name => name;
+        public override bool Reached(GameWorld w, IReadOnlyList<WorldEvent> events) => events.Any(e => kinds.Contains(e.Kind));
     }
 
     private sealed class PopulationGoal(int n) : SkipGoal
@@ -223,7 +235,9 @@ public sealed class SkipRun
     {
         var lines = new List<string> { $"{EndReason} — {YearsPassed(w):0.#}년이 흘렀습니다 ({GameTime.Format(_startTick)} → {GameTime.Format(w.Now)})" };
         int births = _all.Count(e => e.Kind == WorldEventKind.Birth), deaths = _all.Count(e => e.Kind == WorldEventKind.Death);
-        lines.Add($"인구 {_startPop}명 → {w.People.AliveCount}명 (태어남 {births} · 죽음 {deaths})");
+        int deadAll = 0; foreach (var p in w.People.All) if (p.Dead) deadAll++;
+        // (E5) 사람 목록의 "지금까지 죽은 사람"과 헷갈리지 않게 — 넘기는 동안의 수와 지금까지의 수를 함께
+        lines.Add($"인구 {_startPop}명 → {w.People.AliveCount}명 — 넘기는 동안 태어남 {births} · 죽음 {deaths} (세계에서 지금까지 죽은 사람 모두 {deadAll}명)");
         foreach (var k in new[] { WorldEventKind.Discovery, WorldEventKind.Rediscovered, WorldEventKind.DiscoveryLost, WorldEventKind.Language, WorldEventKind.GroupLost, WorldEventKind.GroupRefound, WorldEventKind.Moved, WorldEventKind.LandNamed, WorldEventKind.DiscoveryGroup })
         {
             var es = _all.Where(e => e.Kind == k).ToList();

@@ -335,6 +335,18 @@ public partial class GlobeView : Node3D
         if (_mode == MapMode.Language) Recolor();
     }
 
+    private Dictionary<int, Color> _knowColors = new();
+
+    /// <summary>(E5) 지식 지도: 칸마다 색(고른 발견을 아는 사람 수 · 그림). 지식 모드일 때만 다시 칠한다.</summary>
+    public void SetKnowledgeColors(Dictionary<int, Color> colors)
+    {
+        _knowColors = colors;
+        if (_mode == MapMode.Knowledge) Recolor();
+    }
+
+    /// <summary>(E5) 사람 표시판이 붙은 칸들(자동 확인용 — 사람이 다 떠난 칸에 표시가 남지 않는지).</summary>
+    public IEnumerable<int> MarkerCells() { foreach (var (box, _, c) in _markers) if (c >= 0) yield return c; }
+
     private readonly List<(int From, int To, float Strength)> _moves = new();
     private readonly List<Line2D> _arrows = new();
 
@@ -388,7 +400,8 @@ public partial class GlobeView : Node3D
         {
             var col = MapModes.CellColor(p, c, _mode, _resource, _shade);
             if (_mode == MapMode.Language && _langColors.TryGetValue(c, out var lc)) col = new Color(lc.R, lc.G, lc.B, 0.92f);
-            if (p.IsLand(c) && _mode != MapMode.Language)
+            if (_mode == MapMode.Knowledge && _knowColors.TryGetValue(c, out var kc)) col = new Color(kc.R, kc.G, kc.B, 0.92f);
+            if (p.IsLand(c) && _mode is not (MapMode.Language or MapMode.Knowledge))
             {
                 if (_opened.Contains(c)) col = col.Lightened(0.12f);
                 else { float g = col.R * 0.3f + col.G * 0.59f + col.B * 0.11f; col = col.Lerp(new Color(g, g, g, col.A), 0.22f).Darkened(0.12f); }

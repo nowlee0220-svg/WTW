@@ -46,7 +46,36 @@ public static class SceneBench
         if (fire > 0) Save("first-fire.wtw", "첫 불 직전", "따뜻한 숲의 세 가족 — 이틀 뒤에 누군가 처음으로 모닥불을 피운다. 1배속으로 지켜보세요", fire - 2 * GameTime.TicksPerDay);
         long pot = FirstTick("pot", 150);
         if (pot > 0) Save("first-pot.wtw", "첫 토기 직전", "이틀 뒤에 누군가 처음으로 진흙 그릇을 불에 구워 토기를 만든다", pot - 2 * GameTime.TicksPerDay);
-        Save("village-50y.wtw", "50년 뒤 마을", "세 가족이 50년을 산 뒤 — 불 · 돌칼 · 그릇을 아는 마을. [발견] 창과 카드의 [지식]을 보세요", 50 * GameTime.TicksPerYear);
+        Save("village-50y.wtw", "50년 뒤 마을", "세 가족이 50년을 산 뒤 — 불 · 돌칼 · 그릇을 아는 마을. [지식의 행방] 창과 카드의 [지식]을 보세요", 50 * GameTime.TicksPerYear);
+        // (E5) 마지막 장인이 늙음: 세계에서 한 사람만 아는 법이 있고 그 사람이 60살 넘음 — 처음 그런 때를 찾는다(결정론이라 늘 같은 장면)
+        {
+            var w = New();
+            var c = w.People.Craft;
+            string? found = null;
+            for (long t = 0; t < 250 * GameTime.TicksPerYear && found is null; t += GameTime.TicksPerDay)
+            {
+                w.AdvanceTo(t + GameTime.TicksPerDay);
+                if (t < 30 * GameTime.TicksPerYear) continue;
+                foreach (var (rule, d) in w.People.Discoveries)
+                {
+                    if (d.Lost || c.Rules[rule].Id == "paint") continue;
+                    Person? only = null; int n = 0;
+                    foreach (var q in w.People.All) if (!q.Dead && q.Knows(rule)) { n++; only = q; }
+                    if (n != 1 || only!.AgeYears(w.Now) < 60) continue;
+                    int pics = w.People.PaintingsOf(rule);
+                    found = $"{w.People.DisplayName(only)}(나이 {only.AgeYears(w.Now)})만 {c.ItemName(c.Rules[rule].Result)} 만드는 법을 안다" + (pics > 0 ? $" — 그림 {pics}점이 남아 있다" : " — 아직 그림도 없다");
+                    break;
+                }
+            }
+            if (found is not null)
+            {
+                string file = "last-artisan.wtw";
+                SaveGame.SaveFile(w, Path.Combine(outDir, file));
+                index.Add($"{file}|마지막 장인이 늙음|{found}. [넘기기] → 지식 · 세계에서 사라짐, 그리고 [지식의 행방] 창 ({GameTime.Format(w.Now)} · 사람 {w.People.AliveCount}명)");
+                Console.WriteLine($"{file}: {GameTime.Format(w.Now)} · {found}");
+            }
+            else Console.WriteLine("마지막 장인 장면: 250년 안에 찾지 못함");
+        }
         File.WriteAllLines(Path.Combine(outDir, "index.txt"), index);
     }
 }

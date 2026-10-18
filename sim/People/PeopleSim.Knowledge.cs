@@ -556,6 +556,14 @@ public sealed partial class PeopleSim
 
     private Person? FirstAlive(int cell) { foreach (var q in PeopleIn(cell)) if (!q.Dead) return q; return null; }
 
+    /// <summary>(E5) 가르치는 사람의 말풍선: 가르치는 물건의 낱말(그 말로)과 뜻. 낱말이 없으면 null.</summary>
+    public (string Word, string Meaning)? TeachWord(Person p)
+    {
+        if ((uint)p.TargetB >= (uint)Craft.Rules.Count || !Languages.TryGetValue(p.LangId, out var lang)) return null;
+        if (ConceptForItem(Craft.Catalog.Items[Craft.Rules[p.TargetB].Result].Id) is not { } cid || Lang.ConceptIndex(cid) is not (int c and >= 0) || !lang.Known.Contains(c)) return null;
+        return (WordOf(p, c), Lang.Concepts[c].Meaning);
+    }
+
     internal void History(int rule, byte kind, int cell, string text)
     {
         if (!KnowHistory.TryGetValue(rule, out var list)) KnowHistory[rule] = list = new List<KnowEvent>();

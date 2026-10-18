@@ -65,6 +65,10 @@ public sealed class WorldSnapshot
     /// <summary>아직 발견되지 않은 것의 부분 성공(규칙 이름, 횟수, 글).</summary>
     public (string Rule, int Count, string[] Texts)[] PendingPartials = Array.Empty<(string, int, string[])>();
     private long _discSig = -1, _itemSig = -1;
+    // ── (E5) 지식 ──
+    /// <summary>남아 있는 그림(칸 → 그림들). 바뀔 때만 새 사전.</summary>
+    public Dictionary<int, PaintingView[]> Paintings = new();
+    public PaintingView? PaintingById(int id) { foreach (var (_, l) in Paintings) foreach (var g in l) if (g.Id == id) return g; return null; }
 
     /// <summary>"타레(빠른 물)" — 이름이 없으면 null.</summary>
     public string? LandLabel(int cell) => LandNames.TryGetValue(cell, out var l) && l.Length > 0 ? $"{l[0].Word}({l[0].Meaning})" : null;
@@ -124,6 +128,7 @@ public sealed class WorldSnapshot
             v.Name = w.People.DisplayName(p);
             v.Named = p.Name.Length > 0;
             if (v.Talking && p.TalkConcept >= 0) { v.Say = w.People.WordOf(p, p.TalkConcept); v.SayMeaning = w.People.Lang.Concepts[p.TalkConcept].Meaning; }
+            else if (v.Teaching && w.People.TeachWord(p) is { } tw) { v.Say = tw.Word; v.SayMeaning = tw.Meaning; }
             else { v.Say = ""; v.SayMeaning = ""; }
         }
         var counts = new List<(int, int)>();
@@ -159,7 +164,7 @@ public sealed class WorldSnapshot
         }
     }
 
-    private long _bigSeq = -1;
+    private long _bigSeq = -1, _paintSig = -1;
 
     private void FillLanguages(GameWorld w)
     {
@@ -247,6 +252,20 @@ public sealed class WorldSnapshot
             GroundItems = gi; Dug = dug;
         }
         var st = ps.Stats;
+        long psig = ps.NextPaintingId * 7919L + ps.Paintings.Count * 31 + ps.Paintings.Values.Sum(g => (long)g.Seen + g.Taught * 3) + w.Now / Time.GameTime.TicksPerDay;
+        if (psig != _paintSig)
+        {
+            _paintSig = psig;
+            var pd = new Dictionary<int, List<PaintingView>>();
+            foreach (var (_, g) in ps.Paintings)
+            {
+                if (!g.Alive(w.Now)) continue;
+                if (!pd.TryGetValue(g.Cell, out var l)) pd[g.Cell] = l = new List<PaintingView>();
+                l.Add(new PaintingView(g.Id, g.Cell, g.Tile, g.Stand, g.Rule, g.Rule >= 0 ? ps.Craft.ItemName(ps.Craft.Rules[g.Rule].Result) : "알아볼 수 없는 무늬", g.Rule >= 0 ? ps.Craft.Rules[g.Rule].Name : "",
+                    g.Medium, ps.DisplayName(ps.Get(g.Painter)), g.Tick, (int)((g.Until - w.Now) / Time.GameTime.TicksPerYear), g.Seen, g.Taught, ps.LandLabelOr(g.Cell, "이름 없는 땅")));
+            }
+            Paintings = pd.ToDictionary(kv => kv.Key, kv => kv.Value.ToArray());
+        }
         long dsig = ps.Discoveries.Count * 1_000_003L + st.Discoveries * 7919 + st.Watched * 31 + st.Lost * 13 + st.Refound * 17 + ps.Partials.Count * 5 + ps.Partials.Sum(kv => kv.Value.Count) + w.Now / Time.GameTime.TicksPerDay * 3;
         if (dsig == _discSig) return;
         _discSig = dsig;
@@ -258,9 +277,35 @@ public sealed class WorldSnapshot
             string word = "", meaning = "";
             if (ps.ConceptForItem(craft.Catalog.Items[r.Result].Id) is { } cid && ps.Lang.ConceptIndex(cid) is int c && c >= 0 && ps.Languages.TryGetValue(d.LangId, out var lang) && lang.Known.Contains(c))
             { word = Words.Word(lang, null, ps.Lang.Concepts[c], ps.Lang); meaning = ps.Lang.Concepts[c].Meaning; }
+            string origin = "";
+            if (word.Length > 0 && ps.Languages.TryGetValue(d.LangId, out var dl) && ps.ConceptForItem(craft.Catalog.Items[r.Result].Id) is { } cid2 && ps.Lang.ConceptIndex(cid2) is int c2 && c2 >= 0) origin = ps.WordOrigin(dl, c2);
+            // (E5) 지금 누가 아나(무리 · 아는 정도) · 무리마다 아는 사람 수 · 그림 · 역사 · 다른 말들의 낱말(빌려 온 곳)
+            var people = new List<KnowerView>();
+            var cells = new SortedDictionary<int, int>();
+            foreach (var q in ps.All)
+            {
+                if (q.Dead) continue;
+                int ki = q.KnownIndex(d.Rule);
+                if (ki < 0) continue;
+                var k = q.Known[ki];
+                cells[q.Cell] = cells.GetValueOrDefault(q.Cell) + 1;
+                people.Add(new KnowerView(q.Id, ps.DisplayName(q), q.Cell, ps.LandLabelOr(q.Cell, "이름 없는 땅"), k.Level, k.Via switch { Wtw.Sim.People.Via.Teach => "배움", Wtw.Sim.People.Via.Watch => "보고 배움", Wtw.Sim.People.Via.Painting => "그림", _ => "스스로" }, q.AgeYears(w.Now)));
+            }
+            var pics = ps.Paintings.Values.Where(g => g.Rule == d.Rule && g.Alive(w.Now)).Select(g => $"{ps.LandLabelOr(g.Cell, "이름 없는 땅")}의 {Wtw.Sim.People.Painting.MediumName(g.Medium)} — {ps.DisplayName(ps.Get(g.Painter))}, {Time.GameTime.Format(g.Tick)} (본 사람 {g.Seen}번 · 그림으로 배운 사람 {g.Taught}명 · 앞으로 약 {(g.Until - w.Now) / Time.GameTime.TicksPerYear}년)").ToArray();
+            var hist = ps.KnowHistory.TryGetValue(d.Rule, out var hl) ? hl.Select(e => (e.Tick, e.Kind, e.Text)).ToArray() : Array.Empty<(long, byte, string)>();
+            int groups = 0, groupsLost = 0;
+            foreach (var (key, gk) in ps.GroupKnows) if (Wtw.Sim.People.PeopleSim.GroupRule(key) == d.Rule) { if (gk.Known) groups++; else groupsLost++; }
+            var words = new List<string>();
+            if (ps.ConceptForItem(craft.Catalog.Items[r.Result].Id) is { } cid3 && ps.Lang.ConceptIndex(cid3) is int c3 && c3 >= 0)
+                foreach (var (lid, lang2) in ps.Languages)
+                    if (lang2.Known.Contains(c3) && lid != d.LangId && ps.Speakers(lid) > 0 && words.Count < 6) words.Add($"'{Words.Word(lang2, null, ps.Lang.Concepts[c3], ps.Lang)}'({ps.LanguageLabel(lid)} — {ps.WordOrigin(lang2, c3)})");
             return new DiscoveryView(d.Rule, craft.ItemName(r.Result), r.Name, craft.ActionName(r.Action), d.Person, ps.DisplayName(who) + (who is { Nickname.Length: > 0 } ? $" '{who.Nickname}'" : ""), d.Cell,
                 ps.LandLabelOr(d.Cell, Wtw.Sim.Planet.PlanetNames.Of(w.Planet.Biome[d.Cell]) + " 땅"), d.Tick, ps.WishName(d.Wish), d.PartialsBefore, d.PartialTexts.ToArray(),
-                ps.Knowers(d.Rule), d.Lost, d.LostCount, d.RefoundCount, word, meaning, r.Heat > 0 ? craft.HeatName(r.Heat) : "");
+                ps.Knowers(d.Rule), d.Lost, d.LostCount, d.RefoundCount, word, meaning, r.Heat > 0 ? craft.HeatName(r.Heat) : "")
+            {
+                People = people.OrderByDescending(x => x.Level).ThenBy(x => x.Id).ToArray(), Cells = cells.Select(kv => (kv.Key, kv.Value)).ToArray(), Paintings = pics, History = hist,
+                Groups = groups, GroupsLost = groupsLost, WordOrigin = origin, OtherWords = words.ToArray(),
+            };
         }).ToArray();
         PendingPartials = ps.Partials.Select(kv => (craft.Rules[kv.Key].Name, kv.Value.Count, kv.Value.Texts.ToArray())).ToArray();
     }
@@ -286,9 +331,25 @@ public sealed class WorldSnapshot
 /// <summary>(E4) 땅 위의 불 하나(화면용): 타일 · 종류(1 모닥불 · 2 돌 화덕) · 켜졌나 · 남은 시간 · 숯을 넣었나.</summary>
 public readonly record struct FireView(int Tile, byte Kind, bool Lit, float HoursLeft, bool Charcoal);
 
-/// <summary>(E4) 발견 목록 한 줄(화면용).</summary>
+/// <summary>(E4) 발견 목록 한 줄(화면용). (E5) 지식의 행방: 아는 사람(무리 · 아는 정도) · 칸마다 아는 사람 수 · 남은 그림 · 역사 · 아는 무리 수 · 끊긴 무리 수 · 낱말의 출처 · 다른 말의 낱말.</summary>
 public sealed record DiscoveryView(int Rule, string Item, string RuleName, string Action, int Person, string PersonName, int Cell, string Place, long Tick, string Wish,
-    int PartialsBefore, string[] PartialTexts, int Knowers, bool Lost, int LostCount, int RefoundCount, string Word, string WordMeaning, string Heat);
+    int PartialsBefore, string[] PartialTexts, int Knowers, bool Lost, int LostCount, int RefoundCount, string Word, string WordMeaning, string Heat)
+{
+    public KnowerView[] People { get; init; } = Array.Empty<KnowerView>();
+    public (int Cell, int Count)[] Cells { get; init; } = Array.Empty<(int, int)>();
+    public string[] Paintings { get; init; } = Array.Empty<string>();
+    public (long Tick, byte Kind, string Text)[] History { get; init; } = Array.Empty<(long, byte, string)>();
+    public int Groups { get; init; }
+    public int GroupsLost { get; init; }
+    public string WordOrigin { get; init; } = "";
+    public string[] OtherWords { get; init; } = Array.Empty<string>();
+}
+
+/// <summary>(E5) 아는 사람 한 명(화면용): 번호 · 이름 · 사는 칸 · 땅 이름 · 아는 정도 · 어떻게 알았나 · 나이.</summary>
+public readonly record struct KnowerView(int Id, string Name, int Cell, string Place, int Level, string How, int Age);
+
+/// <summary>(E5) 그림 하나(화면용): 벽 타일 · 서서 보는 타일 · 무엇을 · 어떻게(규칙 이름) · 매체 · 그린 사람 · 언제 · 앞으로 몇 해 · 본 횟수 · 배운 사람 수 · 땅 이름.</summary>
+public sealed record PaintingView(int Id, int Cell, int Tile, int Stand, int Rule, string What, string How, byte Medium, string Painter, long Tick, int YearsLeft, int Seen, int Taught, string Place);
 
 /// <summary>땅 이름 하나(화면용 사본).</summary>
 public sealed record LandNameView(int LangId, string Word, string Meaning, string Reason, long Tick, string Namer);
@@ -322,6 +383,8 @@ public sealed class PersonView
     /// <summary>(E4) 손에 든 도구(아이템 번호, −1 = 없음) · 들고 있는 그릇 · 불씨 · 실험 중 · 별명.</summary>
     public int Tool = -1, Vessel = -1;
     public bool Ember, Working;
+    /// <summary>(E5) 가르치는 중 · 배우는 중 · 그림을 보는 중 · 그리는 중.</summary>
+    public bool Teaching, Learning, Studying, Painting;
     public string Nickname = "";
     private static int _ember = -1;
     /// <summary>말풍선: 그 사람의 말로 된 낱말과 뜻(이야기할 때만).</summary>
@@ -359,6 +422,8 @@ public sealed class PersonView
             if (v > bv) { bv = v; Vessel = item; }
         }
         Working = !p.Walking && p.Act is Act.Experiment or Act.Craft or Act.Mine or Act.Cook or Act.TendFire;
+        Teaching = !p.Walking && p.Act == Act.Teach; Learning = p.Act == Act.Learn; Studying = !p.Walking && p.Act == Act.Study;
+        Painting = !p.Walking && p.Act is Act.Experiment or Act.Craft && p.PlanAction == Data.CraftData.Default.ActionIndex("draw");
         Nickname = p.Nickname;
     }
 

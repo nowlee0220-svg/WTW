@@ -106,6 +106,7 @@ public partial class Main : Node
         _legend = new Legend { Theme = theme, Visible = false };
         ui.AddChild(_legend);
         _legend.ResourcePicked += r => SetMode(MapMode.Resource, r);
+        _legend.KnowledgePicked += ShowKnowledgeMap;
 
         _panel = new CellPanel { Theme = theme, Visible = false };
         ui.AddChild(_panel);
@@ -131,6 +132,7 @@ public partial class Main : Node
         ui.AddChild(_discoveries);
         _discoveries.CloseRequested += () => _discoveries.Visible = false;
         _discoveries.PersonPicked += (pid, cell) => { _discoveries.Visible = false; OnAlertPicked(pid, cell); };
+        _discoveries.MapRequested += rule => { _discoveries.Visible = false; if (_province.IsOpen) ExitProvince(); ShowKnowledgeMap(rule); };
         _skipPanel = new SkipPanel { Theme = theme, Gate = _gate };
         ui.AddChild(_skipPanel);
         _skipPanel.CloseRequested += () => _skipPanel.Visible = false;
@@ -295,6 +297,7 @@ public partial class Main : Node
     private void SetMode(MapMode mode, int? resource)
     {
         _langTimer = 0;
+        if (mode == MapMode.Knowledge) RefreshKnowledgeChoices(force: true);
         _globe.SetMode(mode, resource);
         _hud.SetMode(mode);
         _legend.Show(mode, _globe.Resource);
@@ -414,7 +417,7 @@ public partial class Main : Node
         var p = _globe.Planet;
         var m = cell >= 0 ? _province.MapOf(cell) : null;
         if (p is null || m is null) { _card.Visible = false; return; }
-        _card.ShowAt(TileDescriber.Describe(p, m, x, y), GetViewport().GetMousePosition());
+        _card.ShowAt(PaintingReport(cell, x, y) ?? TileDescriber.Describe(p, m, x, y), GetViewport().GetMousePosition());
     }
 
     private void OnTileClicked(int cell, int x, int y)
@@ -423,7 +426,28 @@ public partial class Main : Node
         var m = _province.MapOf(cell);
         if (p is null || m is null) return;
         CloseCard();
-        _panel.ShowTile(TileDescriber.Describe(p, m, x, y));
+        _panel.ShowTile(PaintingReport(cell, x, y) ?? TileDescriber.Describe(p, m, x, y));
+    }
+
+    /// <summary>(E5) 그 타일에 그림이 있으면: 무엇을 그린 것 같은지 · 누가 · 언제 · 어디에 · 본 사람 · 배운 사람.</summary>
+    private TileReport? PaintingReport(int cell, int x, int y)
+    {
+        if (_snap is null || !_snap.Paintings.TryGetValue(cell, out var pics)) return null;
+        int t = y * HexFrame.Size + x;
+        var g = pics.FirstOrDefault(q => q.Tile == t || q.Stand == t);
+        if (g is null) return null;
+        string medium = Wtw.Sim.People.Painting.MediumName(g.Medium);
+        string what = g.Rule < 0 ? "알아볼 수 없는 무늬(손자국)" : $"{g.What} 만드는 법 같다 — {g.How}";
+        var facts = new List<(string, string)>
+        {
+            ("무엇을 그린 것 같은지", what),
+            ("누가 · 언제", $"{g.Painter} · {Wtw.Sim.Time.GameTime.Format(g.Tick)}"),
+            ("어디에", $"{g.Place}의 {medium}"),
+            ("얼마나 남을까", g.YearsLeft <= 0 ? "곧 바래 사라질 것 같다" : $"앞으로 약 {g.YearsLeft}년 ({medium}: 동굴 벽은 오래, 바위 면은 수십 년, 나무껍질은 몇 해)"),
+            ("들여다본 사람", $"{g.Seen}번 · 이 그림을 보고 다 알게 된 사람 {g.Taught}명"),
+            ("그림이란", "글자가 아니라 그림이라 말을 몰라도 조금은 알아본다. 아는 사람이 모두 죽어도 그림이 남아 있으면 되찾을 길이 있다."),
+        };
+        return new TileReport($"벽 그림 — {(g.Rule < 0 ? "무늬" : g.What)}", $"{medium}에 숯 · 재 · 진흙으로 그림", "", facts);
     }
 
     // ───────── 사람 ─────────
@@ -499,7 +523,7 @@ public partial class Main : Node
             var c = _host.Card(0);
             if (c is not null && c.Id == _cardPanel.PersonId)
             {
-                string sig = $"{c.Activity}|{c.Why}|{c.Mood}|{c.Age}|{string.Join(",", c.Needs.Select(n => n.Value / 2))}|{c.Thoughts.Count}|{c.Relations.Count}|{c.Story.Count}|{c.Body.Count}|{string.Join(",", c.Relations.Select(r => r.Opinion / 3))}|{c.Alive}|{c.Knowledge.Count}|{c.Clues.Count}|{string.Join(",", c.Wishes.Select(w => w.Strength / 5))}|{c.Carry}";
+                string sig = $"{c.Activity}|{c.Why}|{c.Mood}|{c.Age}|{string.Join(",", c.Needs.Select(n => n.Value / 2))}|{c.Thoughts.Count}|{c.Relations.Count}|{c.Story.Count}|{c.Body.Count}|{string.Join(",", c.Relations.Select(r => r.Opinion / 3))}|{c.Alive}|{c.Knowledge.Count}|{string.Join(",", c.Learning)}|{c.Clues.Count}|{string.Join(",", c.Wishes.Select(w => w.Strength / 5))}|{c.Carry}";
                 if (sig != _cardSig) { _cardSig = sig; _cardPanel.Fill(c); }
             }
             if (_cardTimer <= 0) { _cardTimer = 0.35; _host.RequestCard(_cardPanel.PersonId, 0); }
@@ -575,6 +599,11 @@ public partial class Main : Node
             }
         }
         if (l.Count == 0 && snap.OpenedCells.Contains(c)) l.Add(("사는 사람", "지금은 아무도 없다(전에 사람이 살았던 땅)"));
+        // (E5) 이 땅의 무리가 아는 법 · 남은 그림
+        var knows = snap.Discoveries.Select(d => (d.Item, N: d.Cells.FirstOrDefault(x => x.Cell == c).Count)).Where(x => x.N > 0).OrderByDescending(x => x.N).ToList();
+        if (knows.Count > 0) l.Add(("아는 법", string.Join(" · ", knows.Take(10).Select(x => $"{x.Item} {x.N}명")) + (knows.Count > 10 ? $" … 모두 {knows.Count}가지" : "")));
+        if (snap.Paintings.TryGetValue(c, out var pics) && pics.Length > 0)
+            l.Add(("그림", string.Join(" · ", pics.Take(5).Select(g => $"{g.What}({Wtw.Sim.People.Painting.MediumName(g.Medium)})")) + (pics.Length > 5 ? $" … {pics.Length}점" : "")));
         return l;
     }
 
@@ -585,6 +614,48 @@ public partial class Main : Node
         var key = (a.Id, a.Lang.Changes * 1000 + a.Lang.Sounds.Sum(), b.Id, b.Lang.Changes * 1000 + b.Lang.Sounds.Sum());
         if (!_understandCache.TryGetValue(key, out int u)) { if (_understandCache.Count > 20_000) _understandCache.Clear(); u = a.Understanding(b); _understandCache[key] = u; }
         return u;
+    }
+
+    // ───────── (E5) 지식 지도 ─────────
+
+    private int _knowRule = -1, _knowChoicesSig = -1;
+
+    /// <summary>지식 지도로: 그 발견을 아는 사람이 사는 칸을 밝게.</summary>
+    private void ShowKnowledgeMap(int rule)
+    {
+        _knowRule = rule;
+        _legend.KnowledgeRule = rule;
+        SetMode(MapMode.Knowledge);
+    }
+
+    /// <summary>범례의 고를 거리(발견 목록)를 맞춘다 — 발견 수가 바뀌었을 때만 범례를 다시 그린다.</summary>
+    private void RefreshKnowledgeChoices(bool force)
+    {
+        var snap = _snap;
+        if (snap is null) return;
+        int sig = snap.Discoveries.Length;
+        if (!force && sig == _knowChoicesSig) return;
+        _knowChoicesSig = sig;
+        _legend.KnowledgeChoices = snap.Discoveries.Select(d => (d.Rule, d.Item)).ToList();
+        if (_knowRule < 0 || !snap.Discoveries.Any(d => d.Rule == _knowRule))
+            _knowRule = snap.Discoveries.FirstOrDefault(d => d.Item == "모닥불")?.Rule ?? (snap.Discoveries.Length > 0 ? snap.Discoveries[0].Rule : -1);
+        _legend.KnowledgeRule = _knowRule;
+        if (!force && _globe.Mode == MapMode.Knowledge) _legend.Show(MapMode.Knowledge, _globe.Resource);
+    }
+
+    private void UpdateKnowledgeColors(WorldSnapshot snap)
+    {
+        RefreshKnowledgeChoices(force: false);
+        var colors = new Dictionary<int, Color>();
+        var d = snap.Discoveries.FirstOrDefault(x => x.Rule == _knowRule);
+        var know = new Dictionary<int, int>();
+        if (d is not null) foreach (var (cell, n) in d.Cells) know[cell] = n;
+        var pics = new Dictionary<int, int>();
+        foreach (var (cell, list) in snap.Paintings) foreach (var g in list) if (g.Rule == _knowRule) pics[cell] = pics.GetValueOrDefault(cell) + 1;
+        foreach (var (cell, _) in snap.CellPeople) colors[cell] = MapModes.KnowColor(know.GetValueOrDefault(cell), pics.GetValueOrDefault(cell), true);
+        foreach (var (cell, n) in pics) if (!colors.ContainsKey(cell)) colors[cell] = MapModes.KnowColor(0, n, false);
+        foreach (var (cell, n) in know) colors[cell] = MapModes.KnowColor(n, 0, true);
+        _globe.SetKnowledgeColors(colors);
     }
 
     /// <summary>언어 지도 색 · 옮겨 가는 화살표(가끔 다시 셈).</summary>
@@ -600,10 +671,17 @@ public partial class Main : Node
             foreach (var cr in snap.RecentCrossings) if (cr.Tick >= since) count[(cr.From, cr.To)] = count.GetValueOrDefault((cr.From, cr.To)) + 1;
             _globe.SetMoves(count.OrderBy(kv => kv.Key).Select(kv => (kv.Key.Item1, kv.Key.Item2, Math.Min(1f, kv.Value / 6f))));
         }
-        if (_globe.Mode != MapMode.Language) return;
+        if (_globe.Mode is not (MapMode.Language or MapMode.Knowledge)) return;
         _langTimer -= delta;
         if (_langTimer > 0) return;
         _langTimer = 1.0;
+        if (_globe.Mode == MapMode.Knowledge)
+        {
+            UpdateKnowledgeColors(snap);
+            int s2 = _globe.Selected;
+            if (_panel.Visible && s2 >= 0 && !_province.IsOpen) _panel.ShowCell(_globe.Planet!, s2, CellExtras(s2), snap.LandLabel(s2) is { } l2 ? $"{l2} — 칸 {s2}" : null);
+            return;
+        }
         var colors = new Dictionary<int, Color>();
         LanguageView? focus = null;
         int sel = _globe.Selected;
@@ -737,11 +815,13 @@ public partial class Main : Node
     }
 
     /// <summary>넘기는 중이면 막만 보이고(지도는 그리지 않음) true. 끝나면 "그동안 일어난 일".</summary>
+    private bool _skipFromProvince;
+
     private bool UpdateSkip(WorldSnapshot snap)
     {
         if (_host!.Skipping is { } info)
         {
-            if (!_wasSkipping) { _wasSkipping = true; _province.Visible = false; _province.ProcessMode = ProcessModeEnum.Disabled; _globe.Visible = false; _globe.ProcessMode = ProcessModeEnum.Disabled; }
+            if (!_wasSkipping) { _wasSkipping = true; _skipFromProvince = _province.IsOpen; _province.Visible = false; _province.ProcessMode = ProcessModeEnum.Disabled; _globe.Visible = false; _globe.ProcessMode = ProcessModeEnum.Disabled; }
             _skipOverlay.Show(info, snap.Now);
             _hud.UpdateInfo(snap, _host, 0);
             return true;
@@ -750,8 +830,10 @@ public partial class Main : Node
         {
             _wasSkipping = false;
             _skipOverlay.Visible = false;
-            _province.Visible = true; _province.ProcessMode = ProcessModeEnum.Inherit;
-            _globe.Visible = true; _globe.ProcessMode = ProcessModeEnum.Inherit;
+            // (E5) 넘기기 직전에 보던 화면만 다시 켠다(지방이면 지방, 아니면 지구본)
+            _province.ProcessMode = ProcessModeEnum.Inherit; _globe.ProcessMode = ProcessModeEnum.Inherit;
+            _province.Visible = _skipFromProvince && _province.IsOpen;
+            _globe.Visible = !_province.Visible;
             _alerts.Reset();
             _popupSeq = -1;
             _host.SetPaused(true);
@@ -786,6 +868,8 @@ public partial class Main : Node
 
     // AutoPilot 이 쓰는 문
     internal SimHost? Host => _host;
+    internal WorldSnapshot? Snap => _snap;
+    internal void KnowledgeMapForTest(int rule) => ShowKnowledgeMap(rule);
     internal GlobeView Globe => _globe;
     internal CellPanel Panel => _panel;
     internal ProvinceView Province => _province;

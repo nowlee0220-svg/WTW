@@ -14,7 +14,7 @@ namespace Wtw.Game;
 public partial class ProvinceView
 {
     private Node2D _itemRoot = null!, _glowRoot = null!;
-    private readonly List<Sprite2D> _fireSprites = new(), _glowSprites = new(), _itemSprites = new();
+    private readonly List<Sprite2D> _fireSprites = new(), _glowSprites = new(), _itemSprites = new(), _paintSprites = new();
     private CanvasItemMaterial _addMat = null!;
     private readonly Dictionary<int, int> _dugSeen = new();
 
@@ -31,7 +31,7 @@ public partial class ProvinceView
     private void UpdateCraft(WorldSnapshot snap)
     {
         float t = (float)(Time.GetTicksMsec() / 1000.0);
-        int nf = 0, ng = 0, ni = 0;
+        int nf = 0, ng = 0, ni = 0, np = 0;
         foreach (var sh in _shown)
         {
             int cell = sh.Map.Cell;
@@ -75,7 +75,21 @@ public partial class ProvinceView
                 }
             }
             ApplyDug(snap, sh);
+            // (E5) 벽 그림: 벽 타일에서 서서 보는 쪽으로 조금 나와(바위 면에 붙은 것처럼)
+            if (snap.Paintings.TryGetValue(cell, out var pics))
+                foreach (var g in pics)
+                {
+                    if (np == _paintSprites.Count) { var sp = new Sprite2D { Material = _premul }; _itemRoot.AddChild(sp); _paintSprites.Add(sp); }
+                    var s = _paintSprites[np++];
+                    s.Texture = Art.Painting(g.Medium, g.Rule < 0 ? 0 : Art.PaintingGlyph(g.Rule));
+                    s.Scale = Vector2.One * 0.85f * TilePx / 64f;
+                    var wall = TileWorld(sh, g.Tile); var stand = TileWorld(sh, g.Stand);
+                    s.Position = g.Tile == g.Stand ? wall - new Vector2(0, 0.35f * TilePx) : wall.Lerp(stand, 0.35f);
+                    s.Modulate = new Color(1, 1, 1, g.YearsLeft <= 1 ? 0.55f : 1f); // 바래 가는 그림은 흐리게
+                    s.Visible = true;
+                }
         }
+        for (int k = np; k < _paintSprites.Count; k++) _paintSprites[k].Visible = false;
         for (int k = nf; k < _fireSprites.Count; k++) _fireSprites[k].Visible = false;
         for (int k = ng; k < _glowSprites.Count; k++) _glowSprites[k].Visible = false;
         for (int k = ni; k < _itemSprites.Count; k++) _itemSprites[k].Visible = false;
@@ -86,6 +100,7 @@ public partial class ProvinceView
         foreach (var s in _fireSprites) s.Visible = false;
         foreach (var s in _glowSprites) s.Visible = false;
         foreach (var s in _itemSprites) s.Visible = false;
+        foreach (var s in _paintSprites) s.Visible = false;
     }
 
     private static Vector2 TileWorld(Shown sh, int tile)

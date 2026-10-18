@@ -272,9 +272,16 @@ public partial class PersonCardPanel : PanelContainer
             }
             p.AddChild(new HSeparator());
         }
-        p.AddChild(PeopleUi.L($"아는 것 ({c.Knowledge.Count}가지) — 무엇을 · 어떻게 · 언제 · 왜", UiTheme.FontSizeSmall + 1, UiTheme.Accent, bold: true, wrap: true));
-        if (c.Knowledge.Count == 0) p.AddChild(PeopleUi.L("아직 아는 것이 없다. 뿌려진 사람은 아무것도 모른다 — 아쉬운 것이 생기면 실험하고, 곁에서 본 것은 따라 할 수 있다.", UiTheme.FontSizeSmall, UiTheme.TextDim, wrap: true));
-        foreach (var k in c.Knowledge) p.AddChild(PeopleUi.L("• " + k, UiTheme.FontSizeSmall + 1, null, wrap: true));
+        p.AddChild(PeopleUi.L($"아는 것 ({c.Knowledge.Count}가지) — 무엇을 [아는 정도] · 어떻게 · 언제 · 누구에게서", UiTheme.FontSizeSmall + 1, UiTheme.Accent, bold: true, wrap: true));
+        if (c.Knowledge.Count == 0) p.AddChild(PeopleUi.L("아직 아는 것이 없다. 뿌려진 사람은 아무것도 모른다 — 아쉬운 것이 생기면 실험하고, 남이 가르쳐 주거나 곁에서 보면 조금씩 배운다.", UiTheme.FontSizeSmall, UiTheme.TextDim, wrap: true));
+        foreach (var k in c.Knowledge) p.AddChild(PeopleUi.L("• " + k, UiTheme.FontSizeSmall + 1, k.Contains("[흐려짐") || k.Contains("[거의 잊음") ? new Color(0.9f, 0.75f, 0.55f) : null, wrap: true));
+        p.AddChild(PeopleUi.L("아는 정도는 쓰면 굳고, 2년 넘게 안 쓰면 흐려진다(늙으면 조금씩 잊는다). 흐려지면 실패가 잦고, 아주 흐려지면 잊는다. 다시 쓰거나 남에게 배우면 되살아난다.", UiTheme.FontSizeSmall - 1, UiTheme.TextDim, wrap: true));
+        if (c.Learning.Count > 0)
+        {
+            p.AddChild(new HSeparator());
+            p.AddChild(PeopleUi.L($"배우는 중 ({c.Learning.Count}가지) — 100% 가 되면 안다", UiTheme.FontSizeSmall + 1, UiTheme.Accent, bold: true, wrap: true));
+            foreach (var l in c.Learning) p.AddChild(PeopleUi.L("• " + l, UiTheme.FontSizeSmall + 1, null, wrap: true));
+        }
         if (c.Clues.Count > 0)
         {
             p.AddChild(new HSeparator());
@@ -298,7 +305,7 @@ public partial class PersonCardPanel : PanelContainer
             grid.AddChild(PeopleUi.L(meaning, UiTheme.FontSizeSmall, UiTheme.TextDim));
         }
         p.AddChild(grid);
-        p.AddChild(PeopleUi.L("문법은 없고 소리와 낱말만 있다. 가르치기 · 잊기 · 기록은 다음 단계(지식)에서.", UiTheme.FontSizeSmall - 1, UiTheme.TextDim, wrap: true));
+        p.AddChild(PeopleUi.L("문법은 없고 소리와 낱말만 있다. 말이 다르면 가르치기가 느리다(보고 배우기 · 그림은 말과 상관없다).", UiTheme.FontSizeSmall - 1, UiTheme.TextDim, wrap: true));
 
         // ⑦ 이야기
         p = _pages[6]; Clear(p);
@@ -345,7 +352,7 @@ public partial class PeopleListPanel : PanelContainer
     {
         var alive = rows.Where(r => r.Alive).ToList();
         int dead = rows.Count - alive.Count;
-        _head.Text = (_collapsed ? "▶ " : "▼ ") + $"사람 {alive.Count}명" + (dead > 0 ? $" (죽음 {dead})" : "");
+        _head.Text = (_collapsed ? "▶ " : "▼ ") + $"이 땅의 사람 {alive.Count}명" + (dead > 0 ? $" (이 땅에서 지금까지 죽은 사람 {dead})" : "");
         string sig = string.Join("|", alive.Select(r => $"{r.Id}:{r.Activity}:{r.Mood / 5}:{r.Age}"));
         if (sig == _sig) return;
         _sig = sig;
