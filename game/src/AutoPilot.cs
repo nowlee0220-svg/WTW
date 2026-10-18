@@ -247,7 +247,7 @@ public sealed class AutoPilot
         else if (_look is not null && _provinceReady && snap is not null && !_lookDone)
         {
             _lookWait += delta;
-            if (Look(snap) || _lookWait > 60) { _lookDone = true; _sinceProvince = 0; }
+            if (Look(snap) || _lookWait > 300) { _lookDone = true; _sinceProvince = 0; }
             return;
         }
         else if (_existingCard is int ec && _provinceReady && snap is not null && !_existingDone)
@@ -265,7 +265,7 @@ public sealed class AutoPilot
             _sinceProvince = 0;
         }
 
-        else if (_shotPath is not null && (StayOnNewWorld ? _elapsed : _enter is not null ? (_provinceReady ? _sinceProvince : -1) : (_ready ? _sinceReady : -1)) >= _shotAfter) Finish(true, "");
+        else if (_shotPath is not null && (_look is null || _lookDone) && (StayOnNewWorld ? _elapsed : _enter is not null ? (_provinceReady ? _sinceProvince : -1) : (_ready ? _sinceReady : -1)) >= _shotAfter) Finish(true, "");
     }
 
     /// <summary>(E4) 스크린샷: fire 불 둘레 · tool 도구를 든 사람 · pot 그릇 · experiment 실험하는 사람(큰 카드) — 찾을 때까지 2배속으로 돌린다.</summary>
@@ -276,14 +276,16 @@ public sealed class AutoPilot
         int center = pv.Center;
         if (_look == "fire")
         {
-            if (snap.Fires.TryGetValue(center, out var fires) && fires.FirstOrDefault(f => f.Lit) is { Kind: > 0 } f)
+            double lh = ProvinceReport.LocalHour(_main.Globe.Planet!, center, host.RenderTick);
+            bool night = lh >= 20 || lh < 4;
+            if (night && snap.Fires.TryGetValue(center, out var fires) && fires.FirstOrDefault(f => f.Lit) is { Kind: > 0 } f)
             {
                 var lp = pv.LayoutOf(center, f.Tile % HexFrame.Size, f.Tile / HexFrame.Size)!.Value;
                 pv.LookAt(lp.X, lp.Y, _pzoom ?? 1.2f);
                 host.SetSpeed(1);
                 return true;
             }
-            if (host.SpeedLevel != 3) host.SetSpeed(3);
+            if (host.SpeedLevel != 5) host.SetSpeed(5);
             return false;
         }
         for (int i = 0; i < snap.PeopleCount; i++)
@@ -308,7 +310,7 @@ public sealed class AutoPilot
             GD.Print($"LOOK {_look} person={v.Id} {v.Name}");
             return true;
         }
-        if (host.SpeedLevel != 2) host.SetSpeed(2);
+        if (host.SpeedLevel != 4) host.SetSpeed(4);
         return false;
     }
 
@@ -494,7 +496,7 @@ public sealed class AutoPilot
         var host = _main.Host!;
         if (_crossTarget < 0)
         {
-            if (host.SpeedLevel != 3) host.SetSpeed(3);
+            if (host.SpeedLevel != 5) host.SetSpeed(5);
             for (int i = 0; i < snap.PeopleCount; i++)
             {
                 var v = snap.People[i];
