@@ -701,7 +701,7 @@ public partial class Main : Node
             case Key.Key4 or Key.Kp4: _host.SetSpeed(4); break;
             case Key.Key5 or Key.Kp5: _host.SetSpeed(5); break;
             case Key.F5: Save(); break;
-            case Key.F9: Load(); break;
+            case Key.F9: LoadFrom(null); break; // 빠른 불러오기
             case Key.F12: _devDots = !_devDots; break; // 개발용: E0 점 시험 화면
             case Key.D: ToggleDiscoveries(); break;
             case Key.N: ToggleSkipPanel(); break;
@@ -809,6 +809,7 @@ public partial class Main : Node
     internal void ClickForTest(int cell, int x, int y) => OnTileClicked(cell, x, y);
     internal void ResourceViewForTest(bool on) => SetResourceView(on);
     internal void SaveForTest() => Save();
-    internal void LoadForTest() => Load();
+    internal void LoadForTest() => LoadFrom(null);
+    internal void LoadPanelForTest() => Load();
     internal void LoadSceneForTest(string file) => LoadFrom("res://scenes/" + file);
 }

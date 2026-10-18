@@ -278,7 +278,7 @@ public sealed class AutoPilot
             _main.StartSkipForTest(goal);
             GD.Print($"SKIP start {goal.Name}");
         }
-        else if (_loadPanelShot && !_loadPanelShown && _ready) { _loadPanelShown = true; _main.LoadForTest(); }
+        else if (_loadPanelShot && !_loadPanelShown && _ready) { _loadPanelShown = true; _main.LoadPanelForTest(); }
         else if (_skipPanelShot && !_skipPanelShown && (_provinceReady || (_enter is null && _ready))) { _skipPanelShown = true; _main.ShowSkipPanelForTest(); }
         else if (_shotPath is not null && (_look is null || _lookDone) && (_skip is null || (_lastNotice?.StartsWith("SKIPDONE") ?? false) || _skipMidShot) && (StayOnNewWorld ? _elapsed : _enter is not null ? (_provinceReady ? _sinceProvince : -1) : (_ready ? _sinceReady : -1)) >= _shotAfter) Finish(true, "");
     }
