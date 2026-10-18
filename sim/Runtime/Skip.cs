@@ -18,7 +18,7 @@ public static class EventLevels
     public static int Of(WorldEventKind k) => k switch
     {
         WorldEventKind.Discovery or WorldEventKind.DiscoveryLost or WorldEventKind.Language => World,
-        WorldEventKind.DiscoveryGroup or WorldEventKind.Rediscovered or WorldEventKind.Moved or WorldEventKind.LandNamed => Group,
+        WorldEventKind.DiscoveryGroup or WorldEventKind.Rediscovered or WorldEventKind.Moved or WorldEventKind.LandNamed or WorldEventKind.GroupLost or WorldEventKind.GroupRefound => Group,
         _ => Person,
     };
 
@@ -36,6 +36,8 @@ public static class EventLevels
         WorldEventKind.Rediscovered => "다시 찾아냄",
         WorldEventKind.Moved => "새 땅으로",
         WorldEventKind.LandNamed => "땅 이름",
+        WorldEventKind.GroupLost => "무리에서 끊김",
+        WorldEventKind.GroupRefound => "무리가 되찾음",
         _ => k.ToString(),
     };
 }
@@ -222,7 +224,7 @@ public sealed class SkipRun
         var lines = new List<string> { $"{EndReason} — {YearsPassed(w):0.#}년이 흘렀습니다 ({GameTime.Format(_startTick)} → {GameTime.Format(w.Now)})" };
         int births = _all.Count(e => e.Kind == WorldEventKind.Birth), deaths = _all.Count(e => e.Kind == WorldEventKind.Death);
         lines.Add($"인구 {_startPop}명 → {w.People.AliveCount}명 (태어남 {births} · 죽음 {deaths})");
-        foreach (var k in new[] { WorldEventKind.Discovery, WorldEventKind.Rediscovered, WorldEventKind.DiscoveryLost, WorldEventKind.Language, WorldEventKind.Moved, WorldEventKind.LandNamed, WorldEventKind.DiscoveryGroup })
+        foreach (var k in new[] { WorldEventKind.Discovery, WorldEventKind.Rediscovered, WorldEventKind.DiscoveryLost, WorldEventKind.Language, WorldEventKind.GroupLost, WorldEventKind.GroupRefound, WorldEventKind.Moved, WorldEventKind.LandNamed, WorldEventKind.DiscoveryGroup })
         {
             var es = _all.Where(e => e.Kind == k).ToList();
             if (es.Count == 0) continue;

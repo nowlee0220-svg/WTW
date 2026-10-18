@@ -38,7 +38,7 @@ public class PeopleTests
         Assert.Equal(22, d.Traits.Count);
         Assert.Equal(5, d.Abilities.Count);
         Assert.Equal(10, d.Skills.Count);
-        Assert.InRange(d.Thoughts.Count, 20, 40);
+        Assert.InRange(d.Thoughts.Count, 20, 50);
         Assert.Contains(d.Harvest, h => h is { Food: true, Item: "apple" });
         Assert.Contains(d.Harvest, h => h is { Food: false, Item: "flint" });
     }

@@ -297,7 +297,7 @@ public partial class GlobeView : Node3D
         for (int i = 0; i < _markers.Count; i++)
         {
             var (box, l, _) = _markers[i];
-            if (i >= cells.Length) { box.Visible = false; continue; }
+            if (i >= cells.Length) { box.Visible = false; _markers[i] = (box, l, -1); continue; } // (E5) 칸 번호도 지운다 — 남겨 두면 UpdateMarkers 가 다시 보이게 했다
             _markers[i] = (box, l, cells[i].Cell);
             l.Text = $"{cells[i].Alive}";
         }

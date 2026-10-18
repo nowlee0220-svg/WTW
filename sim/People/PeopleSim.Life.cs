@@ -219,6 +219,7 @@ public sealed partial class PeopleSim
         NameLands();
         foreach (var (cell, life) in Provinces.ToList()) FiresDaily(cell, life);
         CheckLostDiscoveries();
+        GroupKnowledgeDaily();
         SleepEmptyProvinces();
     }
 

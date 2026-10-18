@@ -1,6 +1,6 @@
 {
   "_설명": [
-    "아이템 (E2 자원 30개 + E4 만들어지는 것 33개). props = 재료 속성(properties.json 아이디 → 0~5 세기). 적지 않은 속성은 0.",
+    "아이템 (E2 자원 30개 + E4 만들어지는 것 33개 + E5 벽 그림). stains(묻어난다)는 E5 에서 더함 — 숯 · 재 · 진흙. props = 재료 속성(properties.json 아이디 → 0~5 세기). 적지 않은 속성은 0.",
     "E2 의 성질 메모(traits: 낮음 · 보통 · 높음 · 아주 높음)는 돌에 그대로 두고 숫자로 옮겼다(낮음 1~2 · 보통 2~3 · 높음 4 · 아주 높음 5).",
     "edible 는 들고 다니다 먹을 때의 영양(× 5 = 배부름, 한 끼 ≈ 33). 오브젝트에서 바로 따 먹는 영양은 people.json 의 foods 가 정한다.",
     "kind: made = 만들어지는 것 · place = 땅 위에 놓이는 것(모닥불 · 화덕 — 들고 다니지 않음). 아이디는 행성 자원(resources.json)과 같은 이름 체계."
@@ -40,7 +40,7 @@
       "props": { "hardness": 3, "toughness": 1, "splits": 5, "sharpens": 5, "weight": 2 } },
     { "id": "quartz",        "name": "석영",     "traits": { "hardness": "아주 높음", "splits": "보통", "sharpens": "보통", "weight": "보통" },
       "props": { "hardness": 5, "toughness": 2, "splits": 2, "sharpens": 2, "weight": 2 } },
-    { "id": "clay",          "name": "진흙",        "props": { "moldable": 5, "fires_hard": 4, "waterproof": 1, "sticky": 2, "dries": 3, "weight": 3 } },
+    { "id": "clay",          "name": "진흙",        "props": { "stains": 3, "moldable": 5, "fires_hard": 4, "waterproof": 1, "sticky": 2, "dries": 3, "weight": 3 } },
     { "id": "copper_ore",    "name": "구리 광석",   "props": { "hardness": 3, "weight": 4, "reduces": 4, "melts": 3, "melt_heat": 3 } },
     { "id": "tin_ore",       "name": "주석 광석",   "props": { "hardness": 2, "weight": 4, "reduces": 4, "melts": 4, "melt_heat": 2 } },
     { "id": "iron_ore",      "name": "철광석",      "props": { "hardness": 4, "weight": 5, "reduces": 2, "melts": 1, "melt_heat": 5 } },
@@ -49,8 +49,8 @@
     { "id": "ember",         "name": "불씨",        "kind": "made",  "props": { "burns": 5, "warm": 2, "weight": 0 } },
     { "id": "campfire",      "name": "모닥불",      "kind": "place", "props": { "burns": 5, "warm": 4 } },
     { "id": "hearth",        "name": "돌 화덕",     "kind": "place", "props": { "burns": 5, "warm": 5, "hardness": 3 } },
-    { "id": "charcoal",      "name": "숯",          "kind": "made",  "props": { "burns": 5, "weight": 1 } },
-    { "id": "ash",           "name": "재",          "kind": "made",  "props": { "mixes": 2, "weight": 0 } },
+    { "id": "charcoal",      "name": "숯",          "kind": "made",  "props": { "stains": 4, "burns": 5, "weight": 1 } },
+    { "id": "ash",           "name": "재",          "kind": "made",  "props": { "stains": 3, "mixes": 2, "weight": 0 } },
     { "id": "dry_grass",     "name": "마른 풀",     "kind": "made",  "props": { "burns": 5, "fibrous": 3, "tears": 5, "bends": 3, "weight": 0 } },
     { "id": "split_wood",    "name": "쪼갠 장작",   "kind": "made",  "props": { "burns": 5, "hardness": 2, "toughness": 3, "weight": 1 } },
     { "id": "stick",         "name": "나무 막대",   "kind": "made",  "props": { "burns": 3, "hardness": 2, "toughness": 4, "bends": 1, "weight": 1 } },
@@ -78,6 +78,7 @@
     { "id": "stew",          "name": "끓인 음식",   "kind": "made",  "props": { "edible": 5, "rots": 4, "weight": 1 } },
     { "id": "molten_copper", "name": "녹은 구리",   "kind": "made",  "props": { "melts": 5, "warm": 5, "weight": 3 } },
     { "id": "copper_lump",   "name": "구리 덩이",   "kind": "made",  "props": { "malleable": 5, "hardness": 3, "toughness": 4, "melts": 3, "melt_heat": 3, "weight": 3 } },
-    { "id": "copper_blade",  "name": "구리 날",     "kind": "made",  "props": { "sharp": 5, "hardness": 3, "toughness": 4, "malleable": 4, "weight": 2 } }
+    { "id": "copper_blade",  "name": "구리 날",     "kind": "made",  "props": { "sharp": 5, "hardness": 3, "toughness": 4, "malleable": 4, "weight": 2 } },
+    { "id": "painting",      "name": "벽 그림",     "kind": "place", "props": { "stains": 1 } }
   ]
 }

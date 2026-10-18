@@ -78,6 +78,7 @@ public sealed partial class PeopleSim
     private void CraftDaily(Person p)
     {
         for (int w = 0; w < Craft.Wishes.Count; w++) p.Wish[w] = p.Wish[w] * 4 / 5;
+        KnowledgeDaily(p);
     }
 
     // ───────── 속성 도우미 ─────────
@@ -188,6 +189,8 @@ public sealed partial class PeopleSim
         if (r.Result < 0) return false;
         foreach (int pr in w.Props) if (Prop(r.Result, pr) > 0) return true;
         if (w.Index == W_warmth && (r.Result == I_ember || r.Result == I_campfire || r.Result == I_hearth)) return true;
+        if (w.Index == W_record) return r.Result == I_painting;
+        if (r.Result == I_painting) return false; // 벽 그림은 남겨 두기에만
         return false;
     }
 
@@ -245,6 +248,15 @@ public sealed partial class PeopleSim
             }
             action = follow is { } f ? Craft.Rules[f.Rule].Action : PickAction(p, wd, life, here, rng);
             if (action < 0) { Stats.PlanWhy[1]++; return false; }
+            // (E5) "그건 이미 해 봤는데 안 됐다": 이 행동으로 남은 단서가 있으면 대개 그 단서를 따른다(같은 헛수고를 되풀이하지 않게)
+            if (follow is null)
+                for (int i = p.Clues.Count - 1; i >= 0; i--)
+                {
+                    var c = p.Clues[i];
+                    if (Craft.Rules[c.Rule].Action != action || !ServesWish(Craft.Rules[c.Rule], wd)) continue;
+                    if (rng.NextInt(100) < 75) { follow = c; Stats.ClueAvoid++; }
+                    break;
+                }
         }
         // 불이 필요한 바람인데 불이 없다 → 먼저 불을 얻어야 한다(따뜻함 바람과 같은 실험)
         if (!known && wd.NeedsFire && life.NearestFire(here % S, here / S, Now, 60) < 0)
@@ -351,6 +363,17 @@ public sealed partial class PeopleSim
             Stats.PlanWhy[11]++;
             return false;
         }
+        // (E5) 그리기: 바위 면 · 동굴 벽 · 나무 곁으로 가서
+        if (action == A_draw)
+        {
+            if (!FindSurface(p, life, here, out int stand, out _, out _)) { Stats.PlanWhy[4]++; return false; }
+            p.PlanAction = action; p.PlanInput = input; p.PlanWith = with; p.PlanTool = tool; p.PlanRule = rule?.Index ?? -1;
+            if (stand != here && !WalkTo(p, stand)) return false;
+            SetWhy(p, known ? Act.Craft : Act.Experiment, known ? Why.KnowHow : follow is not null ? Why.Clue : WishWhy(wish), wish);
+            p.Target = stand;
+            if (stand == here) BeginWork(p);
+            return true;
+        }
         if (needFire)
         {
             int ft = life.NearestFire(here % S, here / S, Now, 60, litOnly: action != A_pile); // 돌 쌓기는 꺼진 모닥불 자리에도
@@ -379,12 +402,12 @@ public sealed partial class PeopleSim
     /// <summary>바람마다 "이루어졌나"를 보는 속성(만든 물건의 쓸모).</summary>
     private int[] GoalProps(int wish) =>
         wish == W_warmth ? new[] { Craft.P_warm } : wish == W_sharp ? new[] { Craft.P_sharp } : wish == W_hardTool ? new[] { Craft.P_hardness, Craft.P_sharp } :
-        wish == W_container ? new[] { Craft.P_holds, Craft.P_waterproof } : wish == W_cooking ? new[] { Craft.P_edible } : wish == W_carry ? new[] { Craft.P_holds } : new[] { Craft.P_malleable };
+        wish == W_container ? new[] { Craft.P_holds, Craft.P_waterproof } : wish == W_cooking ? new[] { Craft.P_edible } : wish == W_carry ? new[] { Craft.P_holds } : wish == W_record ? new[] { Craft.PropIndex("stains") } : new[] { Craft.P_malleable };
 
     /// <summary>들고 있는 만든 물건 중 result 만큼 쓸모가 있는(바람의 속성이 모두 같거나 높은) 것이 있나.</summary>
     private bool AlreadyCovered(Person p, int wish, int result)
     {
-        if (wish == W_cooking || wish == W_warmth) return false; // 먹을 것 · 불은 쓰면 없어진다
+        if (wish == W_cooking || wish == W_warmth || wish == W_record) return false; // 먹을 것 · 불은 쓰면 없어진다, 그림은 들고 다니지 않는다
         var gp = GoalProps(wish);
         foreach (var c in p.Carry)
         {
@@ -522,6 +545,7 @@ public sealed partial class PeopleSim
         if (action == A_melt) return new[] { c.P_melts, c.P_reduces };
         if (action == A_boil) return new[] { c.P_edible };
         if (action == A_pile) return new[] { c.P_hardness, c.P_weight };
+        if (action == A_draw) return new[] { c.PropIndex("stains") };
         return new[] { c.P_edible };
     }
 
@@ -579,7 +603,7 @@ public sealed partial class PeopleSim
     }
 
     private Why WishWhy(int wish) =>
-        wish == W_warmth ? Why.WantWarmth : wish == W_sharp ? Why.WantSharp : wish == W_hardTool ? Why.WantHardTool : wish == W_container ? Why.WantContainer :
+        wish == W_record ? Why.WantRecord : wish == W_warmth ? Why.WantWarmth : wish == W_sharp ? Why.WantSharp : wish == W_hardTool ? Why.WantHardTool : wish == W_container ? Why.WantContainer :
         wish == W_cooking ? Why.WantCooking : wish == W_carry ? Why.WantCarry : Why.WantShiny;
 
     /// <summary>제자리에서 일을 시작한다(걸리는 시간 = 규칙의 시간 또는 실험 45~75분, 손재주 · 근면에 따라).</summary>
@@ -636,6 +660,23 @@ public sealed partial class PeopleSim
                     SetWhy(p, Act.Material, why); p.Target = t; p.TargetB = -2; p.PlanItem = item;
                     return true;
                 }
+        }
+        // (E5) 불 자리의 재(그림 물감) — 타고 난 불 자리에서 긁어모은다
+        if (I_ash >= 0 && itemOk(I_ash))
+        {
+            int best = -1; long bd2 = 26L * 26;
+            foreach (var (t, f) in life.Fires)
+            {
+                if (f.Lit(Now) && Now - f.Stamp < GameTime.TicksPerHour) continue;
+                long d = ProvinceLife.D2(t, hx, hy);
+                if (d < bd2 && life.BesideRegion(t, life.Region[hy * S + hx])) { bd2 = d; best = t; }
+            }
+            if (best >= 0)
+            {
+                int spot = Beside(p, best);
+                bool there = spot == hy * S + hx;
+                if (there || WalkTo(p, spot)) { SetWhy(p, Act.Material, why); p.Target = best; p.TargetB = -3; p.PlanItem = I_ash; if (there) ArriveMaterial(p); return true; }
+            }
         }
         // 2) 주울 것(돌 · 도토리 — 몫이 있음)
         bool sharp = HasSharpTool(p);
@@ -709,6 +750,11 @@ public sealed partial class PeopleSim
             }
             return;
         }
+        if (p.TargetB == -3)
+        {
+            if (life.Fires.ContainsKey(t)) p.AddCarry(I_ash, 2);
+            return;
+        }
         if (p.TargetB < 0)
         {
             if (life.HarvestAt(t) is { } h && life.Take(t, 1, Now) > 0) p.AddCarry(h.ItemIndex, 1);
@@ -760,6 +806,16 @@ public sealed partial class PeopleSim
         bool known = p.PlanRule >= 0;
         int skill = known ? Craft.Rules[p.PlanRule].Skill : -1;
         int bonus = (Ability(p, PeopleData.Dex) - 5) * 3 + (Ability(p, PeopleData.Int) - 5) * 2 + (skill >= 0 ? p.SkillLevel(skill) * 3 : 0) + (known ? 30 : 0);
+        // (E5) 흐려진 법(아는 정도 60 아래)은 순서를 틀리기도 한다
+        int level = known ? p.KnowLevel(p.PlanRule) : 0;
+        if (known && level < 60 && rng.NextInt(100) >= 40 + level)
+        {
+            Stats.Crafts++; Stats.CraftFails++; Stats.FadedFails++;
+            UseKnowledge(p, p.PlanRule); // 다시 해 보며 되살아난다
+            AddThought(p, H_failedTry);
+            return;
+        }
+        if (known) bonus = bonus - 30 + 10 + 20 * level / 100;
         var outcome = Craft.Judge(action, PropsOf(input), with >= 0 ? PropsOf(with) : null, tool >= 0 ? PropsOf(tool) : null, heat, tinder, rng.NextInt(100), bonus, known ? Craft.Rules[p.PlanRule] : null);
         if (known) Stats.Crafts++; else Stats.Experiments++;
         WearTool(p, tool, rng);
@@ -777,7 +833,7 @@ public sealed partial class PeopleSim
             Stats.RuleDone[rule.Index]++;
             ApplyResult(p, rule, here, rng);
             if (!known || !p.Knows(rule.Index)) Learn(p, rule, wish, input, with, -1);
-            else AddThought(p, H_madeThing);
+            else { AddThought(p, H_madeThing); UseKnowledge(p, rule.Index); }
             // 바람이 조금 풀린다
             if (wish >= 0) p.Wish[wish] = Math.Max(0, p.Wish[wish] - 40);
             TeachWatchers(p, rule, wish, input, with);
@@ -868,6 +924,11 @@ public sealed partial class PeopleSim
             }
             return;
         }
+        if (res == I_painting)
+        {
+            MakePainting(p, here, rng);
+            return;
+        }
         if (res == I_charcoal && p.Target >= 0 && life.Fires.TryGetValue(p.Target, out var hf) && hf.Kind == 2)
         {
             // 가둔 불에서 태운 나무: 숯이 남고 불도 좀 더 탄다
@@ -918,18 +979,23 @@ public sealed partial class PeopleSim
         Stats.FiresLit++;
         AddBio(p, BioKind.LitFire, -1, here);
         if (!p.Knows(R_campfire.Index)) Learn(p, R_campfire, W_warmth, fuel, I_ember, -1);
+        else UseKnowledge(p, R_campfire.Index);
         TeachWatchers(p, R_campfire, W_warmth, fuel, I_ember);
         return true;
     }
 
     // ───────── 아는 것 · 발견 ─────────
 
-    internal void Learn(Person p, CraftRule rule, int wish, int input, int with, int from)
+    public void Learn(Person p, CraftRule rule, int wish, int input, int with, int from, Via via = Via.Self)
     {
         if (p.Knows(rule.Index)) return;
-        p.Known.Add(new Knowledge { Rule = rule.Index, Tick = Now, Wish = wish, Input = input, With = with, LearnedFrom = from });
+        if (via == Via.Self && from >= 0) via = Via.Watch;
+        p.Known.Add(new Knowledge { Rule = rule.Index, Tick = Now, Wish = wish, Input = input, With = with, LearnedFrom = from, Level = StartLevel(via), LastUse = Now, Via = via });
+        p.Learning.RemoveAll(l => l.Rule == rule.Index);
         bool worldFirst = !Discoveries.TryGetValue(rule.Index, out var d);
-        if (from < 0)
+        long gkey = (long)p.LangId * 1000 + rule.Index;
+        bool groupFirst = !GroupFirst.ContainsKey(gkey);
+        if (via == Via.Self)
         {
             Stats.Discoveries++;
             AddThought(p, H_discovered);
@@ -940,6 +1006,7 @@ public sealed partial class PeopleSim
                 if (Partials.TryGetValue(rule.Index, out var pr)) { d.PartialsBefore = pr.Count; d.PartialTexts.AddRange(pr.Texts); Partials.Remove(rule.Index); }
                 Discoveries[rule.Index] = d;
                 Notify(WorldEventKind.Discovery, p, rule.Index, $"세계에서 처음: {Hangul.I(DisplayName(p))} {Made(rule)} — {Hangul.I(WishName(wish))} 아쉬워 {Hangul.Eul(Craft.ActionName(rule.Action))} 해 보다가" + (d.PartialsBefore > 0 ? $" (그 전에 거의 될 듯한 일 {d.PartialsBefore}번)" : ""));
+                History(rule.Index, 0, p.Cell, $"{Hangul.I(DisplayName(p))} {LandLabelOr(p.Cell, "한 땅")}에서 처음 알아냈다 — {Hangul.I(WishName(wish))} 아쉬워서");
                 GiveNickname(p, rule);
             }
             else if (d!.Lost)
@@ -947,20 +1014,34 @@ public sealed partial class PeopleSim
                 d.Lost = false; d.RefoundCount++; Stats.Refound++;
                 if (Partials.TryGetValue(rule.Index, out var pr2)) { d.PartialsBefore += pr2.Count; Partials.Remove(rule.Index); }
                 Notify(WorldEventKind.Rediscovered, p, rule.Index, $"{Hangul.I(DisplayName(p))} 잊혔던 {Hangul.Eul(Craft.ItemName(rule.Result))} 다시 찾아냈습니다 (잃은 적 {d.LostCount}번)");
+                History(rule.Index, 4, p.Cell, $"{Hangul.I(DisplayName(p))} 사라졌던 법을 다시 알아냈다");
             }
+            // (E5) 세계에서 처음 알아냈으면 남겨 두고 싶다(그리는 법을 알면 그림으로)
+            if (worldFirst && W_record >= 0 && rule != R_paint) { AddWish(p, W_record, 15); if (p.RecordRule < 0) { p.RecordRule = rule.Index; p.RecordWhy = Why.RecordFirst; } }
         }
-        else
+        else if (via == Via.Watch)
         {
             Stats.Watched++;
             AddBio(p, BioKind.LearnedWatching, from, rule.Index);
         }
+        else if (via == Via.Teach)
+        {
+            AddBio(p, BioKind.LearnedTeaching, from, rule.Index);
+            AddThought(p, H_learned, from);
+        }
+        else
+        {
+            AddBio(p, BioKind.LearnedPainting, from, rule.Index);
+            AddThought(p, H_learned);
+            if (d is { Lost: true }) { d.Lost = false; d.RefoundCount++; Stats.Refound++; Notify(WorldEventKind.Rediscovered, p, rule.Index, $"{Hangul.I(DisplayName(p))} 남은 그림을 보고 잊혔던 {Hangul.Eul(Craft.ItemName(rule.Result))} 되찾았습니다"); History(rule.Index, 4, p.Cell, $"{Hangul.I(DisplayName(p))} 남은 그림을 보고 되찾았다"); }
+        }
         // 그 무리의 말에 낱말이 생긴다(처음 알게 된 무리) — 보고 배웠으면 가르친 사람의 말에서 빌려 온다
-        NewWordFor(p, rule, from);
-        long key = (long)p.LangId * 1000 + rule.Index;
-        if (!GroupFirst.ContainsKey(key))
+        NewWordFor(p, rule, via == Via.Painting ? -1 : from);
+        long key = gkey;
+        if (groupFirst)
         {
             GroupFirst[key] = Now;
-            if (!worldFirst && from < 0) Notify(WorldEventKind.DiscoveryGroup, p, rule.Index, $"이 무리에서 처음: {Hangul.I(DisplayName(p))} {Made(rule)}");
+            if (!worldFirst && via == Via.Self) Notify(WorldEventKind.DiscoveryGroup, p, rule.Index, $"이 무리에서 처음: {Hangul.I(DisplayName(p))} {Made(rule)}");
         }
     }
 
@@ -972,7 +1053,10 @@ public sealed partial class PeopleSim
     }
     public string WishName(int wish) => (uint)wish < (uint)Craft.Wishes.Count ? Craft.Wishes[wish].Name : "호기심";
 
-    /// <summary>곁에서 본 사람(6타일 안, 깨어 있는 아이 이상)은 따라 할 수 있다 — 간단히, 그 자리에서 본 경우만.</summary>
+    /// <summary>
+    /// 곁에서 본 사람(6타일 안, 깨어 있는 아이 이상)은 따라 배운다 — 그 자리에서 본 경우만. (E5) 한 번에 다 알지는 않고 쌓인다(가르치기보다 느리고 덜 정확,
+    /// 말과는 상관없다): 한 번 볼 때 30 + 영리함, 아이는 +10.
+    /// </summary>
     private void TeachWatchers(Person p, CraftRule rule, int wish, int input, int with)
     {
         var life = Life(p.Cell);
@@ -981,7 +1065,10 @@ public sealed partial class PeopleSim
         {
             if (q.Dead || q.Id == p.Id || q.Asleep || q.Carrier >= 0 || q.Stage(Now) < LifeStage.Child || q.Knows(rule.Index)) continue;
             if (Cheb(q.Tile(Now), here) > 6) continue;
-            Learn(q, rule, wish, input, with, p.Id);
+            int amount = 30 + (Ability(q, PeopleData.Int) - 5) * 4 + (q.Stage(Now) == LifeStage.Child ? 10 : 0);
+            bool knew = q.Knows(rule.Index);
+            AddLearning(q, rule, Math.Max(8, amount), p.Id, Via.Watch, wish, input, with);
+            if (!knew && q.Knows(rule.Index)) Stats.WatchedFull++;
         }
     }
 
@@ -995,7 +1082,13 @@ public sealed partial class PeopleSim
             if (d.Lost || known.Contains(rule)) continue;
             d.Lost = true; d.LostTick = Now; d.LostCount++; Stats.Lost++;
             var who = Get(d.Person);
-            Notify(WorldEventKind.DiscoveryLost, who ?? _all[0], rule, $"{Craft.ItemName(Craft.Rules[rule].Result)} 만드는 법이 사라졌습니다 — 아는 사람이 모두 죽었습니다");
+            // (E5) 마지막으로 알던 사람이 죽었나, 잊었나 · 그림이 남았나
+            bool forgot = false;
+            foreach (var p in _all) if (!p.Dead && p.Bio.Count > 0 && p.Bio[^1].Kind == BioKind.Forgot && p.Bio[^1].Param == rule && p.Bio[^1].Tick == Now) { forgot = true; break; }
+            int pc = PaintingsOf(rule);
+            string text = $"{Craft.ItemName(Craft.Rules[rule].Result)} 만드는 법이 세계에서 사라졌습니다 — " + (forgot ? "마지막으로 알던 사람마저 잊었습니다" : "마지막으로 아는 사람이 죽었습니다") + (pc > 0 ? $" (그림 {pc}곳에 남아 있다 — 보고 되찾을 길이 있다)" : " (그림도 남지 않았다)");
+            Notify(WorldEventKind.DiscoveryLost, who ?? _all[0], rule, text);
+            History(rule, 3, d.Cell, text);
         }
     }
 
@@ -1117,6 +1210,7 @@ public sealed partial class PeopleSim
         var life = Life(p.Cell);
         if (!life.Fires.TryGetValue(p.Target, out var f) || p.CarryCount(p.PlanItem) == 0) return;
         p.RemoveCarry(p.PlanItem, 1);
+        if (R_campfire is not null) UseKnowledge(p, R_campfire.Index);
         long add = FuelTicks(p.PlanItem);
         if (f.Kind == 2) add = add * 3 / 2; // (E4) 가둔 불은 땔감이 오래 간다
         else if (f.Lit(Now) && f.Remaining(Now) < GameTime.TicksPerHour && R_hearth is not null && !p.Knows(R_hearth.Index) && Rng(p.Cell).NextInt(100) < 25)
@@ -1326,6 +1420,7 @@ public sealed partial class PeopleSim
             p.AddCarry(outcome.Rule.Result, n);
             cooked = outcome.Rule.Result;
             if (!p.Knows(outcome.Rule.Index)) Learn(p, outcome.Rule, W_cooking, raw, -1, -1);
+            else UseKnowledge(p, outcome.Rule.Index);
             GainSkill(p, outcome.Rule.Skill, 4);
         }
         if (cooked >= 0) { p.PlanItem = cooked; FinishEatCarried(p); p.Wish[W_cooking] = Math.Max(0, p.Wish[W_cooking] - 20); }
