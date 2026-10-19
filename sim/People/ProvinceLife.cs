@@ -26,6 +26,27 @@ public struct Fire
     public int Heat(long now) => !Lit(now) ? 0 : Kind == 2 ? (Charcoal ? 3 : 2) : 1;
 }
 
+/// <summary>
+/// (S1) 땅 위의 불(타일 → 불, 타일 번호 순). SortedDictionary 와 같지만 훑기용 배열을 바뀔 때만 다시 만든다
+/// (기온 셈이 사람마다 시간마다 불을 훑는다 — 같은 순서라 결과는 같다).
+/// </summary>
+public sealed class FireTable : IEnumerable<KeyValuePair<int, Fire>>
+{
+    private readonly SortedDictionary<int, Fire> _d = new();
+    private KeyValuePair<int, Fire>[]? _arr;
+    public int Count => _d.Count;
+    public Fire this[int tile] { get => _d[tile]; set { _d[tile] = value; _arr = null; } }
+    public bool TryGetValue(int tile, out Fire f) => _d.TryGetValue(tile, out f);
+    public bool ContainsKey(int tile) => _d.ContainsKey(tile);
+    public bool Remove(int tile) { _arr = null; return _d.Remove(tile); }
+    /// <summary>타일 번호 순 배열(바뀌기 전까지 같은 것).</summary>
+    public KeyValuePair<int, Fire>[] Items => _arr ??= _d.ToArray();
+    public IEnumerable<Fire> Values => _d.Values;
+    public IEnumerable<int> Keys => _d.Keys;
+    public IEnumerator<KeyValuePair<int, Fire>> GetEnumerator() => ((IEnumerable<KeyValuePair<int, Fire>>)Items).GetEnumerator();
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+}
+
 /// <summary>손댄 타일의 남은 몫(타일 번호 순으로 돈다 — 저장 순서가 정해져 있다).</summary>
 public sealed class StockTable : IEnumerable<KeyValuePair<int, TileStock>>
 {
@@ -72,7 +93,7 @@ public sealed class ProvinceLife
     private readonly HarvestDef?[] _harvest = new HarvestDef?[HexFrame.TileCount];
     public readonly SortedSet<int> Revealed = new();
     /// <summary>(E4) 땅 위의 불(타일 → 불) · 땅에 놓인 물건(타일 → 아이템 · 개수, 아이템 번호 순) · 캐낸 바위 타일(걸을 수 있는 자갈이 됨). 모두 저장한다.</summary>
-    public readonly SortedDictionary<int, Fire> Fires = new();
+    public readonly FireTable Fires = new();
     public readonly SortedDictionary<int, List<(int Item, int Count)>> Items = new();
     public readonly SortedSet<int> Dug = new();
     /// <summary>이 지방에 있는 사람(살아 있는 · 죽은 모두, 번호 순).</summary>
@@ -87,6 +108,8 @@ public sealed class ProvinceLife
     private readonly List<int>[] _food = NewBuckets(), _carry = NewBuckets(), _drink = NewBuckets(), _shelter = NewBuckets();
     /// <summary>(E4) 재료를 얻을 오브젝트(다루는 법이 있는 모든 오브젝트) · 바위 타일(드러난 것만 캔다 — 물을 때 확인).</summary>
     private readonly List<int>[] _materials = NewBuckets(), _stone = NewBuckets();
+    /// <summary>(S1) 같은 것을 오브젝트 종류별로도(재료 · 주울 것 찾기가 맞는 종류의 타일만 보게 — 결과는 같다).</summary>
+    private readonly List<int>[]?[] _matByObj = new List<int>[]?[ObjectCatalog.Default.Objects.Count], _carryByObj = new List<int>[]?[ObjectCatalog.Default.Objects.Count];
     /// <summary>
     /// 칸 묶음마다 "이 시각 전에는 딸 것이 하나도 없다"(다 따 간 묶음을 다시 뒤지지 않게). 따 가는 일은 몫을 줄이기만 하므로 늘 맞는 아래 경계다.
     /// 결과에는 영향이 없고(이미 빈 것이 확실한 묶음만 건너뛴다) 저장하지 않는다.
@@ -147,8 +170,8 @@ public sealed class ProvinceLife
             if (!Walk[i]) continue;
             int x = i % HexFrame.Size, y = i / HexFrame.Size, b = Bk(x, y);
             int o = map.ObjectAt(i);
-            if (o >= 0 && data.Harvest[o] is { } h) { _harvest[i] = h; (h.Food ? _food : _carry)[b].Add(i); if (h.Food) FoodTiles++; }
-            if (o >= 0 && ObjectCatalog.Default.Objects[o].Uses.Count > 0) _materials[b].Add(i);
+            if (o >= 0 && data.Harvest[o] is { } h) { _harvest[i] = h; (h.Food ? _food : _carry)[b].Add(i); if (h.Food) FoodTiles++; else (_carryByObj[o] ??= NewBuckets())[b].Add(i); }
+            if (o >= 0 && ObjectCatalog.Default.Objects[o].Uses.Count > 0) { _materials[b].Add(i); (_matByObj[o] ??= NewBuckets())[b].Add(i); }
             bool fresh = false, nearStone = false, nearTree = o >= 0 && ObjectCatalog.Default.Objects[o].IsTree;
             for (int dy = -1; dy <= 1; dy++)
                 for (int dx = -1; dx <= 1; dx++)
@@ -246,7 +269,7 @@ public sealed class ProvinceLife
     {
         if ((uint)tile >= HexFrame.TileCount) return 0;
         int best = 0, tx = tile % HexFrame.Size, ty = tile / HexFrame.Size;
-        foreach (var (ft, f) in Fires)
+        foreach (var (ft, f) in Fires.Items)
         {
             if (!f.Lit(tick)) continue;
             int d = Math.Max(Math.Abs(ft % HexFrame.Size - tx), Math.Abs(ft / HexFrame.Size - ty));
@@ -270,7 +293,7 @@ public sealed class ProvinceLife
         int here = py * HexFrame.Size + px;
         int reg = (uint)here < HexFrame.TileCount ? Region[here] : -1;
         int best = -1; long bd = (long)maxDist * maxDist;
-        foreach (var (t, f) in Fires)
+        foreach (var (t, f) in Fires.Items)
         {
             if (litOnly && !f.Lit(now)) continue;
             long d = D2(t, px, py);
@@ -305,7 +328,7 @@ public sealed class ProvinceLife
     public int HeatAt(int tile, long now)
     {
         int best = 0, tx = tile % HexFrame.Size, ty = tile / HexFrame.Size;
-        foreach (var (ft, f) in Fires)
+        foreach (var (ft, f) in Fires.Items)
         {
             if (Math.Max(Math.Abs(ft % HexFrame.Size - tx), Math.Abs(ft / HexFrame.Size - ty)) > 1) continue;
             best = Math.Max(best, f.Heat(now));
@@ -415,7 +438,6 @@ public sealed class ProvinceLife
     }
 
     /// <summary>(E4) 가장 가까운 재료 오브젝트(ok 가 참인 오브젝트 종류), 같은 이어진 땅. 없으면 −1.</summary>
-    private bool[] _okBuf = Array.Empty<bool>();
 
     public int NearestMaterial(int px, int py, int maxDist, Func<int, bool> ok)
     {
@@ -423,8 +445,15 @@ public sealed class ProvinceLife
         int reg = (uint)here < HexFrame.TileCount ? Region[here] : -1;
         if (reg < 0) return -1;
         int best = -1; long bd = (long)maxDist * maxDist;
-        var okByObject = _okBuf.Length == ObjectCatalog.Default.Objects.Count ? _okBuf : (_okBuf = new bool[ObjectCatalog.Default.Objects.Count]);
-        for (int o = 0; o < okByObject.Length; o++) okByObject[o] = ok(o);
+        // (S1) 맞는 종류의 오브젝트 타일만 본다 — 가장 가까운(거리, 같으면 작은 번호) 것은 훑는 차례와 상관없다
+        for (int o = 0; o < _matByObj.Length; o++)
+            if (_matByObj[o] is { } buckets && ok(o)) NearestIn(buckets, px, py, reg, ref bd, ref best);
+        return best;
+    }
+
+    /// <summary>(S1) 묶음들에서 (px, py) 에 가장 가까운 같은 이어진 땅의 타일(bd 보다 가깝거나 같으면 작은 번호)로 best 를 고친다.</summary>
+    private void NearestIn(List<int>[] buckets, int px, int py, int reg, ref long bd, ref int best, Func<int, bool>? tileOk = null)
+    {
         int bx = Math.Min(Buckets - 1, px / Bucket), by = Math.Min(Buckets - 1, py / Bucket);
         for (int r = 0; r < Buckets; r++)
         {
@@ -434,19 +463,17 @@ public sealed class ProvinceLife
                 for (int xx = bx - r; xx <= bx + r; xx++)
                 {
                     if (Math.Max(Math.Abs(xx - bx), Math.Abs(yy - by)) != r || (uint)xx >= Buckets || (uint)yy >= Buckets) continue;
-                    if (RectD2(xx, yy, px, py) > bd) continue; // (S1) 이 묶음엔 더 가까운 것이 없다
-                    foreach (int t in _materials[yy * Buckets + xx])
+                    if (RectD2(xx, yy, px, py) > bd) continue;
+                    foreach (int t in buckets[yy * Buckets + xx])
                     {
                         if (Region[t] != reg) continue;
                         long d = D2(t, px, py);
                         if (d > bd || (d == bd && t > best)) continue;
-                        int o = Map.ObjectAt(t);
-                        if (o < 0 || !okByObject[o]) continue;
+                        if (tileOk is not null && !tileOk(t)) continue;
                         bd = d; best = t;
                     }
                 }
         }
-        return best;
     }
 
     /// <summary>(E4) 걸을 수 있는 땅인가 — 캐낸 바위도 걸을 수 있다.</summary>
@@ -601,27 +628,9 @@ public sealed class ProvinceLife
         int reg = (uint)here < HexFrame.TileCount ? Region[here] : -1;
         if (reg < 0) return -1;
         int best = -1; long bd = (long)maxDist * maxDist;
-        int bx = Math.Min(Buckets - 1, px / Bucket), by = Math.Min(Buckets - 1, py / Bucket);
-        for (int r = 0; r < Buckets; r++)
-        {
-            long ringMin = (long)Math.Max(0, (r - 1) * Bucket);
-            if (ringMin * ringMin > bd) break;
-            for (int yy = by - r; yy <= by + r; yy++)
-                for (int xx = bx - r; xx <= bx + r; xx++)
-                {
-                    if (Math.Max(Math.Abs(xx - bx), Math.Abs(yy - by)) != r || (uint)xx >= Buckets || (uint)yy >= Buckets) continue;
-                    if (RectD2(xx, yy, px, py) > bd) continue; // (S1) 이 묶음엔 더 가까운 것이 없다
-                    foreach (int t in _carry[yy * Buckets + xx])
-                    {
-                        if (Region[t] != reg) continue;
-                        long d = D2(t, px, py);
-                        if (d > bd || (d == bd && t > best)) continue;
-                        var h = _harvest[t]!;
-                        if (!ok(h) || StockAt(t, now) <= 0) continue;
-                        bd = d; best = t;
-                    }
-                }
-        }
+        // (S1) 맞는 종류만(종류마다 한 번 묻는다), 몫이 남은 것
+        for (int o = 0; o < _carryByObj.Length; o++)
+            if (_carryByObj[o] is { } buckets && Data.Harvest[o] is { } h && ok(h)) NearestIn(buckets, px, py, reg, ref bd, ref best, t => StockAt(t, now) > 0);
         return best;
     }
     public int NearestDrink(int px, int py, int maxDist)

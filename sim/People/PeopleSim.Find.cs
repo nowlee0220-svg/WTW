@@ -56,9 +56,16 @@ public sealed partial class PeopleSim
     /// <summary>기억 목록 맨 앞에 넣는다(같은 지방의 가까운 자리 — 4타일 안 — 는 하나로 친다).</summary>
     private static void Remember(List<int> list, int place, int cap)
     {
+        // (S1) 같은 지방인지는 나눗셈 없이(칸 × 타일 수 ≤ 값 < (칸 + 1) × 타일 수) — 결과는 같다
         int cell = Person.PlaceCell(place), tile = Person.PlaceTile(place);
+        int lo = cell * HexFrame.TileCount, hi = lo + HexFrame.TileCount, tx = tile % S, ty = tile / S;
         for (int i = 0; i < list.Count; i++)
-            if (Person.PlaceCell(list[i]) == cell && Cheb(Person.PlaceTile(list[i]), tile) <= 4) { list.RemoveAt(i); break; }
+        {
+            int v = list[i];
+            if (v < lo || v >= hi) continue;
+            int t = v - lo;
+            if (Math.Abs(t % S - tx) <= 4 && Math.Abs(t / S - ty) <= 4) { list.RemoveAt(i); break; }
+        }
         list.Insert(0, place);
         if (list.Count > cap) list.RemoveAt(list.Count - 1);
     }

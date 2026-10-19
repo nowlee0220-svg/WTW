@@ -10,6 +10,19 @@ using Wtw.Sim.World;
 /// </summary>
 public static class SpeedBench
 {
+    /// <summary>
+    /// (S1) --threads auto: 시드를 나눠 돌릴 때 코어를 놀리지 않게 — 돌고 있는 세계 수로 코어를 나눠 세계마다 CPU 수를 날마다 다시 정한다
+    /// (끝 무렵 시드가 몇 개만 남으면 남은 세계가 코어를 더 쓴다). CPU 수는 결과와 상관없다.
+    /// </summary>
+    public static bool AutoThreads;
+    private static int _active;
+    public static void WorldStarted() => Interlocked.Increment(ref _active);
+    public static void WorldDone() => Interlocked.Decrement(ref _active);
+    public static void Pace(GameWorld w)
+    {
+        if (AutoThreads) w.Threads = Math.Max(1, Environment.ProcessorCount / Math.Max(1, Volatile.Read(ref _active)));
+    }
+
     /// <summary>메모리 정리 · 할당 셈(측정 앞뒤 차이).</summary>
     public readonly record struct GcMark(TimeSpan Pause, long Allocated, int Gen0, int Gen1, int Gen2)
     {
