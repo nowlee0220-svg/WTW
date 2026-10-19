@@ -55,7 +55,7 @@ public static class SceneBench
         if (fire > 0) Save("first-fire.wtw", "첫 불 직전", "따뜻한 숲의 세 가족 — 이틀 뒤에 누군가 처음으로 모닥불을 피운다. 1배속으로 지켜보세요", fire - 2 * GameTime.TicksPerDay);
         long pot = FirstTick("pot", 150);
         if (pot > 0) Save("first-pot.wtw", "첫 토기 직전", "이틀 뒤에 누군가 처음으로 진흙 그릇을 불에 구워 토기를 만든다", pot - 2 * GameTime.TicksPerDay);
-        Save("village-50y.wtw", "50년 뒤 마을", "세 가족이 50년을 산 뒤의 마을 — 가르치고 · 배우고 · 그림으로 남기는 모습. [지식의 행방] 창과 카드의 [지식]을 보세요", 50 * GameTime.TicksPerYear);
+        Save("village-50y.wtw", "50년 뒤 마을", "세 가족이 50년을 산 뒤의 마을 — 가르치고 · 배우는 모습. [지식의 행방] 창과 카드의 [지식]을 보세요", 50 * GameTime.TicksPerYear);
         }
         if (!onlyArtisan) CopperScene(outDir, seed, index);
         // (E5) 마지막 장인이 늙음: 세계에서 그 법을 아는 사람이 셋 이하이고 모두 45살 넘은 때 가운데 가장 "끊기기 쉬운" 때
