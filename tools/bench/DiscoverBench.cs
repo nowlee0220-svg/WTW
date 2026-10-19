@@ -105,6 +105,7 @@ public static class DiscoverBench
         var ps = w.People;
         var sb = new StringBuilder();
         var st = ps.Stats;
+        sb.AppendLine($"(E5) 그림 까닭: 그 밖 {st.PaintWhy[0]} · 늙은 장인 {st.PaintWhy[1]} · 혼자 앎 {st.PaintWhy[2]} · 처음 알아냄 {st.PaintWhy[3]} · 그리기를 처음 알아낸 실험 {st.PaintWhy[4]} — 매체: 나무껍질 {st.PaintMedium[0]} · 바위 면 {st.PaintMedium[1]} · 동굴 벽 {st.PaintMedium[2]}");
         sb.AppendLine($"(E4) 실험 {st.Experiments} · 알아냄 {st.Discoveries} · 거의 될 듯 {st.Partials} · 아는 법대로 만듦 {st.Crafts} · 불 피움 {st.FiresLit} · 불씨 얻음 {st.FiresTaken} · 캠 {st.Mined} · 익힌 끼니 {st.CookedMeals} · 배탈 {st.BadStomachs} · 보고 배움 {st.Watched} · 사라짐 {st.Lost} · 되찾음 {st.Refound} · 들불 {st.Wildfires}");
         foreach (var (rule, d) in ps.Discoveries)
             sb.AppendLine($"  발견 {ps.Craft.ItemName(ps.Craft.Rules[rule].Result)}: {GameTime.Format(d.Tick)} · {ps.DisplayName(ps.Get(d.Person))} · {ps.WishName(d.Wish)} · 그 전 부분 성공 {d.PartialsBefore} · 아는 사람 {ps.Knowers(rule)}{(d.Lost ? " · 사라짐" : "")}");

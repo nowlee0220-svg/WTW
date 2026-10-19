@@ -95,7 +95,7 @@ public static class CopperBench
 
     public static void Run(int seeds, int years, ulong first, int parallel, string? outPath, int cap)
     {
-        var rows = new (ulong Seed, int Cell, string Biome, SortedDictionary<string, int> First, int Alive, long Mined, int OreSeen, double Sec)[seeds];
+        var rows = new (ulong Seed, int Cell, string Biome, SortedDictionary<string, int> First, int Alive, long Mined, int OreSeen, double Sec, int MeltTries, int OreCarried, int ShinyWish)[seeds];
         var sw = Stopwatch.StartNew();
         Parallel.For(0, seeds, new ParallelOptions { MaxDegreeOfParallelism = parallel }, k =>
         {
@@ -103,13 +103,15 @@ public static class CopperBench
             var t0 = Stopwatch.StartNew();
             var w = NewVillage(seed, cap, out int cell);
             var firsts = new SortedDictionary<string, int>();
-            if (w is null) { rows[k] = (seed, -1, "", firsts, 0, 0, 0, 0); return; }
+            if (w is null) { rows[k] = (seed, -1, "", firsts, 0, 0, 0, 0, 0, 0, 0); return; }
+            int melt = 0, carried = 0, shiny = 0; int I_ore = w.People.Craft.ItemIndex("copper_ore"); int W_shiny = w.People.Craft.Wishes.First(x => x.Id == "shiny").Index;
             long end = years * GameTime.TicksPerYear;
             var cr = w.People.Craft;
             for (long t = 0; t < end && w.People.AliveCount > 0; t += GameTime.TicksPerDay)
             {
                 w.AdvanceTo(Math.Min(end, t + GameTime.TicksPerDay));
                 if (t % (10 * GameTime.TicksPerDay) != 0) continue;
+                foreach (var q in w.People.All) if (!q.Dead) { if (q.CarryCount(I_ore) > 0) carried++; if (q.Wish[W_shiny] >= 20) shiny++; }
                 foreach (var (rule, d) in w.People.Discoveries)
                 {
                     string id = cr.Catalog.Items[cr.Rules[rule].Result].Id;
@@ -118,7 +120,9 @@ public static class CopperBench
             }
             foreach (var (rule, d) in w.People.Discoveries) { string id = cr.Catalog.Items[cr.Rules[rule].Result].Id; if (!firsts.ContainsKey(id)) firsts[id] = (int)(d.Tick / GameTime.TicksPerYear); }
             int oreClue = w.People.All.Where(q => !q.Dead).Count(q => q.Clues.Any(c => cr.Rules[c.Rule].Id == "copper"));
-            rows[k] = (seed, cell, PlanetNames.Of(w.Planet.Biome[cell]), firsts, w.People.AliveCount, w.People.Stats.Mined, oreClue, t0.Elapsed.TotalSeconds);
+            var copperRule = cr.Rule("copper")!;
+            melt = (int)w.People.Stats.RuleFail[copperRule.Index] + (w.People.Partials.TryGetValue(copperRule.Index, out var pp) ? pp.Count : 0) + (w.People.Discoveries.TryGetValue(copperRule.Index, out var dd) ? dd.PartialsBefore + 1 : 0);
+            rows[k] = (seed, cell, PlanetNames.Of(w.Planet.Biome[cell]), firsts, w.People.AliveCount, w.People.Stats.Mined, oreClue, t0.Elapsed.TotalSeconds, melt, carried, shiny);
         });
         var sb = new StringBuilder();
         sb.AppendLine($"## (E5 고침) 구리 광맥 곁 마을: 시드 {seeds}개 × 가족 셋(어른은 불 · 토기를 앎) × {years}년, 상한 {cap} (걸린 시간 {sw.Elapsed.TotalSeconds:0}초, 코어 {parallel})");
@@ -126,10 +130,10 @@ public static class CopperBench
         string[] items = { "hearth", "charcoal", "copper_lump", "copper_blade", "molten_copper" };
         var cat = ObjectCatalog.Default;
         string Name(string id) => cat.Items.First(i => i.Id == id).Name;
-        sb.AppendLine("| 시드 | 칸 | 끝 인구 | 캠 | 구리 단서 가진 사람(끝) | " + string.Join(" | ", items.Select(Name)) + " | 초 |");
-        sb.AppendLine("|" + string.Concat(Enumerable.Repeat("---|", 6 + items.Length)));
+        sb.AppendLine("| 시드 | 칸 | 끝 인구 | 캠 | 구리를 녹여 본 횟수 | 구리 광석을 든 사람(10일마다 센 합) | 반짝이는 돌 바람 20 넘은 사람(10일마다 센 합) | 구리 단서 가진 사람(끝) | " + string.Join(" | ", items.Select(Name)) + " | 초 |");
+        sb.AppendLine("|" + string.Concat(Enumerable.Repeat("---|", 9 + items.Length)));
         foreach (var r in rows)
-            sb.AppendLine(r.Cell < 0 ? $"| {r.Seed} | (구리가 드러난 따뜻한 지방 없음) |" : $"| {r.Seed} | {r.Cell}({r.Biome}) | {r.Alive} | {r.Mined} | {r.OreSeen} | " + string.Join(" | ", items.Select(i => r.First.TryGetValue(i, out int y) ? $"{y}년" : "—")) + $" | {r.Sec:0} |");
+            sb.AppendLine(r.Cell < 0 ? $"| {r.Seed} | (구리가 드러난 따뜻한 지방 없음) |" : $"| {r.Seed} | {r.Cell}({r.Biome}) | {r.Alive} | {r.Mined} | {r.MeltTries} | {r.OreCarried} | {r.ShinyWish} | {r.OreSeen} | " + string.Join(" | ", items.Select(i => r.First.TryGetValue(i, out int y) ? $"{y}년" : "—")) + $" | {r.Sec:0} |");
         sb.AppendLine();
         sb.AppendLine($"- 구리 덩이가 나온 시드: {rows.Count(r => r.First.ContainsKey("copper_lump"))}/{rows.Count(r => r.Cell >= 0)} · 숯: {rows.Count(r => r.First.ContainsKey("charcoal"))} · 돌 화덕: {rows.Count(r => r.First.ContainsKey("hearth"))}");
         Console.Write(sb.ToString());

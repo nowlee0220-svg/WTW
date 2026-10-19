@@ -26,8 +26,6 @@ public sealed class GroupKnow
     /// <summary>아는 사람이 무리에서 없어진 때(−1 = 있음). 잠깐 이웃 땅에 다녀오는 것은 끊김이 아니다 — LoseAfter 동안 없어야 끊긴 것.</summary>
     public long EmptySince = -1;
     public int LostCount, RefoundCount;
-    /// <summary>이 무리가 이 법을 마지막으로 그림으로 남긴 때(바랜 뒤에도 기억 — 같은 것을 거듭 그리지 않게).</summary>
-    public long Painted = long.MinValue / 2;
 }
 
 /// <summary>(E5) 지식의 행방 — 한 법의 역사 한 줄. Kind: 0 처음 · 1 무리에서 끊김 · 2 무리에서 되찾음 · 3 세계에서 사라짐 · 4 세계에서 다시 · 5 그림으로 남김 · 6 그림이 바램.</summary>
@@ -70,6 +68,8 @@ public sealed partial class PeopleSim
     public int NextPaintingId { get; internal set; } = 1;
     public readonly SortedDictionary<long, GroupKnow> GroupKnows = new();
     public readonly SortedDictionary<int, List<KnowEvent>> KnowHistory = new();
+    /// <summary>(E5 고침) 그 땅(칸)에서 그 법을 마지막으로 그림으로 남긴 때(열쇠 = GroupKey) — 무리가 바뀌거나 그림이 바래도 기억한다(같은 것을 거듭 그리지 않게).</summary>
+    public readonly SortedDictionary<long, long> PaintedAt = new();
     public const int HistoryKept = 40;
     /// <summary>무리에 아는 사람이 이만큼 없으면 끊긴 것으로 본다(잠깐 떠났다 돌아오는 것은 빼려고 — 20일).</summary>
     public const long LoseAfter = 20 * GameTime.TicksPerDay;
@@ -373,7 +373,7 @@ public sealed partial class PeopleSim
         var life = Life(p.Cell);
         if (!FindSurface(p, life, here, out int stand, out int wall, out byte med) || Cheb(stand, here) > 2) { stand = here; wall = here; med = (byte)Math.Min(2, life.Shelter[here] == 3 ? 2 : life.Shelter[here] == 2 ? 1 : 0); }
         int rule = p.RecordRule >= 0 && p.Knows(p.RecordRule) ? p.RecordRule : -1;
-        if (rule < 0)
+        if (rule < 0 && p.Wish[W_record] >= 20) // (E5 고침) 남길 까닭(바람)이 있을 때만 아는 법을 그린다 — 아니면 알아볼 수 없는 무늬
         {
             int bestN = int.MaxValue;
             foreach (var k in p.Known)
@@ -385,7 +385,9 @@ public sealed partial class PeopleSim
         }
         var g = new Painting { Id = NextPaintingId++, Cell = p.Cell, Tile = wall, Stand = stand, Rule = rule, Painter = p.Id, Medium = med, Tick = Now, Until = Now + PaintingLife(med, rng) };
         Paintings[g.Id] = g;
-        if (rule >= 0) { long gkey = GroupKey(p.Cell, rule); if (!GroupKnows.TryGetValue(gkey, out var gk)) GroupKnows[gkey] = gk = new GroupKnow { Since = Now, Knowers = 1 }; gk.Painted = Now; }
+        Stats.PaintMedium[med]++;
+        Stats.PaintWhy[p.PlanRule < 0 ? 4 : p.RecordWhy switch { Why.RecordOld => 1, Why.RecordOnly => 2, Why.RecordFirst => 3, _ => 0 }]++;
+        if (rule >= 0) PaintedAt[GroupKey(p.Cell, rule)] = Now;
         p.RecordRule = -1;
         p.LastPaint = Now;
         Stats.Paintings++;
@@ -446,7 +448,7 @@ public sealed partial class PeopleSim
     // ───────── 남기고 싶은 마음 ─────────
 
     /// <summary>하루 경계(무리마다): 그림으로 남기고 싶은 마음 — 나이 든 장인 · 무리에 아는 사람이 하나뿐. 이미 그 지방에 그 그림이 있으면 생기지 않는다.</summary>
-    private void RecordWishes(int cell, ProvinceLife life, SortedDictionary<int, int> counts)
+    private void RecordWishes(int cell, ProvinceLife life, SortedDictionary<int, int> counts, SortedDictionary<int, int> world)
     {
         if (W_record < 0) return;
         int alive = 0; foreach (var q in life.People) if (!q.Dead) alive++;
@@ -459,13 +461,14 @@ public sealed partial class PeopleSim
             {
                 if (k.Level < 40 || k.Rule == R_paint?.Index) continue;
                 int n = counts.GetValueOrDefault(k.Rule);
-                // (E5 고침) 그림은 드물고 귀하게: 무리에서 혼자만 알 때만(늙었거나 · 마흔 넘어 무리가 셋 이상일 때)
+                // (E5 고침) 그림은 드물고 귀하게: 무리에서 혼자만 알고 세계에서도 아는 사람이 아주 적을 때만(늙은 장인은 셋 이하, 그 밖에는 둘 이하)
                 if (n != 1) continue;
-                if (old && 8 > amount) { pick = k.Rule; why = Why.RecordOld; amount = 8; }
-                else if (alive >= 3 && q.AgeYears(Now) >= 40 && 4 > amount) { pick = k.Rule; why = Why.RecordOnly; amount = 4; }
+                int wn = world.GetValueOrDefault(k.Rule);
+                if (old && wn <= 3 && 8 > amount) { pick = k.Rule; why = Why.RecordOld; amount = 8; }
+                else if (alive >= 3 && wn <= 2 && q.AgeYears(Now) >= 40 && 4 > amount) { pick = k.Rule; why = Why.RecordOnly; amount = 4; }
             }
             if (pick < 0 || HasPainting(cell, pick)) continue;
-            if (GroupKnows.TryGetValue(GroupKey(cell, pick), out var pgk) && Now - pgk.Painted < RepaintAfter) continue; // 이 무리가 40년 안에 이미 그렸다
+            if (PaintedAt.TryGetValue(GroupKey(cell, pick), out long pt) && Now - pt < RepaintAfter) continue; // 이 땅에서 40년 안에 이미 그렸다
             AddWish(q, W_record, amount);
             if (q.RecordRule < 0 || !q.Knows(q.RecordRule)) { q.RecordRule = pick; q.RecordWhy = why; }
         }
@@ -540,6 +543,8 @@ public sealed partial class PeopleSim
         // 알림은 한 무리 · 하루에 하나로 묶는다(여럿이 한꺼번에 끊기면 줄줄이 뜨지 않게)
         NotifyGrouped(WorldEventKind.GroupLost, lostNotes, "끊겼습니다 — 아는 사람이 없습니다");
         NotifyGrouped(WorldEventKind.GroupRefound, refoundNotes, "되찾았습니다");
+        var world = new SortedDictionary<int, int>();
+        foreach (var (_, counts) in cellCounts) foreach (var (rule, n) in counts) world[rule] = world.GetValueOrDefault(rule) + n;
         foreach (var (cell, counts) in cellCounts)
         {
             foreach (var (rule, n) in counts)
@@ -549,7 +554,7 @@ public sealed partial class PeopleSim
             }
             // 한 사람만 아는 법(측정)
             foreach (var (_, n) in counts) { Stats.GroupKnownSamples++; if (n == 1) Stats.GroupSoleSamples++; }
-            if (Provinces.TryGetValue(cell, out var life)) RecordWishes(cell, life, counts);
+            if (Provinces.TryGetValue(cell, out var life)) RecordWishes(cell, life, counts, world);
         }
         // 바랜 그림
         List<int>? faded = null;

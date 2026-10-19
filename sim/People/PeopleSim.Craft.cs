@@ -161,7 +161,7 @@ public sealed partial class PeopleSim
         for (int w = 0; w < Craft.Wishes.Count; w++) total += p.Wish[w];
         int wish = -1;
         if (total > 0) { int r = rng.NextInt(total); for (int w = 0; w < Craft.Wishes.Count; w++) { r -= p.Wish[w]; if (r < 0) { wish = w; break; } } }
-        if (wish < 0) wish = rng.NextInt(Craft.Wishes.Count); // 호기심: 아무 바람이나
+        if (wish < 0) { wish = rng.NextInt(Craft.Wishes.Count); if (wish == W_record) wish = W_warmth; } // 호기심: 아무 바람이나 — (E5 고침) "남겨 두기"는 남길 까닭이 있을 때만
         if (Plan(p, wish, known: false, rng)) return true;
         p.LastCraftFail = Now;
         return false;

@@ -43,6 +43,8 @@ public sealed class PeopleStats
     public long GroupLost, GroupRefound, GroupKnownSamples, GroupSoleSamples;
     public readonly List<long> RefoundDelays = new();
     public readonly long[] RefoundHow = new long[4];
+    /// <summary>(E5 측정) 그림을 그린 까닭(0 그 밖 · 1 늙은 장인 · 2 혼자 앎 · 3 처음 알아냄 · 4 그리기를 처음 알아낸 실험)과 매체(0 나무껍질 · 1 바위 면 · 2 동굴 벽).</summary>
+    public readonly long[] PaintWhy = new long[5], PaintMedium = new long[3];
     /// <summary>물 · 먹을 것을 찾아간 방법별 횟수: [0 보임, 1 기억, 2 따라감, 3 찾아다님].</summary>
     public readonly long[] FindHow = new long[4];
 }
