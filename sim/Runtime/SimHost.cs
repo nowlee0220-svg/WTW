@@ -41,9 +41,23 @@ public sealed class SimHost : IDisposable
     private int _speed = 1;
     private bool _paused;
 
+    /// <summary>(S1) 사람 계산에 쓰는 CPU 수의 기본값: 코어 수 − 1(화면 몫을 남김), 적어도 1.</summary>
+    public static int AutoThreads => Math.Max(1, Environment.ProcessorCount - 1);
+    private volatile int _threads = AutoThreads;
+    /// <summary>지금 쓰는 CPU 수(결과와 상관없다 — 빠르기만).</summary>
+    public int Threads => _threads;
+    /// <summary>CPU 수를 바꾼다(시뮬 스레드가 다음 계산부터 쓴다).</summary>
+    public void SetThreads(int n)
+    {
+        n = Math.Clamp(n, 1, Math.Max(1, Environment.ProcessorCount));
+        _threads = n;
+        Post(() => _world.Threads = n);
+    }
+
     public SimHost(GameWorld world)
     {
         _world = world;
+        _world.Threads = _threads;
         _target = world.Now;
         PublishSnapshot(0, 0);
         _thread = new Thread(Loop) { IsBackground = true, Name = "WTW-Sim" };
@@ -216,6 +230,7 @@ public sealed class SimHost : IDisposable
     private void ReplaceWorld(GameWorld w)
     {
         _world = w;
+        _world.Threads = _threads;
         lock (_targetLock)
         {
             _epoch++;

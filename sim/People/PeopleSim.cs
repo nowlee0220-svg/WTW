@@ -84,8 +84,9 @@ public sealed partial class PeopleSim
     public readonly List<WorldEvent> Events = new();
     public long NextEventSeq { get; internal set; } = 1;
     public const int EventsKept = 200;
-    /// <summary>측정 셈(세계 전체). 지방 계산 중의 셈은 레인에 모았다가 지방 계산이 끝나면 여기에 더한다.</summary>
-    public PeopleStats Stats { get; } = new();
+    /// <summary>측정 셈(세계 전체). 지방 계산 중의 셈은 레인에 모았다가 읽을 때 여기에 더한다(시뮬 스레드에서 읽을 것).</summary>
+    public PeopleStats Stats { get { FlushLaneStats(); return _stats; } }
+    private readonly PeopleStats _stats = new();
 
     // ───────── (S1) 레인: 지방마다 CPU ─────────
 
@@ -96,7 +97,7 @@ public sealed partial class PeopleSim
     private bool InProvince { get { var l = t_lane; return l is not null && l.Sim == this; } }
     private SimLane L { get { var l = t_lane; return l is not null && l.Sim == this ? l : _serial; } }
     /// <summary>측정 셈(지방 계산 중이면 그 레인의 것).</summary>
-    internal PeopleStats St { get { var l = t_lane; return l is not null && l.Sim == this ? l.Stats : Stats; } }
+    internal PeopleStats St { get { var l = t_lane; return l is not null && l.Sim == this ? l.Stats : _stats; } }
     /// <summary>맞추는 시각에 미뤄 둔 일을 적용하는 동안의 시각(−1 = 세계 시각).</summary>
     private long _opTick = -1;
 
@@ -110,7 +111,9 @@ public sealed partial class PeopleSim
     public PeopleSim(GameWorld w, PeopleData data)
     {
         _w = w; Data = data;
-        _serial = new SimLane(this, serial: true) { Stats = Stats };
+        _serial = new SimLane(this, serial: true) { Stats = _stats };
+        _solo = new SimLane(this, serial: false);
+        _lanes.Add(_solo);
         int T(string id) => data.TraitIndex(id);
         int H(string id) => data.ThoughtIndex(id);
         T_industrious = T("industrious"); T_lazy = T("lazy"); T_tough = T("tough"); T_frail = T("frail"); T_handy = T("handy"); T_clumsy = T("clumsy");
@@ -158,6 +161,7 @@ public sealed partial class PeopleSim
         {
             life = new ProvinceLife(_w.Planet, _w.Province(cell), Data);
             Provinces.Add(cell, life);
+            _livesDirty = true;
             if (Dormant.Remove(cell, out var d))
             {
                 // 깨어남: 바뀐 것을 되살린다. 딴 몫은 딴 시각부터 흐른 시간만큼 저절로 다시 열려 있다.
@@ -168,7 +172,7 @@ public sealed partial class PeopleSim
                 life.RestoreDug(d.Dug);
                 life.People.AddRange(d.People);
                 life.Sched.Import(d.Events, d.SchedHandle, d.SchedOrder);
-                Stats.Wakes++;
+                St.Wakes++;
             }
         }
         return lane.LastLife = life;
@@ -191,6 +195,7 @@ public sealed partial class PeopleSim
         _all.Add(p);
         _byId.Add(p.Id, p);
         if (!p.Dead) AliveCount++;
+        if (!p.Dead && p.Conceived >= 0) _pregnant++;
         if (!p.Dead || Provinces.ContainsKey(p.Cell)) Life(p.Cell).People.Add(p);
         else if (Dormant.TryGetValue(p.Cell, out var d)) d.People.Add(p);
         else Dormant[p.Cell] = new DormantProvince(p.Cell, Array.Empty<(int, TileStock)>(), Array.Empty<int>(), new List<Person> { p });

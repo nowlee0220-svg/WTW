@@ -80,9 +80,8 @@ public sealed partial class PeopleSim
     /// <summary>넘겨주기 간격: 6분(게임 시간). 하루 경계는 걷는 사람을 너무 오래 세워 두므로 더 짧게.</summary>
     public const long CrossInterval = GameTime.TicksPerHour / 10;
 
-    /// <summary>변 기억(조회 전용 — 순회하지 않음). (S1) 지방 계산 중 여러 CPU 가 함께 읽고 처음 만들 때만 잠근다(만든 것은 누가 만들어도 같다).</summary>
-    private readonly ConcurrentDictionary<int, Border?> _borders = new();
-    private readonly object _borderBuild = new();
+    /// <summary>변 기억(조회 전용 — 순회하지 않음). (S1) 지방 계산 중 여러 CPU 가 함께 읽는다 — 같은 변은 한 번만 만들고(만든 것은 누가 만들어도 같다) 다른 변은 기다리지 않는다.</summary>
+    private readonly ConcurrentDictionary<int, Lazy<Border?>> _borders = new();
 
     /// <summary>잠든 지방(사람이 모두 떠남): 바뀐 것만.</summary>
     public readonly SortedDictionary<int, DormantProvince> Dormant = new();
@@ -113,14 +112,8 @@ public sealed partial class PeopleSim
     public Border? BorderOf(int cell, int slot)
     {
         int key = cell * 6 + slot;
-        if (_borders.TryGetValue(key, out var b)) return b;
-        lock (_borderBuild)
-        {
-            if (_borders.TryGetValue(key, out b)) return b;
-            b = BuildBorder(cell, slot);
-            _borders[key] = b;
-            return b;
-        }
+        if (_borders.TryGetValue(key, out var b)) return b.Value;
+        return _borders.GetOrAdd(key, _ => new Lazy<Border?>(() => BuildBorder(cell, slot), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
     }
 
     private Border? BuildBorder(int cell, int slot)
@@ -253,7 +246,7 @@ public sealed partial class PeopleSim
     internal void DoCrossings()
     {
         List<int>? queue = null;
-        foreach (var (_, life) in Provinces) { if (life.CrossQueue.Count == 0) continue; (queue ??= new()).AddRange(life.CrossQueue); life.CrossQueue.Clear(); }
+        foreach (var life in Lives()) { if (life.CrossQueue.Count == 0) continue; (queue ??= new()).AddRange(life.CrossQueue); life.CrossQueue.Clear(); }
         if (queue is null) return;
         var ids = queue.ToArray();
         St.CrossBatches++;
@@ -352,6 +345,7 @@ public sealed partial class PeopleSim
         {
             var life = Provinces[cell];
             Provinces.Remove(cell);
+            _livesDirty = true;
             Dormant[cell] = new DormantProvince(cell, life.Stocks.Select(kv => (kv.Key, kv.Value)).ToArray(), life.Revealed.ToArray(), life.People)
             {
                 Fires = life.Fires.Select(kv => (kv.Key, kv.Value)).ToArray(),

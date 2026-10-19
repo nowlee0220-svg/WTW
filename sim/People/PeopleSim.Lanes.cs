@@ -17,6 +17,18 @@ public sealed partial class PeopleSim
     internal int CapBase;
 
     private readonly ConcurrentBag<SimLane> _freeLanes = new();
+    /// <summary>CPU 하나로 돌 때의 레인(빌리고 돌려줄 것 없이).</summary>
+    private readonly SimLane _solo;
+
+    /// <summary>깨어 있는 지방(칸 번호 순) — 맞추는 시각마다 SortedDictionary 를 훑지 않게 지방 목록이 바뀔 때만 다시 만든다.</summary>
+    private readonly List<ProvinceLife> _lives = new();
+    private bool _livesDirty = true;
+    private List<ProvinceLife> Lives()
+    {
+        if (_livesDirty) { _lives.Clear(); _lives.AddRange(Provinces.Values); _livesDirty = false; }
+        return _lives;
+    }
+    private readonly List<ProvinceLife> _work = new();
 
     private SimLane TakeLane()
     {
@@ -41,15 +53,14 @@ public sealed partial class PeopleSim
     /// </summary>
     internal void RunProvinces(long upTo, int threads)
     {
-        List<ProvinceLife>? work = null;
-        foreach (var (_, life) in Provinces)
-            if (life.Sched.TryPeek(out var e) && e.Tick <= upTo) (work ??= new()).Add(life);
-        if (work is null) return;
+        var work = _work;
+        work.Clear();
+        foreach (var life in Lives())
+            if (life.Sched.TryPeek(out var e) && e.Tick <= upTo) work.Add(life);
+        if (work.Count == 0) return;
         if (threads <= 1 || work.Count == 1)
         {
-            var lane = TakeLane();
-            foreach (var life in work) RunOne(lane, life, upTo);
-            _freeLanes.Add(lane);
+            foreach (var life in work) RunOne(_solo, life, upTo);
         }
         else
         {
@@ -89,16 +100,29 @@ public sealed partial class PeopleSim
         }
     }
 
-    /// <summary>레인에 모인 셈(죽음 · 처리한 예약 · 측정 셈)을 세계에 더한다.</summary>
+    /// <summary>레인에 모인 셈(죽음 · 아이 밴 사람 · 처리한 예약)을 세계에 더한다. 측정 셈은 읽을 때(FlushLaneStats).</summary>
     private void MergeLanes()
     {
         lock (_lanes)
             foreach (var lane in _lanes)
             {
                 AliveCount += lane.AliveDelta; lane.AliveDelta = 0;
-                if (lane.EventsDone > 0) { _w.AddEventsProcessed(lane.EventsDone); lane.EventsDone = 0; }
-                StatsMerge.AddInto(Stats, lane.Stats);
+                _pregnant += lane.PregnantDelta; lane.PregnantDelta = 0;
+                if (lane.EventsDone > 0) { _w.AddEventsProcessed(lane.EventsDone); lane.EventsDone = 0; lane.StatsDirty = true; }
+            }
+    }
+
+    /// <summary>레인의 측정 셈을 세계 셈에 더하고 비운다(지방 계산 밖에서 — Stats 를 읽을 때).</summary>
+    private void FlushLaneStats()
+    {
+        if (InProvince) return;
+        lock (_lanes)
+            foreach (var lane in _lanes)
+            {
+                if (!lane.StatsDirty) continue;
+                StatsMerge.AddInto(_stats, lane.Stats);
                 StatsMerge.ClearSecond(lane.Stats, lane.Stats);
+                lane.StatsDirty = false;
             }
     }
 
@@ -119,7 +143,7 @@ public sealed partial class PeopleSim
     {
         List<PendingOp>? all = null;
         if (_loadedOps.Count > 0) { all = new List<PendingOp>(_loadedOps); _loadedOps.Clear(); }
-        foreach (var (_, life) in Provinces)
+        foreach (var life in Lives())
         {
             if (life.Ops.Count == 0) continue;
             (all ??= new()).AddRange(life.Ops); // 지방 안에서는 이미 시각 순, 칸 번호 순으로 돈다 → 안정 정렬로 차례가 남는다

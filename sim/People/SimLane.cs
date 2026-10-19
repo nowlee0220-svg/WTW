@@ -22,7 +22,7 @@ internal sealed class SimLane
     public PeopleStats Stats = new();
     public bool StatsDirty;
     /// <summary>지방 계산 중 죽은 사람 수 · 처리한 예약 수(맞추는 시각에 세계에 더한다).</summary>
-    public int AliveDelta;
+    public int AliveDelta, PregnantDelta;
     public long EventsDone;
 
     public readonly List<(int X, int Y)> Path = new();

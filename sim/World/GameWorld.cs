@@ -54,7 +54,10 @@ public sealed class GameWorld
     /// <summary>
     /// (S1) 사람 계산에 쓸 CPU 수(1 = 한 줄기). 결과와 상관없다 — 저장하지 않는다. 게임은 코어 수 − 1(화면 몫), 측정 도구는 --threads.
     /// </summary>
-    public int Threads { get; set; } = 1;
+    public int Threads { get; set; } = DefaultThreads;
+
+    /// <summary>(S1) 새로 만들거나 불러온 세계의 처음 CPU 수(측정 도구의 --threads).</summary>
+    public static int DefaultThreads { get; set; } = 1;
 
     /// <summary>(S1) 맞추는 시각의 간격(= 넘겨주기 간격). 지방끼리는 이 시각에만 주고받는다.</summary>
     public const long SyncInterval = PeopleSim.CrossInterval;

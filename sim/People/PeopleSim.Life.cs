@@ -237,11 +237,14 @@ public sealed partial class PeopleSim
             if (Get(cid) is { } c && c.Cell == woman.Cell && c.AgeTicks(Now) < GameTime.TicksPerYear * 3 / 2 && !c.Dead) { ch /= 3; break; } // (S1) 젖먹이는 늘 같은 지방에 안겨 있다
         if (Rng(woman.Cell).NextInt(1_000) >= ch) return;
         woman.Conceived = Now;
+        if (InProvince) L.PregnantDelta++; else _pregnant++;
         woman.ChildFather = man.Id;
         St.Conceptions++;
     }
 
-    private int Pregnant { get { int n = 0; foreach (var p in _all) if (!p.Dead && p.Conceived >= 0) n++; return n; } }
+    /// <summary>아이 밴 산 사람 수(S1: 셈을 따로 둔다 — 날마다 모든 사람을 훑지 않게).</summary>
+    private int Pregnant => _pregnant;
+    private int _pregnant;
 
     /// <summary>
     /// (S1) 상한 셈: 산 사람 + 아이 밴 사람. 지방 계산 중에는 다른 지방을 볼 수 없으므로 지난 맞추는 시각의 값(CapBase)에
@@ -260,6 +263,7 @@ public sealed partial class PeopleSim
     {
         var father = Get(mother.ChildFather);
         mother.Conceived = -1;
+        _pregnant--;
         mother.Position(Now, out int x, out int y);
         var baby = Make(mother.Cell, (y / 1000) * S + x / 1000, 0, rng.NextInt(2) == 0 ? Sex.Male : Sex.Female, mother, father, rng, newborn: true);
         // 부모가 그 말로 뜻이 있는 이름을 짓는다(이름이 있는 쪽이 — 둘 다 없으면 엄마)
@@ -310,6 +314,7 @@ public sealed partial class PeopleSim
         if (p.Carrier >= 0 && Get(p.Carrier) is { } c) c.Position(Now, out x, out y);
         p.NewMotion().SetStill(Now, x, y);
         p.Dead = true; p.DeathTick = Now; p.Cause = cause;
+        if (p.Conceived >= 0) { if (InProvince) L.PregnantDelta--; else _pregnant--; }
         p.Walking = false; p.Asleep = false; p.Conceived = -1;
         SetWhy(p, Act.Dead, Why.None);
         p.Carrier = -1;

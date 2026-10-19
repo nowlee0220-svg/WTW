@@ -26,11 +26,14 @@ public static class PeopleBench
             o[args[i][2..]] = i + 1 < args.Length && !args[i + 1].StartsWith("--") ? args[++i] : "1";
         }
         int I(string k, int d) => o.TryGetValue(k, out var v) ? int.Parse(v) : d;
+        // (S1) 세계 하나를 CPU 여러 개로(지방마다) — --parallel(시드를 나눠 돌리기)과 함께 쓸 수 있다
+        GameWorld.DefaultThreads = Math.Max(1, I("threads", 1));
+        if (GameWorld.DefaultThreads > 1) Console.WriteLine($"(S1) 세계마다 CPU {GameWorld.DefaultThreads}개(--threads)");
         string Sx(string k, string d) => o.TryGetValue(k, out var v) ? v : d;
         switch (mode)
         {
             case "seeds": Seeds(I("seeds", 20), I("people", 10), I("years", 50), Sx("passion", "on"), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
-            case "cap": Cap(I("people", 500), I("years", 100), (ulong)I("seed", 1), I("per", 25), I("cap", 500)); break;
+            case "cap": Cap(I("people", 500), I("years", 100), (ulong)I("seed", 1), I("per", 25), I("cap", 500)); if (o.GetValueOrDefault("save") is string sp && _lastWorld is { } lw) { SaveGame.SaveFile(lw, sp); Console.WriteLine($"저장: {sp}"); } break;
             case "nosource": NoSource(I("seeds", 20), I("cells", 5), I("people", 5), I("years", 3), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "water": WaterBench.Run(I("seeds", 20), I("cells", 30), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "spread": SpreadBench.Run(I("seeds", 20), I("people", 10), I("years", 100), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
@@ -42,7 +45,7 @@ public static class PeopleBench
             case "scenes": SceneBench.Run(o.GetValueOrDefault("out") ?? "game/scenes", (ulong)I("seed", 20261016), o.ContainsKey("artisan"), o.ContainsKey("copper")); break;
             case "copper": CopperBench.Run(I("seeds", 4), I("years", 200), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), I("cap", 300)); break;
             case "skip": SpeedBench.Skip(Sx("scene", "game/scenes/village-50y.wtw"), I("years", 50)); break;
-            case "discover": DiscoverBench.Know = o.GetValueOrDefault("know") ?? ""; DiscoverBench.Run(I("seeds", 20), I("people", 10), I("years", 200), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300)); break;
+            case "discover": DiscoverBench.Know = o.GetValueOrDefault("know") ?? ""; DiscoverBench.SaveTo = o.GetValueOrDefault("save"); DiscoverBench.Run(I("seeds", 20), I("people", 10), I("years", 200), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300)); break;
             default: Console.WriteLine("모드: seeds | cap | one"); break;
         }
     }

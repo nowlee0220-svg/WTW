@@ -699,13 +699,14 @@ public sealed partial class PeopleSim
         if (carryTile >= 0) { bestTile = carryTile; bd = ProvinceLife.D2(carryTile, hx, hy); bestUse = -1; bestItem = life.HarvestAt(carryTile)!.ItemIndex; }
         // 3) 오브젝트의 다루는 법(베기는 날카로운 도구가 있어야)
         var cat = Craft.Catalog;
+        var uses = ObjectUses;
         int mt = life.NearestMaterial(hx, hy, 30, o =>
         {
-            foreach (var u in cat.Objects[o].Uses)
+            foreach (var (kind, yields) in uses[o])
             {
-                if (u.Action.Id == "cut" && !sharp) continue;
-                if (u.Action.Id == "pick" || u.Action.Id == "gather") continue; // 먹을 것 · 주울 것은 몫으로
-                foreach (var y in u.Yields) if (itemOk(Craft.ItemIndex(y.Id))) return true;
+                if (kind == 1 && !sharp) continue;
+                if (kind == 2) continue; // 먹을 것 · 주울 것은 몫으로
+                foreach (int it in yields) if (itemOk(it)) return true;
             }
             return false;
         });
@@ -723,7 +724,7 @@ public sealed partial class PeopleSim
         if (bestTile < 0)
         {
             // 베어야 얻는 것(나무)인데 도구가 없다 → 날카로움이 아쉽다
-            if (!sharp && life.NearestMaterial(hx, hy, 30, o => cat.Objects[o].Uses.Any(u => u.Action.Id == "cut" && u.Yields.Any(y => itemOk(Craft.ItemIndex(y.Id))))) >= 0) AddWish(p, W_sharp, 25);
+            if (!sharp && life.NearestMaterial(hx, hy, 30, o => uses[o].Any(u => u.Kind == 1 && u.Yields.Any(itemOk))) >= 0) AddWish(p, W_sharp, 25);
             return false;
         }
         int goal = bestUse < 0 ? bestTile : Beside(p, bestTile);
@@ -732,6 +733,11 @@ public sealed partial class PeopleSim
         p.Target = bestTile; p.TargetB = bestUse; p.PlanItem = bestItem;
         return true;
     }
+
+    /// <summary>(S1) 오브젝트마다 다루는 법: (0 그 밖 · 1 베기 · 2 따기/줍기, 얻는 아이템 번호들) — 판단마다 이름을 찾지 않게 한 번만.</summary>
+    private (int Kind, int[] Yields)[][] ObjectUses => _objectUses ??= Craft.Catalog.Objects.Select(o => o.Uses.Select(u =>
+        (u.Action.Id == "cut" ? 1 : u.Action.Id is "pick" or "gather" ? 2 : 0, u.Yields.Select(y => Craft.ItemIndex(y.Id)).ToArray())).ToArray()).ToArray();
+    private (int Kind, int[] Yields)[][]? _objectUses;
 
     /// <summary>재료 자리에 닿았다: 조금 걸린 뒤 얻는다.</summary>
     private void ArriveMaterial(Person p) => DoStill(p, (p.TargetB >= 0 ? 300L : 200L) * WorkPercent(p) / 100);

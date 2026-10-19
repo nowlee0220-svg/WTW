@@ -138,6 +138,7 @@ public partial class Main : Node
         _skipPanel.CloseRequested += () => _skipPanel.Visible = false;
         _skipPanel.StartRequested += StartSkip;
         _hud.SkipRequested += ToggleSkipPanel;
+        _hud.ThreadsRequested += CycleThreads;
         _skipOverlay = new SkipOverlay { Theme = theme };
         ui.AddChild(_skipOverlay);
         _skipOverlay.StopRequested += () => _host?.StopSkip();
@@ -262,6 +263,7 @@ public partial class Main : Node
         if (_host is null)
         {
             _host = new SimHost(w);
+            if (SavedThreads() is int saved) _host.SetThreads(saved);
             _host.SetSpeed(_auto.Speed ?? 1);
             if (_auto.Speed is null) _host.SetPaused(false);
             _hud.ShowNotice(notice);
@@ -797,6 +799,32 @@ public partial class Main : Node
     }
 
     public override void _ExitTree() => _host?.Dispose();
+
+    // ───────── (S1) 사람 계산에 쓰는 CPU 수(설정) ─────────
+
+    private static string SettingsPath => "user://settings.cfg";
+
+    /// <summary>저장해 둔 CPU 수(없으면 null = 자동: 코어 수 − 1).</summary>
+    private static int? SavedThreads()
+    {
+        var cfg = new ConfigFile();
+        if (cfg.Load(SettingsPath) != Error.Ok) return null;
+        int n = (int)cfg.GetValue("sim", "threads", 0);
+        return n > 0 ? n : null;
+    }
+
+    private void CycleThreads()
+    {
+        if (_host is null) return;
+        int max = System.Environment.ProcessorCount;
+        int next = _host.Threads >= max ? 1 : _host.Threads + 1;
+        _host.SetThreads(next);
+        var cfg = new ConfigFile();
+        cfg.Load(SettingsPath);
+        cfg.SetValue("sim", "threads", next == SimHost.AutoThreads ? 0 : next);
+        cfg.Save(SettingsPath);
+        _hud.ShowNotice($"사람 계산에 CPU {next}개를 씁니다" + (next == SimHost.AutoThreads ? " (기본: 코어 수 − 1)" : "") + " — 결과는 같고 빠르기만 달라집니다");
+    }
 
     // ───────── (E4) 넘기기 · 큰 일 팝업 ─────────
 

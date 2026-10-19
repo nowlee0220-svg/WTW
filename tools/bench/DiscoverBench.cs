@@ -27,6 +27,8 @@ public static class DiscoverBench
 
     /// <summary>know = "fire" 이면 뿌린 사람들이 처음부터 불 피우는 법(부싯돌 불씨 · 모닥불)을 안다(추운 땅에서 "불을 아는 사람"의 생존을 따로 재기 위해).</summary>
     public static string Know = "";
+    /// <summary>(S1) 끝난 세계를 저장할 곳(시드 하나일 때 — 속도 측정용 장면 만들기).</summary>
+    public static string? SaveTo;
 
     public static Row Simulate(ulong seed, int people, int years, string where, int cap)
     {
@@ -76,6 +78,7 @@ public static class DiscoverBench
         row.Seconds = sw.Elapsed.TotalSeconds;
         Fill(row, w);
         row.Detail = Summary(w);
+        if (SaveTo is not null) Wtw.Sim.Persistence.SaveGame.SaveFile(w, SaveTo);
         return row;
     }
 
