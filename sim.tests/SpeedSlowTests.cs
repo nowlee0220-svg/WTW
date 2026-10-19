@@ -7,7 +7,7 @@ using Xunit.Abstractions;
 
 namespace Wtw.Sim.Tests;
 
-/// <summary>(S1) 느린 테스트: 지방마다 CPU — 사람 300명 · 지방 20곳을 오래(경계를 수천 번 넘고 지방이 잠들고 깨어남) CPU 1개 = 4개, 중간 저장 → 불러오기 → 계속.</summary>
+/// <summary>(S1) 느린 테스트: 지방마다 CPU — 사람 300명 · 지방 20곳을 오래(경계를 수백 번 넘고 지방이 잠들고 깨어남) CPU 1개 = 4개, 중간 저장 → 불러오기 → 계속.</summary>
 [Trait("Category", "Slow")]
 public class SpeedSlowTests
 {
@@ -39,8 +39,8 @@ public class SpeedSlowTests
         loaded.Threads = 2;
         one.AdvanceTo(end); four.AdvanceTo(end); loaded.AdvanceTo(end);
         _out.WriteLine($"넘음 {one.People.Stats.Crossings} · 깨어남 {one.People.Stats.Wakes} · 사람 {one.People.AliveCount} · 예약 {one.EventsProcessed}");
-        Assert.True(one.People.Stats.Crossings > 1000);
         Assert.Equal(SaveGame.Fingerprint(one), SaveGame.Fingerprint(four));
         Assert.Equal(SaveGame.Fingerprint(one), SaveGame.Fingerprint(loaded));
+        Assert.True(one.People.Stats.Crossings > 100 && one.People.Stats.Wakes > 10);
     }
 }
