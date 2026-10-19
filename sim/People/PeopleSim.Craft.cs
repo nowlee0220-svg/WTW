@@ -478,7 +478,7 @@ public sealed partial class PeopleSim
             list[k] = (c.Item, c.Count - t);
         }
         list.RemoveAll(c => c.Count <= 0);
-        if (list.Count == 0) life.Items.Remove(tile);
+        if (list.Count == 0) life.RemoveItems(tile);
     }
 
     /// <summary>(E4) 불 타일 땅에 모아 둔 무거운 돌(화덕 쌓을 돌) 수.</summary>
@@ -650,17 +650,29 @@ public sealed partial class PeopleSim
         if (CarryWeight(p) + 3 > CarryCapOf(p)) { AddWish(p, W_carry, 8); MakeRoom(p, prop, 3); if (CarryWeight(p) + 1 > CarryCapOf(p)) return false; }
         p.Position(Now, out int px, out int py);
         int hx = px / 1000, hy = py / 1000;
-        // 1) 땅에 놓인 물건(죽은 사람이 남긴 것 등) 바로 곁
-        foreach (var (t, list) in life.Items)
+        // 1) 땅에 놓인 물건(죽은 사람이 남긴 것 등) 바로 곁 — 타일 번호 순으로 처음 맞는 것
+        bool GroundTile(int t, List<(int Item, int Count)> list)
         {
-            if (life.Fires.ContainsKey(t)) continue; // 불가에 모아 둔 돌은 화덕감이다
-            if (Cheb(t, hy * S + hx) > 20 || !life.Paths.Reachable(hy * S + hx, t)) continue;
+            if (life.Fires.ContainsKey(t)) return false; // 불가에 모아 둔 돌은 화덕감이다
+            if (Cheb(t, hy * S + hx) > 20 || !life.Paths.Reachable(hy * S + hx, t)) return false;
             foreach (var (item, _) in list)
                 if (itemOk(item))
                 {
-                    if (!WalkTo(p, t)) break;
+                    if (!WalkTo(p, t)) return false;
                     SetWhy(p, Act.Material, why); p.Target = t; p.TargetB = -2; p.PlanItem = item;
                     return true;
+                }
+            return false;
+        }
+        if (life.Items.Count <= 64) { foreach (var (t, list) in life.Items) if (GroundTile(t, list)) return true; }
+        else
+        {
+            // (S1) 물건 놓인 자리가 많으면 둘레(20타일) 네모만 번호 순으로 본다 — 결과는 모두 훑을 때와 같다
+            for (int y = Math.Max(0, hy - 20); y <= Math.Min(S - 1, hy + 20); y++)
+                for (int x = Math.Max(0, hx - 20); x <= Math.Min(S - 1, hx + 20); x++)
+                {
+                    int t = y * S + x;
+                    if (life.HasItems(t) && GroundTile(t, life.Items[t])) return true;
                 }
         }
         // (E5) 불 자리의 재(그림 물감) — 타고 난 불 자리에서 긁어모은다
@@ -747,7 +759,7 @@ public sealed partial class PeopleSim
                     int n = Math.Min(list[k].Count, 3);
                     p.AddCarry(p.PlanItem, n);
                     if (list[k].Count == n) list.RemoveAt(k); else list[k] = (p.PlanItem, list[k].Count - n);
-                    if (list.Count == 0) life.Items.Remove(t);
+                    if (list.Count == 0) life.RemoveItems(t);
                 }
             }
             return;

@@ -18,6 +18,53 @@ public sealed class Border
     public int[] SightX = Array.Empty<int>(), SightY = Array.Empty<int>(), SightTile = Array.Empty<int>();
     /// <summary>넘어간 뒤 이웃 지방 안쪽으로 향하는 방향(0~7).</summary>
     public int InDir8;
+
+    // (S1) 보이는 물가 찾기를 빠르게: 물 마실 자리를 16타일 묶음으로 나눈 색인(번호 순). 결과는 모두 훑을 때와 같다.
+    private const int Cell16 = 16_000;
+    private int _bx0, _by0, _bw, _bh;
+    private int[] _start = Array.Empty<int>(), _items = Array.Empty<int>();
+
+    internal void IndexSight()
+    {
+        if (SightX.Length == 0) return;
+        int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+        for (int k = 0; k < SightX.Length; k++)
+        {
+            minX = Math.Min(minX, Fl(SightX[k])); maxX = Math.Max(maxX, Fl(SightX[k]));
+            minY = Math.Min(minY, Fl(SightY[k])); maxY = Math.Max(maxY, Fl(SightY[k]));
+        }
+        _bx0 = minX; _by0 = minY; _bw = maxX - minX + 1; _bh = maxY - minY + 1;
+        var count = new int[_bw * _bh + 1];
+        for (int k = 0; k < SightX.Length; k++) count[(Fl(SightY[k]) - _by0) * _bw + Fl(SightX[k]) - _bx0 + 1]++;
+        for (int i = 1; i < count.Length; i++) count[i] += count[i - 1];
+        _start = (int[])count.Clone();
+        _items = new int[SightX.Length];
+        for (int k = 0; k < SightX.Length; k++) _items[count[(Fl(SightY[k]) - _by0) * _bw + Fl(SightX[k]) - _bx0]++] = k;
+    }
+
+    private static int Fl(int v) => (int)Math.Floor(v / (double)Cell16);
+
+    /// <summary>(px, py) 에서 거리² 가 bd 보다 작은 가장 가까운 물 마실 자리(같으면 번호가 작은 것). 없으면 −1.</summary>
+    internal int NearestSight(long px, long py, ref long bd)
+    {
+        if (_items.Length == 0) return -1;
+        long r = (long)Math.Sqrt(bd) + 1;
+        int x0 = Math.Max(_bx0, (int)Math.Floor((px - r) / (double)Cell16)), x1 = Math.Min(_bx0 + _bw - 1, (int)Math.Floor((px + r) / (double)Cell16));
+        int y0 = Math.Max(_by0, (int)Math.Floor((py - r) / (double)Cell16)), y1 = Math.Min(_by0 + _bh - 1, (int)Math.Floor((py + r) / (double)Cell16));
+        int best = -1;
+        for (int by = y0; by <= y1; by++)
+            for (int bx = x0; bx <= x1; bx++)
+            {
+                int b = (by - _by0) * _bw + bx - _bx0;
+                for (int i = _start[b]; i < _start[b + 1]; i++)
+                {
+                    int k = _items[i];
+                    long dx = SightX[k] - px, dy = SightY[k] - py, d = dx * dx + dy * dy;
+                    if (d < bd || (d == bd && best >= 0 && k < best)) { bd = d; best = k; }
+                }
+            }
+        return best;
+    }
 }
 
 /// <summary>
@@ -130,6 +177,7 @@ public sealed partial class PeopleSim
             sx.Add((int)Math.Round((lx + HexFrame.Center) * 1000)); sy.Add((int)Math.Round((ly + HexFrame.Center) * 1000)); st.Add(t);
         }
         border.SightX = sx.ToArray(); border.SightY = sy.ToArray(); border.SightTile = st.ToArray();
+        border.IndexSight();
         return border;
     }
 

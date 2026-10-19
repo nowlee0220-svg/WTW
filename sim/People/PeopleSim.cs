@@ -144,7 +144,13 @@ public sealed partial class PeopleSim
         return _lastLife = life;
     }
 
-    internal Pcg32 Rng(int cell) => _w.Rng.Get(Stream, cell);
+    /// <summary>("people", 지방) 스트림. (S1) 깨어 있는 지방은 처음 쓸 때 지방에 기억해 둔다(같은 스트림 — 사전 찾기만 줄인다).</summary>
+    internal Pcg32 Rng(int cell)
+    {
+        var life = _lastLife is { } l && l.Cell == cell ? l : Provinces.GetValueOrDefault(cell);
+        if (life is not null) return life.PeopleRng ??= _w.Rng.Get(Stream, cell);
+        return _w.Rng.Get(Stream, cell);
+    }
 
     internal void AddLoaded(Person p)
     {

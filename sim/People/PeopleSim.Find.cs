@@ -47,11 +47,8 @@ public sealed partial class PeopleSim
             if (HexFrame.EdgeDistance(here, s) >= SightTiles) continue;
             var b = BorderOf(p.Cell, s);
             if (b is null || b.Gates.Length == 0) continue;
-            for (int k = 0; k < b.SightTile.Length; k++)
-            {
-                long dx = b.SightX[k] - px, dy = b.SightY[k] - py, d = dx * dx + dy * dy;
-                if (d < bd) { bd = d; best = (b, k); }
-            }
+            int k = b.NearestSight(px, py, ref bd); // (S1) 색인으로 — 같은 거리면 앞 변 · 작은 번호(모두 훑을 때와 같다)
+            if (k >= 0) best = (b, k);
         }
         return best;
     }
