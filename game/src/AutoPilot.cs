@@ -347,14 +347,14 @@ public sealed class AutoPilot
                     var a = fauna.Animals[h.Species];
                     h.PositionAt(host.RenderTick, out double hx, out double hy, out _, out _);
                     int score;
-                    if (_look == "animals") score = !a.Predator && h.Owner < 0 && h.Count >= 3 ? h.Count * 10 + (h.State == Wtw.Sim.People.HerdState.Graze ? 5 : 0) : int.MinValue;
+                    if (_look == "animals") score = !a.Predator && h.Owner < 0 && h.Count >= 3 ? a.Size * 100 + h.Count * 10 + (h.State == Wtw.Sim.People.HerdState.Graze ? 5 : 0) : int.MinValue;
                     else
                     {
                         if (!a.Predator || h.Owner >= 0) continue;
                         int fd = int.MaxValue;
                         if (snap.Fires.TryGetValue(center, out var fs))
                             foreach (var f in fs) if (f.Lit) fd = Math.Min(fd, Math.Max(Math.Abs(f.Tile % HexFrame.Size - (int)(hx / 1000)), Math.Abs(f.Tile / HexFrame.Size - (int)(hy / 1000))));
-                        score = h.State == Wtw.Sim.People.HerdState.Stalk && h.TargetKind == 1 ? 100 : fd <= 14 ? 60 - fd : int.MinValue;
+                        score = h.State == Wtw.Sim.People.HerdState.Stalk && h.TargetKind == 1 ? 100 : fd <= 22 ? 60 - fd : int.MinValue;
                     }
                     if (score > bestScore) { bestScore = score; best = h; }
                 }

@@ -137,6 +137,44 @@ public static class SceneBench
         Console.WriteLine($"{file}: 칸 {cell} · 사람 {w.People.AliveCount}명 · {animals}");
     }
 
+    /// <summary>(E5b 스크린샷용) 툰드라 가장자리 장면을 흘려 보며 늑대가 불가의 사람에게 다가가다 쫓겨난 때를 찾아, 그 한 시간 전을 저장한다.</summary>
+    public static void WolfMoment(string outPath, ulong seed, int days)
+    {
+        var w = GameWorld.Create(seed, new WorldConfig { DotCount = 0 });
+        int cell = TundraEdge(w.Planet);
+        foreach (var (x, y) in PeopleSamples.SpawnSpots(w.People.Life(cell), 3))
+            w.Apply(new Intervention(0, Intervention.Kinds.SpawnFamily, new long[] { cell, x, y }));
+        w.AdvanceTo(1);
+        HuntBench.Teach(w, "coat");
+        var life = w.People.Life(cell);
+        var ring = new Queue<byte[]>();
+        long seen = w.People.Stats.FireRepelled; int litNights = 0, minD = int.MaxValue;
+        for (long t = GameTime.TicksPerHour / 2; t < days * GameTime.TicksPerDay; t += GameTime.TicksPerHour / 2)
+        {
+            w.AdvanceTo(t);
+            if (w.People.Stats.FireRepelled > seen) { File.WriteAllBytes(outPath, ring.Peek()); Console.WriteLine($"늑대가 불에 쫓겨남: {GameTime.Format(w.Now)} → {outPath}"); return; }
+            ring.Enqueue(SaveGame.ToBytes(w)); if (ring.Count > 3) ring.Dequeue();
+            // 쫓겨나는 일은 드물다(불가의 사람은 처음부터 노리지 않는다) — 밤에 불 둘레(사람 곁) 20타일 안에 늑대 무리가 와 있는 때도 받는다
+            life = w.People.Life(cell); // 사람이 다 떠났다 돌아오면 지방 계산이 새로 만들어진다
+            int lh = life.LocalHour(w.Now);
+            if (lh < 20 && lh > 3) continue;
+            if (life.Fires.Items.Any(kv => kv.Value.Lit(w.Now))) litNights++;
+            foreach (var h in life.Herds.Values)
+            {
+                if (!w.People.Fauna.Animals[h.Species].Predator || h.Owner >= 0) continue;
+                int ht = h.Tile(w.Now), hx = ht % Wtw.Sim.Provinces.HexFrame.Size, hy = ht / Wtw.Sim.Provinces.HexFrame.Size;
+                foreach (var (ft, f) in life.Fires.Items)
+                {
+                    if (!f.Lit(w.Now)) continue;
+                    int d = Math.Max(Math.Abs(ft % Wtw.Sim.Provinces.HexFrame.Size - hx), Math.Abs(ft / Wtw.Sim.Provinces.HexFrame.Size - hy));
+                    minD = Math.Min(minD, d);
+                    if (d is >= 8 and <= 20) { File.WriteAllBytes(outPath, SaveGame.ToBytes(w)); Console.WriteLine($"밤 불가 {d}타일에 늑대: {GameTime.Format(w.Now)} → {outPath}"); return; }
+                }
+            }
+        }
+        Console.WriteLine($"찾지 못함 — 불 켜진 밤 반시간 {litNights} · 늑대와 불의 가장 가까운 거리 {minD} · 산 사람 {w.People.AliveCount} · 무리 {string.Join(",", life.Herds.Values.Select(h => w.People.Fauna.Animals[h.Species].Id + h.Count))}");
+    }
+
     /// <summary>(E5 고침) 구리 광맥 곁 마을 — 구리 광맥이 드러난 지방, 불 · 토기를 아는 세 가족(CopperBench 와 같은 세계).</summary>
     private static void CopperScene(string outDir, ulong seed, List<string> index)
     {
