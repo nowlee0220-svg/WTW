@@ -372,7 +372,7 @@ public sealed class AutoPilot
             if (host.SpeedLevel != (_look == "wolf" ? 5 : 3)) host.SetSpeed(_look == "wolf" ? 5 : 3);
             return false;
         }
-        bool cardLook = _look is "experiment" or "teach" or "study" or "paintact";
+        bool cardLook = _look is "experiment" or "teach" or "study" or "paintact" or "hunt";
         for (int i = 0; i < snap.PeopleCount; i++)
         {
             var v = snap.People[i];
@@ -412,6 +412,7 @@ public sealed class AutoPilot
         "teach" => v.Teaching,
         "study" => v.Studying,
         "paintact" => v.Painting,
+        "hunt" => v.Act is Wtw.Sim.People.Act.Hunt or Wtw.Sim.People.Act.Butcher,
         _ => false,
     };
 
