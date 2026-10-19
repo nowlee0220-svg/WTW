@@ -16,7 +16,6 @@ public sealed partial class PeopleSim
     public LanguageData Lang { get; } = LanguageData.Default;
     public readonly SortedDictionary<int, Language> Languages = new();
     public int NextLanguageId { get; internal set; } = 1;
-    private readonly Dictionary<(int, int, ulong, int, int), string> _wordCache = new();
 
     public const int TalksToLearnSpeech = 4;
 
@@ -43,11 +42,12 @@ public sealed partial class PeopleSim
     {
         if (!Languages.TryGetValue(p.LangId, out var lang) || (uint)concept >= Lang.Concepts.Count) return "…";
         var key = (p.LangId, lang.Version, AccentHash(p.Accent), concept, minSyllables);
-        if (!_wordCache.TryGetValue(key, out var w))
+        var cache = L.WordCache;
+        if (!cache.TryGetValue(key, out var w))
         {
-            if (_wordCache.Count > 50_000) _wordCache.Clear();
+            if (cache.Count > 50_000) cache.Clear();
             w = Words.Word(lang, p.Accent, Lang.Concepts[concept], Lang, minSyllables);
-            _wordCache[key] = w;
+            cache[key] = w;
         }
         return w;
     }
@@ -69,7 +69,8 @@ public sealed partial class PeopleSim
     public int Speakers(int langId, int cell = -1)
     {
         int n = 0;
-        foreach (var p in _all) if (!p.Dead && p.LangId == langId && (cell < 0 || p.Cell == cell)) n++;
+        if (cell >= 0) { foreach (var p in PeopleIn(cell)) if (!p.Dead && p.LangId == langId) n++; return n; } // (S1) 그 지방 사람만(같은 수)
+        foreach (var p in _all) if (!p.Dead && p.LangId == langId) n++;
         return n;
     }
 

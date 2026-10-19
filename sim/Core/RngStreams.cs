@@ -9,7 +9,8 @@ public sealed class RngStreams
     public const int GlobalProvince = -1;
 
     private readonly ulong _worldSeed;
-    private readonly Dictionary<(string Name, int Province), Pcg32> _streams = new();
+    // (S1) 지방마다 CPU: 여러 지방이 함께 처음 스트림을 만들 수 있다 — 만드는 값은 (세계 시드, 이름, 지방)으로만 정해져 순서와 상관없다.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(string Name, int Province), Pcg32> _streams = new();
 
     public RngStreams(ulong worldSeed) { _worldSeed = worldSeed; }
 
@@ -18,12 +19,8 @@ public sealed class RngStreams
 
     public Pcg32 Get(string name, int province = GlobalProvince)
     {
-        if (!_streams.TryGetValue((name, province), out var rng))
-        {
-            rng = Create(_worldSeed, name, province);
-            _streams.Add((name, province), rng);
-        }
-        return rng;
+        if (_streams.TryGetValue((name, province), out var rng)) return rng;
+        return _streams.GetOrAdd((name, province), k => Create(_worldSeed, k.Name, k.Province));
     }
 
     public static Pcg32 Create(ulong worldSeed, string name, int province)

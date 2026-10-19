@@ -103,6 +103,12 @@ public sealed class ProvinceLife
     public int Range10 { get; }
 
     public readonly PathFinder Paths;
+    /// <summary>(S1) 이 지방 사람들의 예약표(지방마다 따로 — 지방마다 CPU 를 따로 쓸 수 있게). 저장한다.</summary>
+    public readonly Scheduling.Scheduler Sched = new();
+    /// <summary>(S1) 지방 계산 중에 생긴, 맞추는 시각에 세계에 적용할 일(차례대로). 저장한다.</summary>
+    public readonly List<PendingOp> Ops = new();
+    /// <summary>(S1) 경계에 닿아 넘겨주기를 기다리는 사람(번호). 저장한다.</summary>
+    public readonly List<int> CrossQueue = new();
     /// <summary>(S1) 이 지방의 ("people", 칸) 난수 스트림(RngStreams 의 같은 것 — 처음 쓸 때 채운다).</summary>
     internal Core.Pcg32? PeopleRng;
 

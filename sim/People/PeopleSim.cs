@@ -84,8 +84,21 @@ public sealed partial class PeopleSim
     public readonly List<WorldEvent> Events = new();
     public long NextEventSeq { get; internal set; } = 1;
     public const int EventsKept = 200;
+    /// <summary>측정 셈(세계 전체). 지방 계산 중의 셈은 레인에 모았다가 지방 계산이 끝나면 여기에 더한다.</summary>
     public PeopleStats Stats { get; } = new();
-    private readonly List<(int X, int Y)> _path = new();
+
+    // ───────── (S1) 레인: 지방마다 CPU ─────────
+
+    [ThreadStatic] private static SimLane? t_lane;
+    private readonly SimLane _serial;
+    private readonly List<SimLane> _lanes = new();
+    /// <summary>지방 계산 중인가(이 스레드가 이 세계의 지방 하나를 계산하는 중).</summary>
+    private bool InProvince { get { var l = t_lane; return l is not null && l.Sim == this; } }
+    private SimLane L { get { var l = t_lane; return l is not null && l.Sim == this ? l : _serial; } }
+    /// <summary>측정 셈(지방 계산 중이면 그 레인의 것).</summary>
+    internal PeopleStats St { get { var l = t_lane; return l is not null && l.Sim == this ? l.Stats : Stats; } }
+    /// <summary>맞추는 시각에 미뤄 둔 일을 적용하는 동안의 시각(−1 = 세계 시각).</summary>
+    private long _opTick = -1;
 
     // 자주 쓰는 번호
     private readonly int T_industrious, T_lazy, T_tough, T_frail, T_handy, T_clumsy, T_curious, T_stubborn, T_eloquent, T_blunt, T_brave, T_coward,
@@ -97,6 +110,7 @@ public sealed partial class PeopleSim
     public PeopleSim(GameWorld w, PeopleData data)
     {
         _w = w; Data = data;
+        _serial = new SimLane(this, serial: true) { Stats = Stats };
         int T(string id) => data.TraitIndex(id);
         int H(string id) => data.ThoughtIndex(id);
         T_industrious = T("industrious"); T_lazy = T("lazy"); T_tough = T("tough"); T_frail = T("frail"); T_handy = T("handy"); T_clumsy = T("clumsy");
@@ -117,14 +131,29 @@ public sealed partial class PeopleSim
 
     public IReadOnlyList<Person> All => _all;
     public Person? Get(int id) => _byId.TryGetValue(id, out var p) ? p : null;
+    /// <summary>(S1) 같은 지방에 있는 그 사람(다른 지방이면 null) — 지방 계산 중에는 다른 지방 사람을 보지 않는다.</summary>
+    private Person? Here(int id, Person p) => _byId.TryGetValue(id, out var q) && q.Cell == p.Cell ? q : null;
     public int AliveCount { get; private set; }
-    private long Now => _w.Now;
-
-    private ProvinceLife? _lastLife;
+    private long Now
+    {
+        get
+        {
+            var l = t_lane;
+            if (l is not null && l.Sim == this) return l.Now;
+            return _opTick >= 0 ? _opTick : _w.Now;
+        }
+    }
 
     public ProvinceLife Life(int cell)
     {
-        if (_lastLife is not null && _lastLife.Cell == cell) return _lastLife;
+        var lane = L;
+        if (lane.LastLife is { } last && last.Cell == cell) return last;
+        if (!lane.Serial)
+        {
+            // (S1) 지방 계산 중에는 그 지방만 만진다(다른 지방을 읽거나 새로 만들면 CPU 수에 따라 결과가 달라진다)
+            if (cell != lane.Life!.Cell) throw new InvalidOperationException($"지방 {lane.Life.Cell} 계산 중에 다른 지방 {cell} 을 만졌다");
+            return lane.LastLife = lane.Life;
+        }
         if (!Provinces.TryGetValue(cell, out var life))
         {
             life = new ProvinceLife(_w.Planet, _w.Province(cell), Data);
@@ -138,16 +167,21 @@ public sealed partial class PeopleSim
                 foreach (var (t, item, n) in d.Ground) life.Drop(t, item, n);
                 life.RestoreDug(d.Dug);
                 life.People.AddRange(d.People);
+                life.Sched.Import(d.Events, d.SchedHandle, d.SchedOrder);
                 Stats.Wakes++;
             }
         }
-        return _lastLife = life;
+        return lane.LastLife = life;
     }
+
+    /// <summary>지방 목록이 바뀌었다(깨어남 · 잠듦) — 레인의 "마지막 지방" 기억을 지운다.</summary>
+    private void ForgetLastLife() { _serial.LastLife = null; foreach (var l in _lanes) l.LastLife = null; }
 
     /// <summary>("people", 지방) 스트림. (S1) 깨어 있는 지방은 처음 쓸 때 지방에 기억해 둔다(같은 스트림 — 사전 찾기만 줄인다).</summary>
     internal Pcg32 Rng(int cell)
     {
-        var life = _lastLife is { } l && l.Cell == cell ? l : Provinces.GetValueOrDefault(cell);
+        var lane = L;
+        var life = lane.LastLife is { } l && l.Cell == cell ? l : !lane.Serial ? Life(cell) : Provinces.GetValueOrDefault(cell);
         if (life is not null) return life.PeopleRng ??= _w.Rng.Get(Stream, cell);
         return _w.Rng.Get(Stream, cell);
     }
@@ -228,14 +262,13 @@ public sealed partial class PeopleSim
         if (p.IllUntil > Now) into.Add(H_sick);
     }
 
-    private readonly List<int> _tmpThoughts = new();
-
     public int Mood(Person p)
     {
         int m = MoodBase(p);
-        _tmpThoughts.Clear();
-        StateThoughts(p, _tmpThoughts);
-        foreach (int t in _tmpThoughts) m += Data.Thoughts[t].Mood;
+        var tmp = L.TmpThoughts;
+        tmp.Clear();
+        StateThoughts(p, tmp);
+        foreach (int t in tmp) m += Data.Thoughts[t].Mood;
         int sad = 0;
         foreach (var (def, count) in ActiveThoughtCounts(p))
         {
@@ -272,10 +305,19 @@ public sealed partial class PeopleSim
 
     // ───────── 기록 · 알림 ─────────
 
-    private void AddBio(Person p, BioKind kind, int other = -1, int param = 0) => p.Bio.Add(new BioEntry { Tick = Now, Kind = kind, Other = other, Param = param });
+    private void AddBio(Person p, BioKind kind, int other = -1, int param = 0)
+    {
+        // (S1) 맞추는 시각에 미뤄 둔 일을 적용할 때는 그때의 시각으로 — 기록은 늘 시각 순(뒤에서 자리를 찾는다)
+        long now = Now;
+        var e = new BioEntry { Tick = now, Kind = kind, Other = other, Param = param };
+        int i = p.Bio.Count;
+        while (i > 0 && p.Bio[i - 1].Tick > now) i--;
+        if (i == p.Bio.Count) p.Bio.Add(e); else p.Bio.Insert(i, e);
+    }
 
     private void Notify(WorldEventKind kind, Person p, int other, string text)
     {
+        if (InProvince) { Defer(new PendingOp { Kind = PendingOp.Kinds.Notify, A = (int)kind, B = p.Id, C = other, D = p.Cell, S = text }); return; }
         Events.Add(new WorldEvent(NextEventSeq++, Now, kind, p.Id, other, p.Cell, text));
         if (Events.Count > EventsKept) Events.RemoveRange(0, Events.Count - EventsKept);
     }
@@ -284,15 +326,17 @@ public sealed partial class PeopleSim
 
     // ───────── 예약 ─────────
 
+    // (S1) 예약은 지방마다(ProvinceLife.Sched) — 사람은 늘 자기 지방의 예약표에 있다(넘겨줄 때는 예약이 없다).
     private void Schedule(Person p, long tick)
     {
-        if (p.PendingHandle != 0) _w.Scheduler.Cancel(p.PendingHandle);
-        p.PendingHandle = _w.Scheduler.Schedule(Math.Max(tick, Now + 1), p.Id, EventKinds.Person);
+        var sched = Life(p.Cell).Sched;
+        if (p.PendingHandle != 0) sched.Cancel(p.PendingHandle);
+        p.PendingHandle = sched.Schedule(Math.Max(tick, Now + 1), p.Id, EventKinds.Person);
     }
 
     private void Unschedule(Person p)
     {
-        if (p.PendingHandle != 0) _w.Scheduler.Cancel(p.PendingHandle);
+        if (p.PendingHandle != 0) Life(p.Cell).Sched.Cancel(p.PendingHandle);
         p.PendingHandle = 0;
     }
 
@@ -302,7 +346,7 @@ public sealed partial class PeopleSim
         var p = _byId[id];
         p.PendingHandle = 0;
         if (p.Dead) return;
-        Stats.Events++;
+        St.Events++;
         Integrate(p, Now);
         if (CheckDeath(p)) return;
         if (p.Walking) { p.Walking = false; Arrive(p); }

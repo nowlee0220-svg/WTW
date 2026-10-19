@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Wtw.Sim.Planet;
 using Wtw.Sim.Provinces;
 using Wtw.Sim.Time;
@@ -79,9 +80,9 @@ public sealed partial class PeopleSim
     /// <summary>넘겨주기 간격: 6분(게임 시간). 하루 경계는 걷는 사람을 너무 오래 세워 두므로 더 짧게.</summary>
     public const long CrossInterval = GameTime.TicksPerHour / 10;
 
-    private readonly List<int> _crossQueue = new();
-    private long _crossAt = long.MaxValue;
-    private readonly Dictionary<int, Border?> _borders = new(); // 조회 전용(순회하지 않음)
+    /// <summary>변 기억(조회 전용 — 순회하지 않음). (S1) 지방 계산 중 여러 CPU 가 함께 읽고 처음 만들 때만 잠근다(만든 것은 누가 만들어도 같다).</summary>
+    private readonly ConcurrentDictionary<int, Border?> _borders = new();
+    private readonly object _borderBuild = new();
 
     /// <summary>잠든 지방(사람이 모두 떠남): 바뀐 것만.</summary>
     public readonly SortedDictionary<int, DormantProvince> Dormant = new();
@@ -90,11 +91,20 @@ public sealed partial class PeopleSim
     public readonly List<Crossing> Crossings = new();
     public const int CrossingsKept = 400;
 
-    /// <summary>다음 넘겨주기 시각(없으면 long.MaxValue).</summary>
-    public long CrossTick => _crossQueue.Count > 0 ? _crossAt : long.MaxValue;
+    /// <summary>(S1) 넘겨주기를 기다리는 사람(모든 지방, 번호 순)과 그 시각(없으면 long.MaxValue).</summary>
+    internal (int[] Ids, long At) CrossQueueForSave()
+    {
+        var ids = new List<int>();
+        foreach (var (_, life) in Provinces) ids.AddRange(life.CrossQueue);
+        ids.Sort();
+        return (ids.ToArray(), ids.Count > 0 ? NextCrossTick(_w.Now) : long.MaxValue);
+    }
 
-    internal (int[] Ids, long At) CrossQueueForSave() => (_crossQueue.ToArray(), _crossQueue.Count > 0 ? _crossAt : long.MaxValue);
-    internal void LoadCrossQueue(int[] ids, long at) { _crossQueue.Clear(); _crossQueue.AddRange(ids); _crossAt = ids.Length > 0 ? at : long.MaxValue; }
+    /// <summary>불러오기: 넘겨주기 대기를 그 사람의 지방에 둔다(시각은 늘 다음 맞추는 시각이다).</summary>
+    internal void LoadCrossQueue(int[] ids, long at)
+    {
+        foreach (int id in ids) if (_byId.TryGetValue(id, out var p)) Life(p.Cell).CrossQueue.Add(id);
+    }
 
     public static long NextCrossTick(long t) => (t + CrossInterval - 1) / CrossInterval * CrossInterval;
 
@@ -104,9 +114,13 @@ public sealed partial class PeopleSim
     {
         int key = cell * 6 + slot;
         if (_borders.TryGetValue(key, out var b)) return b;
-        b = BuildBorder(cell, slot);
-        _borders[key] = b;
-        return b;
+        lock (_borderBuild)
+        {
+            if (_borders.TryGetValue(key, out b)) return b;
+            b = BuildBorder(cell, slot);
+            _borders[key] = b;
+            return b;
+        }
     }
 
     private Border? BuildBorder(int cell, int slot)
@@ -228,22 +242,21 @@ public sealed partial class PeopleSim
         return true;
     }
 
-    /// <summary>경계 타일에 닿았다: 넘겨주기를 기다린다(이 시각의 예약을 다 처리한 뒤).</summary>
+    /// <summary>경계 타일에 닿았다: 넘겨주기를 기다린다(다음 맞추는 시각에 — 그 시각의 예약을 다 처리한 뒤).</summary>
     private void ArriveAtBorder(Person p)
     {
-        _crossQueue.Add(p.Id);
-        long t = NextCrossTick(Now);
-        if (_crossQueue.Count == 1 || t < _crossAt) _crossAt = t;
+        Life(p.Cell).CrossQueue.Add(p.Id);
         p.Walking = false;
     }
 
-    /// <summary>넘겨주기(GameWorld 가 그 시각의 예약을 다 처리한 뒤 부른다).</summary>
+    /// <summary>넘겨주기(맞추는 시각에 GameWorld 가 — 모든 지방의 대기를 사람 번호 순으로).</summary>
     internal void DoCrossings()
     {
-        var ids = _crossQueue.ToArray();
-        _crossQueue.Clear();
-        Stats.CrossBatches++;
-        _crossAt = long.MaxValue;
+        List<int>? queue = null;
+        foreach (var (_, life) in Provinces) { if (life.CrossQueue.Count == 0) continue; (queue ??= new()).AddRange(life.CrossQueue); life.CrossQueue.Clear(); }
+        if (queue is null) return;
+        var ids = queue.ToArray();
+        St.CrossBatches++;
         Array.Sort(ids);
         foreach (int id in ids)
         {
@@ -276,13 +289,13 @@ public sealed partial class PeopleSim
             q.NewMotion().SetStill(Now, entry % S * 1000 + 500, entry / S * 1000 + 500);
         }
         p.SearchDir = b.InDir8;
-        Stats.Crossings++;
+        St.Crossings++;
         if (p.Why is Why.Scarce or Why.SeekMate or Why.Explore or Why.NoWater or Why.NoFood or Why.FollowFamily or Why.Break || !VisitedBefore(p, b.Nb))
             AddBio(p, BioKind.Moved, b.Nb, (int)p.Why | (from.Cell << 8));
         if (fresh) Notify(WorldEventKind.Moved, p, from.Cell, $"{Hangul.I(DisplayName(p))} 아무도 살지 않던 새 땅으로 들어갔습니다");
         Crossings.Add(new Crossing(Now, p.Id, from.Cell, b.Nb, b.Slot, fromTile, entry, p.Why));
         if (Crossings.Count > CrossingsKept) Crossings.RemoveRange(0, Crossings.Count - CrossingsKept);
-        _lastLife = null;
+        ForgetLastLife();
         Decide(p);
     }
 
@@ -344,9 +357,11 @@ public sealed partial class PeopleSim
                 Fires = life.Fires.Select(kv => (kv.Key, kv.Value)).ToArray(),
                 Ground = life.Items.SelectMany(kv => kv.Value.Select(c => (kv.Key, c.Item, c.Count))).ToArray(),
                 Dug = life.Dug.ToArray(),
+                // (S1) 예약 번호는 지방마다 이어진다(잠들었다 깨어나도 — 잠든 상태가 결과에 영향이 없게)
+                SchedHandle = life.Sched.NextHandle, SchedOrder = life.Sched.NextOrder, Events = life.Sched.ExportSorted(),
             };
         }
-        _lastLife = null;
+        ForgetLastLife();
     }
 
     /// <summary>한 번이라도 사람이 들어간 지방(깨어 있거나 잠든).</summary>
@@ -366,12 +381,15 @@ public sealed partial class PeopleSim
         Provinces.TryGetValue(cell, out var l) ? l.People : Dormant.TryGetValue(cell, out var d) ? d.People : Array.Empty<Person>();
 }
 
-/// <summary>잠든 지방: 딴 몫(타일 번호 순) · 걷힌 숨김 · 그곳의 (죽은) 사람 · (E4) 불 · 땅에 놓인 물건 · 캐낸 바위.</summary>
+/// <summary>잠든 지방: 딴 몫(타일 번호 순) · 걷힌 숨김 · 그곳의 (죽은) 사람 · (E4) 불 · 땅에 놓인 물건 · 캐낸 바위 · (S1) 예약표의 다음 번호(와 불러온 예약).</summary>
 public sealed record DormantProvince(int Cell, (int Tile, TileStock Stock)[] Stocks, int[] Revealed, List<Person> People)
 {
     public (int Tile, Fire Fire)[] Fires { get; init; } = Array.Empty<(int, Fire)>();
     public (int Tile, int Item, int Count)[] Ground { get; init; } = Array.Empty<(int, int, int)>();
     public int[] Dug { get; init; } = Array.Empty<int>();
+    public long SchedHandle { get; init; } = 1;
+    public long SchedOrder { get; init; } = 1;
+    public Scheduling.ScheduledEvent[] Events { get; init; } = Array.Empty<Scheduling.ScheduledEvent>();
 }
 
 /// <summary>경계를 넘은 일 하나(화면 · 지구본의 이동 표시).</summary>

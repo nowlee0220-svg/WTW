@@ -91,7 +91,7 @@ public sealed partial class PeopleSim
             int gi = NearestGate(far.B, life, here, far.B.SightX[far.K], far.B.SightY[far.K]);
             if (gi >= 0 && StartCross(p, far.B, gi, why, arg))
             {
-                Stats.FindHow[0]++; p.How = 0; p.HowArg = Person.Place(far.B.Nb, far.B.SightTile[far.K]); p.SearchMiss = 0;
+                St.FindHow[0]++; p.How = 0; p.HowArg = Person.Place(far.B.Nb, far.B.SightTile[far.K]); p.SearchMiss = 0;
                 return true;
             }
         }
@@ -106,7 +106,7 @@ public sealed partial class PeopleSim
             if (q.Act == Act.Cross) return FollowAcross(p, q, why, arg);
             tile = q.Target; how = 2; howArg = q.Id; Teach(p, tile, true);
         }
-        if (tile >= 0 && WalkTo(p, tile)) { Stats.FindHow[how]++; SetWhy(p, Act.Drink, why, arg); p.How = how; p.HowArg = howArg; p.Target = tile; p.SearchMiss = 0; return true; }
+        if (tile >= 0 && WalkTo(p, tile)) { St.FindHow[how]++; SetWhy(p, Act.Drink, why, arg); p.How = how; p.HowArg = howArg; p.Target = tile; p.SearchMiss = 0; return true; }
         // 4) 찾아다님(낮은 곳으로 — 이웃 지방도)
         return Search(p, Act.Drink, why, arg, water: true);
     }
@@ -132,10 +132,11 @@ public sealed partial class PeopleSim
                 if (b.Dead && !b.Eaten && b.Id != p.Id) { long d = ProvinceLife.D2(b.Tile(Now), hx, hy); if (d < bd && d < 40 * 40) { bd = d; best = b; } }
             if (best is not null && WalkTo(p, best.Tile(Now))) { SetWhy(p, Act.EatCorpse, Why.Starving); p.Target = best.Id; return true; }
         }
-        _claims.Clear();
+        var claims = L.Claims;
+        claims.Clear();
         foreach (var o in life.People)
-            if (o.Act == Act.Eat && o.Walking && !o.Dead && o.Id != p.Id && o.How != 3) _claims[o.Target] = _claims.GetValueOrDefault(o.Target) + Math.Max(1, o.TargetB);
-        life.Claims = _claims;
+            if (o.Act == Act.Eat && o.Walking && !o.Dead && o.Id != p.Id && o.How != 3) claims[o.Target] = claims.GetValueOrDefault(o.Target) + Math.Max(1, o.TargetB);
+        life.Claims = claims;
         int arg = p.Food / 1000;
         byte how = 0; int howArg = -1;
         // 1) 보임
@@ -143,7 +144,7 @@ public sealed partial class PeopleSim
         // 2) 기억(남은 몫이 있는 곳 — 가 보니 없으면 잊는다)
         if (tile < 0)
         {
-            tile = NearestKnown(p.KnownFood, p.Cell, here, life, t => t != skipTile && life.StockAt(t, Now) > (_claims.TryGetValue(t, out int c) ? c : 0));
+            tile = NearestKnown(p.KnownFood, p.Cell, here, life, t => t != skipTile && life.StockAt(t, Now) > (claims.TryGetValue(t, out int c) ? c : 0));
             if (tile >= 0) how = 1;
         }
         life.Claims = null;
@@ -158,7 +159,7 @@ public sealed partial class PeopleSim
         }
         if (tile >= 0 && WalkTo(p, tile))
         {
-            Stats.FindHow[how]++;
+            St.FindHow[how]++;
             SetWhy(p, Act.Eat, why, arg);
             p.How = how; p.HowArg = howArg;
             p.Target = tile;
@@ -210,7 +211,7 @@ public sealed partial class PeopleSim
             if (d < bd) { bd = d; bestB = b; bestGate = gi; bestPlace = place; }
         }
         if (bestB is null || !StartCross(p, bestB, bestGate, why, arg)) return false;
-        Stats.FindHow[1]++; p.How = 1; p.HowArg = bestPlace; p.SearchMiss = 0;
+        St.FindHow[1]++; p.How = 1; p.HowArg = bestPlace; p.SearchMiss = 0;
         return true;
     }
 
@@ -220,7 +221,7 @@ public sealed partial class PeopleSim
         var b = BorderOf(q.Cell, q.TargetB);
         int gi = b is null ? -1 : Array.BinarySearch(b.Gates, q.Target);
         if (b is null || gi < 0 || !StartCross(p, b, gi, why, arg)) return false;
-        Stats.FindHow[2]++; p.How = 2; p.HowArg = q.Id;
+        St.FindHow[2]++; p.How = 2; p.HowArg = q.Id;
         return true;
     }
 
@@ -298,13 +299,13 @@ public sealed partial class PeopleSim
         {
             if (!StartCross(p, crossB, crossGate, why, arg)) return false;
             p.SearchDir = bestDir;
-            Stats.FindHow[3]++;
+            St.FindHow[3]++;
             p.How = 3; p.HowArg = -1;
             return true;
         }
         if (bestTile < 0 || !WalkTo(p, bestTile)) return false;
         p.SearchDir = bestDir;
-        Stats.FindHow[3]++;
+        St.FindHow[3]++;
         SetWhy(p, act, why, arg);
         p.How = 3; p.HowArg = -1;
         p.Target = bestTile;

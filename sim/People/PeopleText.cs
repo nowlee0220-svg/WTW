@@ -373,10 +373,10 @@ public sealed partial class PeopleSim
         if (p.Dead) c.Body.Add($"{PeopleText.Date(p.DeathTick)}에 죽음 — {PeopleText.CauseName(p.Cause)}{(p.Eaten ? " (시신이 먹혔다)" : "")}");
         if (!p.Dead)
         {
-            _tmpThoughts.Clear();
-            StateThoughts(p, _tmpThoughts);
+            var tmp = new List<int>();
+            StateThoughts(p, tmp);
             c.Thoughts.Add(("기본", MoodBase(p), p.HasTrait(T_optimist) ? "낙천적 +8" : p.HasTrait(T_pessimist) ? "비관적 −8" : ""));
-            foreach (int t in _tmpThoughts) c.Thoughts.Add((Data.Thoughts[t].Name, Data.Thoughts[t].Mood, "지금 상태"));
+            foreach (int t in tmp) c.Thoughts.Add((Data.Thoughts[t].Name, Data.Thoughts[t].Mood, "지금 상태"));
             foreach (var (def, count) in ActiveThoughtCounts(p))
             {
                 long until = 0; int other = -1;

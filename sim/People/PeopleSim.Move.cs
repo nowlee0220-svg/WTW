@@ -95,7 +95,7 @@ public sealed partial class PeopleSim
         int gi = NearestGate(b, life, here, here % S * 1000 + 500, here / S * 1000 + 500);
         if (gi < 0 || !StartCross(p, b, gi, why)) return false;
         p.LastMove = Now;
-        Stats.MoveWhy[(int)why]++;
+        St.MoveWhy[(int)why]++;
         if (why == Why.Scarce)
         {
             p.Scarcity = 0;
@@ -117,7 +117,7 @@ public sealed partial class PeopleSim
     /// <summary>이야기 중인 사람을 데려간다: 상대는 혼자 남는다.</summary>
     private void EndTalkEarly(Person g)
     {
-        if (Get(g.Target) is { } q && q.Target == g.Id && q.Act is Act.Talk or Act.BreakArgue && !q.Dead)
+        if (Here(g.Target, g) is { } q && q.Target == g.Id && q.Act is Act.Talk or Act.BreakArgue && !q.Dead)
         {
             Integrate(q, Now);
             q.TargetB = -1;
