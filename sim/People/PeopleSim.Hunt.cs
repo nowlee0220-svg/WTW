@@ -118,7 +118,11 @@ public sealed partial class PeopleSim
             int d = Cheb(ht, here);
             if (d > 70 || !life.Paths.Reachable(here, ht)) continue; // 보이는 곳(30타일) 너머도 발자국 · 똥을 따라 찾아간다
             var a = Fauna.Animals[h.Species];
-            if (a.Size >= 2 && avail < 0) { HuntHelpers(p, L.Hunters, 4); avail = L.Hunters.Count; }
+            if (a.Size >= 2 && avail < 0)
+            {
+                if (HuntChance(p, a, 4, weapon) < min) continue; // 넷이 함께여도 어렵다 — 함께할 사람을 셀 것도 없다(결과는 같다)
+                HuntHelpers(p, L.Hunters, 4); avail = L.Hunters.Count;
+            }
             int chance = HuntChance(p, a, a.Size >= 2 ? Math.Max(0, avail) : 0, weapon);
             if (chance < min) continue;
             int hide = 0; foreach (var (it, n) in a.Yields) if (it != I_rawMeat) hide += n;
@@ -216,6 +220,7 @@ public sealed partial class PeopleSim
     private void HuntGiveUp(Person p, Herd? h)
     {
         St.HuntsLost++;
+        p.LastHunt = Now + 6 * GameTime.TicksPerHour; // 놓쳤다 — 한동안은 다시 나서지 않는다(지쳐서)
         AddThought(p, H_huntFailed);
         if (h is not null && Fauna.Animals[h.Species].Size >= 2) AddWish(p, W_hunting, 10);
         ReleaseHunters(p);
@@ -267,6 +272,7 @@ public sealed partial class PeopleSim
         if (!success)
         {
             St.HuntsLost++;
+            p.LastHunt = Now + 6 * GameTime.TicksPerHour;
             AddThought(p, H_huntFailed);
             if (a.Size >= 2) { AddWish(p, W_hunting, 25); if (a.Size >= 2) AddBio(p, BioKind.HuntFailed, h.Species, helpers.Count); }
             else AddWish(p, W_hunting, 8);
@@ -286,8 +292,15 @@ public sealed partial class PeopleSim
         AddBio(p, BioKind.Hunted, h.Species, helpers.Count);
         foreach (var q in helpers) AddThought(q, H_hunted);
         p.Wish[W_hunting] = Math.Max(0, p.Wish[W_hunting] - 20);
-        if (InProvince) Defer(new PendingOp { Kind = PendingOp.Kinds.Hunt, A = p.Id, B = h.Species, C = helpers.Count });
+        if (InProvince) Defer(new PendingOp { Kind = PendingOp.Kinds.Hunt, A = p.Id, B = h.Species, C = helpers.Count, D = -1 });
         else HuntWorld(p, h.Species, helpers.Count);
+        // 함께 잡은 사람(다른 말을 쓰면): 그 짐승의 낱말을 이끈 사람의 말에서 빌려 온다
+        foreach (var q in helpers)
+        {
+            if (q.LangId == p.LangId) continue;
+            if (InProvince) Defer(new PendingOp { Kind = PendingOp.Kinds.Hunt, A = q.Id, B = h.Species, C = -1, D = p.Id });
+            else NewWordConcept(q, Fauna.Animals[h.Species].Id, p.Id);
+        }
         // 어미를 잃은 새끼가 곁에 남는다(길들이기의 첫걸음)
         if (tameChance) MakeCompanion(life, p, h.Species, ht);
         // 그 자리에서 손질

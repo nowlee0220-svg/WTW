@@ -9,10 +9,10 @@
     "fish: 물고기는 하나하나 움직이지 않는다 — 지방의 민물(강 · 호수 · 늪)에 '몫'으로 있고(행성의 '물고기' 자원으로 정해짐) 잡으면 줄고 다시 는다."
   ],
   "animals": [
-    { "id": "rabbit",   "name": "토끼",   "size": 1, "walk": 22, "run": 7,  "group": [2, 6],  "fear": 7,  "fierce": 0, "capacity": 22, "growth": 2.0,
+    { "id": "rabbit",   "name": "토끼",   "size": 1, "walk": 22, "run": 7,  "group": [4, 10], "fear": 7,  "fierce": 0, "capacity": 50, "growth": 2.0,
       "biomes": { "Grassland": 1.0, "Temperate": 0.9, "Boreal": 0.7, "Tundra": 0.6, "Savanna": 0.5, "Desert": 0.3, "Wetland": 0.4, "Alpine": 0.3 },
       "yields": { "raw_meat": 1, "raw_hide": 1, "bone": 1 }, "art": "rabbit" },
-    { "id": "grouse",   "name": "들새",   "size": 1, "walk": 26, "run": 5,  "group": [3, 8],  "fear": 6,  "fierce": 0, "capacity": 18, "growth": 1.6, "flies": true,
+    { "id": "grouse",   "name": "들새",   "size": 1, "walk": 26, "run": 5,  "group": [6, 14], "fear": 6,  "fierce": 0, "capacity": 45, "growth": 1.6, "flies": true,
       "biomes": { "Temperate": 1.0, "Boreal": 1.0, "Wetland": 1.0, "Grassland": 0.7, "Rainforest": 0.8, "Savanna": 0.6, "Tundra": 0.6, "Alpine": 0.4 },
       "yields": { "raw_meat": 1, "bone": 1 }, "art": "bird" },
     { "id": "deer",     "name": "사슴",   "size": 2, "walk": 18, "run": 6,  "group": [3, 8],  "fear": 14, "fierce": 1, "capacity": 26, "growth": 0.45,

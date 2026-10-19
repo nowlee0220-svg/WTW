@@ -68,6 +68,12 @@ public sealed class WorldSnapshot
     // ── (E5) 지식 ──
     /// <summary>남아 있는 그림(칸 → 그림들). 바뀔 때만 새 사전.</summary>
     public Dictionary<int, PaintingView[]> Paintings = new();
+    // ── (E5b) 짐승 ──
+    /// <summary>깨어 있는 지방의 짐승 무리(칸 → 무리들, 번호 순). 무리 수가 같으면 같은 배열을 다시 채운다.</summary>
+    public Dictionary<int, AnimalView[]> Animals = new();
+    /// <summary>깨어 있는 지방마다 종별로 살 수 있는 마릿수 · 물고기 몫 · 물고기 한도.</summary>
+    public Dictionary<int, (int[] Caps, int Fish, int FishCap)> AnimalLand = new();
+
     public PaintingView? PaintingById(int id) { foreach (var (_, l) in Paintings) foreach (var g in l) if (g.Id == id) return g; return null; }
 
     /// <summary>"타레(빠른 물)" — 이름이 없으면 null.</summary>
@@ -201,6 +207,7 @@ public sealed class WorldSnapshot
         }
         CellLanguages = cl.ToArray();
         FillCraft(w);
+        FillAnimals(w);
         long sig = live.Count;
         foreach (var (id, n) in live) if (ps.Languages.TryGetValue(id, out var l)) sig = sig * 1_000_003 + id * 7919 + l.Version * 31 + n;
         if (sig != _langSig)
@@ -219,6 +226,27 @@ public sealed class WorldSnapshot
                 arr.Add(new LanguageView(id, l.Parent, ps.RootLanguage(id), depth, n, copy, ps.LanguageLabel(id)));
             }
             Languages = arr.ToArray();
+        }
+    }
+
+    private void FillAnimals(GameWorld w)
+    {
+        var ps = w.People;
+        List<int>? gone = null;
+        foreach (var (cell, _) in Animals) if (!ps.Provinces.ContainsKey(cell)) (gone ??= new()).Add(cell);
+        if (gone is not null) foreach (int c in gone) { Animals.Remove(c); AnimalLand.Remove(c); }
+        foreach (var (cell, life) in ps.Provinces)
+        {
+            int n = life.Herds.Count;
+            if (!Animals.TryGetValue(cell, out var arr) || arr.Length != n)
+            {
+                var na = new AnimalView[n];
+                for (int i = 0; i < n; i++) na[i] = arr is not null && i < arr.Length ? arr[i] : new AnimalView();
+                Animals[cell] = arr = na;
+            }
+            int k = 0;
+            foreach (var (_, h) in life.Herds) arr[k++].Fill(h);
+            if (!AnimalLand.TryGetValue(cell, out var land) || land.Caps != life.AnimalCap || land.Fish != life.FishStock) AnimalLand[cell] = (life.AnimalCap, life.FishStock, life.FishCap);
         }
     }
 
@@ -373,6 +401,28 @@ public sealed record LanguageView(int Id, int Parent, int Root, int Depth, int S
     }
 }
 
+/// <summary>(E5b) 짐승 무리 하나(화면용 사본): 번호 · 종 · 마릿수 · 하는 일 · 노리는 것 · 따르는 사람 · 친해진 정도 · 움직임(지금 · 바로 전).</summary>
+public sealed class AnimalView
+{
+    public int Id, Species, Count, Target = -1, Owner = -1, Bond;
+    public byte TargetKind;
+    public HerdState State;
+    public readonly Motion Motion = new(), Prev = new();
+
+    internal void Fill(Herd h)
+    {
+        Id = h.Id; Species = h.Species; Count = h.Count; Target = h.Target; TargetKind = h.TargetKind; Owner = h.Owner; Bond = h.Bond; State = h.State;
+        Motion.CopyFrom(h.Motion); Prev.CopyFrom(h.Prev);
+    }
+
+    /// <summary>tick 시점 위치(밀리타일)와 걷는 방향.</summary>
+    public void PositionAt(double tick, out double x, out double y, out double dx, out double dy)
+    {
+        if (Motion.Depart <= tick || Prev.Count == 0) Motion.PositionAt(tick, out x, out y, out dx, out dy);
+        else Prev.PositionAt(tick, out x, out y, out dx, out dy);
+    }
+}
+
 /// <summary>화면이 사람 하나를 그리는 데 필요한 것(사본).</summary>
 public sealed class PersonView
 {
@@ -385,6 +435,9 @@ public sealed class PersonView
     public bool Ember, Working;
     /// <summary>(E5) 가르치는 중 · 배우는 중 · 그림을 보는 중 · 그리는 중.</summary>
     public bool Teaching, Learning, Studying, Painting;
+    /// <summary>(E5b) 입은 것(몸 · 발, 아이템 번호 −1 = 없음) · 다쳤나 · 하는 일의 대상(사냥이면 무리 번호).</summary>
+    public int Worn = -1, WornFeet = -1, Target = -1;
+    public bool Injured;
     public string Nickname = "";
     private static int _ember = -1;
     /// <summary>말풍선: 그 사람의 말로 된 낱말과 뜻(이야기할 때만).</summary>
@@ -425,6 +478,7 @@ public sealed class PersonView
         Teaching = !p.Walking && p.Act == Act.Teach; Learning = p.Act == Act.Learn; Studying = !p.Walking && p.Act == Act.Study;
         Painting = !p.Walking && p.Act is Act.Experiment or Act.Craft && p.PlanAction == Data.CraftData.Default.ActionIndex("draw");
         Nickname = p.Nickname;
+        Worn = p.Worn; WornFeet = p.WornFeet; Injured = p.Injury > 15_000; Target = p.Target;
     }
 
     /// <summary>tick 시점 위치(밀리타일)와 걷는 방향. 출발이 tick 이하인 가장 최근 구간.</summary>

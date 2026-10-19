@@ -115,6 +115,10 @@ public static class SkipGoals
     public static SkipGoal KnowledgeRefound() => new KindsGoal(new[] { WorldEventKind.Rediscovered, WorldEventKind.GroupRefound }, "끊긴 지식을 되찾을 때까지");
     /// <summary>인구가 n명이 될 때까지.</summary>
     public static SkipGoal Population(int n) => new PopulationGoal(n);
+    /// <summary>(E5b) 무리에서(또는 세계에서) 처음 큰 짐승을 잡을 때까지 · 짐승에게 덮쳐질 때까지 · 새끼 짐승이 사람을 따를 때까지.</summary>
+    public static SkipGoal BigHunt() => new KindsGoal(new[] { WorldEventKind.HuntFirst, WorldEventKind.HuntGroup }, "큰 짐승을 처음 잡을 때까지");
+    public static SkipGoal BeastAttack() => new EventGoal(WorldEventKind.BeastAttack, "짐승에게 덮쳐질 때까지");
+    public static SkipGoal Tamed() => new EventGoal(WorldEventKind.Tamed, "새끼 짐승이 사람을 따를 때까지");
 
     private sealed class TimeGoal(int years) : SkipGoal
     {

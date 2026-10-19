@@ -40,6 +40,8 @@ public partial class Main : Node
     private long _popupSeq = -1;
     private bool _pausedByPopup, _wasSkipping;
     private int _hoverPerson = -1;
+    private (int Cell, int Id) _hoverAnimal = (-1, -1);
+    private double _animalTimer;
     private double _cardTimer, _listTimer, _hoverTimer;
     private string _cardSig = "";
     private (int Person, int Cell)? _pendingOpen;
@@ -74,6 +76,7 @@ public partial class Main : Node
         _province.Loaded += UpdateResourceLegend;
         _province.Loaded += () => { if (_pendingOpen is { } po && po.Cell == _province.Center) { _pendingOpen = null; OpenCard(po.Person); } };
         _province.PersonHover += id => { _hoverPerson = id; _hoverTimer = 0; if (id < 0) _personHover.Hide2(); else _card.Visible = false; };
+        _province.AnimalHover += (cell, id) => { _hoverAnimal = (cell, id); if (id < 0) _card.Visible = false; else if (AnimalReport(cell, id) is { } r) _card.ShowAt(r, GetViewport().GetMousePosition()); };
         _province.PersonClicked += OpenCard;
         _province.SpawnClicked += OnSpawnClicked;
         _province.FollowCrossed += cell =>
@@ -356,6 +359,20 @@ public partial class Main : Node
                 (names.Length > 1 ? " 다른 무리는 이 땅을 다르게 부른다: " + string.Join(", ", names.Skip(1).Select(n => $"'{n.Word}'({n.Meaning})")) + "." : "")));
             facts = list;
         }
+        // (E5b) 짐승 · 물고기(깨어 있는 지방만 — 사람이 들어간 땅)
+        if (_snap is not null && _snap.Animals.TryGetValue(m.Cell, out var herds) && _snap.AnimalLand.TryGetValue(m.Cell, out var land))
+        {
+            var fauna = Wtw.Sim.Data.AnimalData.Default;
+            var cnt = new int[fauna.Animals.Count];
+            foreach (var h in herds) if (h.Owner < 0 && h.Species < cnt.Length) cnt[h.Species] += h.Count;
+            var parts = fauna.Animals.Where(a => cnt[a.Index] > 0 || (a.Index < land.Caps.Length && land.Caps[a.Index] > 0)).Select(a => $"{a.Name} {cnt[a.Index]}/{(a.Index < land.Caps.Length ? land.Caps[a.Index] : 0)}").ToList();
+            var list = facts.ToList();
+            list.Add(new ProvinceFact("짐승", parts.Count == 0 ? "없음" : string.Join(" · ", parts),
+                "지금 마릿수 / 이 땅의 먹이로 살 수 있는 수. 생물군계와 행성의 '사냥감' 자원으로 정해진다. 많이 잡으면 줄어 사람이 떠나야 할 까닭이 되고, 잡지 않으면 다시 는다(한 종이 다 사라져도 가끔 이웃 땅에서 들어온다)."));
+            list.Add(new ProvinceFact("물고기", land.FishCap <= 0 ? "없음(민물에 물고기가 없다)" : $"{land.Fish}/{land.FishCap} 몫",
+                "강 · 호수 · 늪의 물고기(행성의 '물고기' 자원). 손 · 뾰족한 막대 · 돌창으로 잡는다. 잡으면 줄고, 다시 는다."));
+            facts = list;
+        }
         _info.Show($"지방 정보 — {_snap?.LandLabel(m.Cell) ?? TileDescriber.ProvinceName(p, m.Cell)}", facts); // 이름이 있으면 이름만(위 막대와 겹치지 않게)
     }
 
@@ -429,6 +446,48 @@ public partial class Main : Node
         if (p is null || m is null) return;
         CloseCard();
         _panel.ShowTile(PaintingReport(cell, x, y) ?? TileDescriber.Describe(p, m, x, y));
+    }
+
+    /// <summary>(E5b) 짐승 무리의 작은 카드: 종 · 마릿수 · 하는 일 · 왜 · 크기 · 사나움 · 나오는 것 · 이 땅에 몇 마리(살 수 있는 수).</summary>
+    private TileReport? AnimalReport(int cell, int id)
+    {
+        if (_snap is null || !_snap.Animals.TryGetValue(cell, out var herds)) return null;
+        var h = herds.FirstOrDefault(q => q.Id == id);
+        var fauna = Wtw.Sim.Data.AnimalData.Default;
+        if (h is null || (uint)h.Species >= (uint)fauna.Animals.Count) return null;
+        var a = fauna.Animals[h.Species];
+        string NameOf(int pid) { foreach (var v in _snap.People) if (v != null && v.Id == pid) return v.Name; return "누군가"; }
+        int hunters = 0;
+        for (int i = 0; i < _snap.PeopleCount; i++) { var v = _snap.People[i]; if (!v.Dead && v.Cell == cell && v.Act == Wtw.Sim.People.Act.Hunt && v.Target == id) hunters++; }
+        string title = h.Owner >= 0 ? $"{a.Name} — {NameOf(h.Owner)}을(를) 따르는 짐승" : h.Count == 1 ? $"{a.Name} 한 마리" : $"{a.Name} 무리 — {h.Count}마리";
+        string doing = h.State switch
+        {
+            Wtw.Sim.People.HerdState.Flee => "달아나는 중",
+            Wtw.Sim.People.HerdState.Sleep => "자는 중",
+            Wtw.Sim.People.HerdState.Rest => "쉬는 중",
+            Wtw.Sim.People.HerdState.Follow => $"{NameOf(h.Owner)} 곁을 따라다니는 중",
+            Wtw.Sim.People.HerdState.Stalk => h.TargetKind == 1 ? $"{NameOf(h.Target)} 쪽으로 몰래 다가가는 중" : "사냥감을 쫓는 중",
+            _ => a.Predator ? "어슬렁거리는 중" : a.Flies ? "땅을 쪼며 옮겨 가는 중" : "풀을 뜯으며 옮겨 가는 중",
+        };
+        string why = h.State switch
+        {
+            Wtw.Sim.People.HerdState.Flee => $"사람(또는 포식자)이 다가와서 — 겁이 많아 {a.Fear}타일 안에 오면 달아난다",
+            Wtw.Sim.People.HerdState.Sleep => "밤이라서 — 해가 뜨면 다시 풀을 뜯는다",
+            Wtw.Sim.People.HerdState.Follow => $"어미를 잃고 사람 곁에 남았다 — 친해진 정도 {h.Bond}/100 (친해지면 사냥을 조금 돕고, 곁의 사람을 포식자가 덜 노린다)",
+            Wtw.Sim.People.HerdState.Stalk => h.TargetKind == 1 ? "배가 고파서 — 혼자 자는 사람 · 어른 없이 있는 아이를 노린다(불이 타면 다가오지 않는다)" : "배가 고파서 — 잡을 수 있는 짐승을 노린다",
+            _ => a.Predator ? "배가 부르다 — 배가 고파지면 사냥한다" : "배를 채우며 사는 곳 둘레를 돈다",
+        } + (hunters > 0 ? $" · 사냥꾼 {hunters}명이 노리고 있다" : "");
+        int here = 0; foreach (var q in herds) if (q.Species == h.Species && q.Owner < 0) here += q.Count;
+        string capText = _snap.AnimalLand.TryGetValue(cell, out var land) && h.Species < land.Caps.Length ? $"{here}마리 — 먹이로 살 수 있는 수 {land.Caps[h.Species]}마리 (많이 잡으면 줄고, 다시 는다)" : $"{here}마리";
+        var cat = Wtw.Sim.Data.CraftData.Default;
+        var facts = new List<(string, string)>
+        {
+            ("크기", a.Size switch { 1 => "작다 — 맨손 · 던진 돌로도 잡는다", 2 => "보통 — 혼자서는 창이 있어야, 여럿이면 몰아서", _ => "크다 — 창을 든 여럿이 함께 몰아야" }),
+            ("사나움", a.Fierce switch { 0 => "순하다", <= 2 => "조금 — 몰리면 덤빈다", <= 3 => "사납다 — 잡다가 다치기도 한다", _ => "아주 사납다" } + (a.Predator ? " · 다른 짐승을 잡아먹는다" : "")),
+            ("잡으면", string.Join(", ", a.Yields.Select(y => $"{cat.ItemName(y.Item)} {y.Count}"))),
+            ("이 땅에", capText),
+        };
+        return new TileReport(title, doing, why + "\n" + string.Join("\n", facts.Select(f => $"{f.Item1}: {f.Item2}")), facts);
     }
 
     /// <summary>(E5) 그 타일에 그림이 있으면: 무엇을 그린 것 같은지 · 누가 · 언제 · 어디에 · 본 사람 · 배운 사람.</summary>
@@ -715,6 +774,11 @@ public partial class Main : Node
         if (UpdateSkip(snap)) { _auto.Tick(delta, snap); Throttle(); return; }
         if (snap.Planet is not null && !ReferenceEquals(snap.Planet, _globe.Planet) && _province.IsOpen) ExitProvince();
         if (snap.Planet is not null) _globe.SetPlanet(snap.Planet);
+        if (_hoverAnimal.Id >= 0 && _province.IsOpen && (_animalTimer -= delta) <= 0)
+        {
+            _animalTimer = 0.25;
+            if (AnimalReport(_hoverAnimal.Cell, _hoverAnimal.Id) is { } ar) _card.ShowAt(ar, GetViewport().GetMousePosition());
+        }
         if (_card.Visible) _card.Follow(GetViewport().GetMousePosition());
         _province.SetTime(_host.RenderTick + ShowTickOffset);
         _snap = snap;
@@ -914,6 +978,7 @@ public partial class Main : Node
     internal void OpenCardForTest(int id) => OpenCard(id);
     internal void CloseCardForTest() => CloseCard();
     internal void HoverPersonForTest(int id) { _hoverPerson = id; _hoverTimer = 0; }
+    internal void HoverAnimalForTest(int cell, int id) { _hoverAnimal = (cell, id); _animalTimer = 0; }
     internal void SpawnForTest(int cell, int x, int y, bool family) => OnSpawnClicked(cell, x, y, family);
     internal void EnterForTest(int c) => EnterProvince(c);
     internal void ExitForTest() => ExitProvince();

@@ -16,15 +16,23 @@ public static partial class Art
     /// <summary>그림 한 장의 세로가 땅 위에서 차지하는 타일 수(어른).</summary>
     public const float PersonTiles = 1.75f;
 
-    private static readonly Dictionary<(Appearance, bool, LifeStage, Facing), ImageTexture> PersonCache = new();
+    private static readonly Dictionary<(Appearance, bool, LifeStage, Facing, byte), ImageTexture> PersonCache = new();
+
+    /// <summary>(E5b) 입은 것의 그림 번호: 0 기본(허리 두름) · 1 가죽을 걸침(날가죽 · 마른 가죽 · 무두질한 가죽) · 2 털가죽 옷. + 4 = 털가죽 신. + 8 = 다침(감은 끈).</summary>
+    public static byte ClothOf(int worn, int feet, bool injured)
+    {
+        var cat = Wtw.Sim.Data.CraftData.Default;
+        int body = worn < 0 ? 0 : cat.Prop(worn, cat.P_covers) >= 5 ? 2 : 1;
+        return (byte)(body | (feet >= 0 ? 4 : 0) | (injured ? 8 : 0));
+    }
     private static ImageTexture? _shadow, _zzz, _talk, _cloud, _bones;
 
-    public static Texture2D Person(Appearance look, bool female, LifeStage stage, Facing facing)
+    public static Texture2D Person(Appearance look, bool female, LifeStage stage, Facing facing, byte cloth = 0)
     {
-        var key = (look, female, stage, facing);
+        var key = (look, female, stage, facing, cloth);
         if (PersonCache.TryGetValue(key, out var tex)) return tex;
         var sk = new Sketch(PersonW, PersonH);
-        PaintPerson(sk, look, female, stage, facing);
+        PaintPerson(sk, look, female, stage, facing, cloth);
         var data = new byte[PersonW * PersonH * 4];
         sk.CopyTo(data, PersonW, 0, 0);
         var img = Image.CreateFromData(PersonW, PersonH, false, Image.Format.Rgba8, data);
@@ -84,8 +92,11 @@ public static partial class Art
         s.Polygon(pts, c, 1);
     }
 
-    private static void PaintPerson(Sketch s, Appearance look, bool female, LifeStage stage, Facing f)
+    private static readonly Color Fur = new(0.78f, 0.70f, 0.58f), FurDark = new(0.50f, 0.40f, 0.30f), Hide = new(0.60f, 0.44f, 0.30f);
+
+    private static void PaintPerson(Sketch s, Appearance look, bool female, LifeStage stage, Facing f, byte cloth = 0)
     {
+        int body = cloth & 3; bool boots = (cloth & 4) != 0, hurt = (cloth & 8) != 0;
         var skin = SkinColor(look.Skin);
         var hair = HairColor(look.Hair, stage);
         float build = 0.85f + 0.3f * look.Build / 255f;           // 체형(마름 ~ 통통)
@@ -115,6 +126,15 @@ public static partial class Art
         float legGap = side ? 3 : bodyW * 0.45f;
         OLine(s, cx - legGap, hip, cx - legGap - (side ? 3 : 1), feet - 3, 7 * build, skin.Darkened(0.05f));
         OLine(s, cx + legGap, hip, cx + legGap + (side ? 3 : 1), feet - 3, 7 * build, skin.Darkened(0.05f));
+        if (boots || body == 2)
+        {
+            // 털가죽 신 · 바지(털옷이면 다리도 감싼다)
+            var bc = body == 2 ? Fur.Darkened(0.12f) : FurDark;
+            float legTop = body == 2 ? hip + 2 : feet - 16;
+            OLine(s, cx - legGap, legTop, cx - legGap - (side ? 3 : 1), feet - 3, 9.5f * build, bc);
+            OLine(s, cx + legGap, legTop, cx + legGap + (side ? 3 : 1), feet - 3, 9.5f * build, bc);
+            if (boots) { s.Ellipse(cx - legGap - (side ? 1 : 1), feet - 4, 6.5f, 3.5f, FurDark.Darkened(0.2f)); s.Ellipse(cx + legGap + (side ? 3 : 1), feet - 4, 6.5f, 3.5f, FurDark.Darkened(0.2f)); }
+        }
         // 몸통
         if (side) OEllipse(s, cx, (hip + shoulder) / 2, bodyW * 0.62f, bodyH * 0.5f, skin);
         else OEllipse(s, cx, (hip + shoulder) / 2, bodyW, bodyH * 0.5f, skin);
@@ -126,13 +146,33 @@ public static partial class Art
         else
             OPoly(s, new[] { new Vector2(cx - bodyW * 0.95f, wrapTop + (female ? 2 : 10)), new Vector2(cx + bodyW * 0.9f, wrapTop), new Vector2(cx + bodyW * 1.1f, wrapBot), new Vector2(cx - bodyW * 1.1f, wrapBot) }, wrapCol);
         s.Line(cx - bodyW * 0.9f, hip - 2, cx + bodyW * 0.9f, hip - 4, 3, wrapCol.Darkened(0.3f)); // 허리끈
+        if (body == 1)
+        {
+            // (E5b) 가죽을 어깨에 걸침: 어깨부터 무릎까지 덮는 가죽 망토
+            var hc = Hide.Lerp(FurDark, look.Face / 6f);
+            if (side) OPoly(s, new[] { new Vector2(cx - bodyW * 0.8f, shoulder - 2), new Vector2(cx + bodyW * 0.5f, shoulder - 3), new Vector2(cx + bodyW * 0.8f, hip + 14 * scale), new Vector2(cx - bodyW * 0.95f, hip + 16 * scale) }, hc);
+            else OPoly(s, new[] { new Vector2(cx - bodyW * 1.15f, shoulder), new Vector2(cx + bodyW * 1.15f, shoulder), new Vector2(cx + bodyW * 1.25f, hip + 14 * scale), new Vector2(cx - bodyW * 1.25f, hip + 14 * scale) }, hc);
+            s.Line(cx - bodyW * 1.0f, shoulder + 1, cx + bodyW * 1.0f, shoulder + 1, 4, Fur.Darkened(0.05f)); // 털 쪽 가장자리
+        }
+        else if (body == 2)
+        {
+            // (E5b) 털가죽 옷: 몸 전체 · 소매 · 목둘레 털
+            if (side) OEllipse(s, cx, (hip + shoulder) / 2 + 2, bodyW * 0.85f, bodyH * 0.58f, Fur);
+            else OEllipse(s, cx, (hip + shoulder) / 2 + 2, bodyW * 1.18f, bodyH * 0.58f, Fur);
+            s.Line(cx - bodyW * 1.0f, hip + 6, cx + bodyW * 1.0f, hip + 4, 3, FurDark); // 허리 끈
+            for (int k = -2; k <= 2; k++) s.Line(cx + k * bodyW * 0.4f, hip + 8, cx + k * bodyW * 0.4f + 1, hip + 13, 2, FurDark.Lightened(0.2f)); // 털 술
+        }
         // 팔
-        if (side) OLine(s, cx + 1, shoulder + 3, cx + 5, hip + 2, 6.5f * build, skin);
+        var arm = body == 2 ? Fur.Darkened(0.06f) : skin;
+        float aw = body == 2 ? 9f : 6.5f;
+        if (side) OLine(s, cx + 1, shoulder + 3, cx + 5, hip + 2, aw * build, arm);
         else
         {
-            OLine(s, cx - bodyW - 1, shoulder + 4, cx - bodyW - 4, hip + 3, 6.5f * build, skin);
-            OLine(s, cx + bodyW + 1, shoulder + 4, cx + bodyW + 4, hip + 3, 6.5f * build, skin);
+            OLine(s, cx - bodyW - 1, shoulder + 4, cx - bodyW - 4, hip + 3, aw * build, arm);
+            OLine(s, cx + bodyW + 1, shoulder + 4, cx + bodyW + 4, hip + 3, aw * build, arm);
         }
+        if (body == 2) { s.Circle(side ? cx + 5 : cx - bodyW - 4, hip + 4, 3.4f, skin); if (!side) s.Circle(cx + bodyW + 4, hip + 4, 3.4f, skin); } // 손
+        if (hurt) s.Line(side ? cx + 1 : cx - bodyW - 2, (shoulder + hip) / 2, side ? cx + 6 : cx - bodyW + 3, (shoulder + hip) / 2 + 2, 4, new Color(0.92f, 0.90f, 0.84f)); // 다친 팔에 감은 끈
 
         // 머리
         float hx = cx + (side ? 2 : 0);
@@ -199,6 +239,16 @@ public static partial class Art
                 break;
         }
         if (back) s.Ellipse(hx, headY + 2, headR * 0.96f, headR * 0.92f, hair, 1); // 뒤에서는 머리카락
+        if (body == 2)
+        {
+            // 털 두건 가장자리(얼굴 둘레)
+            for (int k = 0; k < 11; k++)
+            {
+                float a = Mathf.Pi * (0.95f + 1.1f * k / 10f);
+                s.Circle(hx + Mathf.Cos(a) * headR * 1.05f, headY + Mathf.Sin(a) * headR * 1.05f + 2, 4.6f, Fur.Lightened(0.15f), 1);
+            }
+            s.Ellipse(cx, shoulder + 1, bodyW * 0.9f, 5, Fur.Lightened(0.18f), 1); // 목둘레 털
+        }
     }
 
     /// <summary>발밑 그림자.</summary>

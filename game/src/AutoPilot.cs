@@ -250,6 +250,12 @@ public sealed class AutoPilot
         if (_elapsed > (PreRunYears is int pr ? 120 + pr * 6 : 120) && !_ready) { Finish(false, "AUTOPILOT 시간 초과 (세계가 만들어지지 않음?)"); return; }
         if (_selftest) { if (_ready && snap is not null) { if (_people is not null && !_spawned) { if (_provinceReady) PeopleSteps(delta, snap); } else SelfTest(delta, snap); } }
         else if (_people is not null) { if (_provinceReady) PeopleSteps(delta, snap); }
+        else if (_hoverAnimalPending is { } ha && _lookDone && _main.Province.AnimalScreen(ha.Cell, ha.Id) is { } asp)
+        {
+            _hoverAnimalPending = null;
+            Input.WarpMouse(asp);
+            _main.HoverAnimalForTest(ha.Cell, ha.Id);
+        }
         else if (_look is not null && _provinceReady && snap is not null && !_lookDone)
         {
             _lookWait += delta;
@@ -327,6 +333,45 @@ public sealed class AutoPilot
             if (host.SpeedLevel != 5) host.SetSpeed(5);
             return false;
         }
+        // (E5b) 짐승: animals 풀 뜯는 무리(마우스 카드) · wolf 밤에 불 가까이 온 포식자 · 사람을 노리는 포식자
+        if (_look is "animals" or "wolf")
+        {
+            var fauna = Wtw.Sim.Data.AnimalData.Default;
+            double lh = ProvinceReport.LocalHour(_main.Globe.Planet!, center, host.RenderTick);
+            bool night = lh >= 19 || lh < 5;
+            if (snap.Animals.TryGetValue(center, out var hs) && (_look == "animals" || night))
+            {
+                AnimalView? best = null; int bestScore = int.MinValue;
+                foreach (var h in hs)
+                {
+                    var a = fauna.Animals[h.Species];
+                    h.PositionAt(host.RenderTick, out double hx, out double hy, out _, out _);
+                    int score;
+                    if (_look == "animals") score = !a.Predator && h.Owner < 0 && h.Count >= 3 ? h.Count * 10 + (h.State == Wtw.Sim.People.HerdState.Graze ? 5 : 0) : int.MinValue;
+                    else
+                    {
+                        if (!a.Predator || h.Owner >= 0) continue;
+                        int fd = int.MaxValue;
+                        if (snap.Fires.TryGetValue(center, out var fs))
+                            foreach (var f in fs) if (f.Lit) fd = Math.Min(fd, Math.Max(Math.Abs(f.Tile % HexFrame.Size - (int)(hx / 1000)), Math.Abs(f.Tile / HexFrame.Size - (int)(hy / 1000))));
+                        score = h.State == Wtw.Sim.People.HerdState.Stalk && h.TargetKind == 1 ? 100 : fd <= 14 ? 60 - fd : int.MinValue;
+                    }
+                    if (score > bestScore) { bestScore = score; best = h; }
+                }
+                if (best is not null && bestScore > int.MinValue)
+                {
+                    best.PositionAt(host.RenderTick, out double bx, out double by, out _, out _);
+                    var lp = pv.LayoutOf(center, (int)(bx / 1000), (int)(by / 1000))!.Value;
+                    pv.LookAt(lp.X, lp.Y, _pzoom ?? 1.8f);
+                    host.SetSpeed(1);
+                    if (_look == "animals") _hoverAnimalPending = (center, best.Id);
+                    GD.Print($"LOOK {_look} herd={best.Id} {fauna.Animals[best.Species].Name}×{best.Count} {best.State}");
+                    return true;
+                }
+            }
+            if (host.SpeedLevel != (_look == "wolf" ? 5 : 3)) host.SetSpeed(_look == "wolf" ? 5 : 3);
+            return false;
+        }
         bool cardLook = _look is "experiment" or "teach" or "study" or "paintact";
         for (int i = 0; i < snap.PeopleCount; i++)
         {
@@ -338,6 +383,9 @@ public sealed class AutoPilot
                 "tool" => v.Tool >= 0 && !v.Asleep,
                 "pot" => v.Vessel >= 0 && Wtw.Sim.Data.CraftData.Default.Catalog.Items[v.Vessel].Id.EndsWith("pot") && !v.Asleep,
                 "experiment" => v.Act is Wtw.Sim.People.Act.Experiment or Wtw.Sim.People.Act.Craft && !v.Walking,
+                // (E5b) 함께 몰아 찌르는 사냥 · 손질 · 털옷 입은 사람
+                "hunt" => (v.Act == Wtw.Sim.People.Act.Hunt && !v.Walking && snap.People.Take(snap.PeopleCount).Count(q => q.Cell == center && q.Act == Wtw.Sim.People.Act.Hunt && q.Target == v.Target) >= 2) || (v.Act == Wtw.Sim.People.Act.Butcher && snap.People.Take(snap.PeopleCount).Count(q => q.Cell == center && q.Act == Wtw.Sim.People.Act.Butcher) >= 2),
+                "coat" => v.Worn >= 0 && Wtw.Sim.Data.CraftData.Default.Catalog.Items[v.Worn].Id == "fur_coat" && !v.Asleep && v.Stage >= Wtw.Sim.People.LifeStage.Child,
                 "teach" or "study" or "paintact" => CardLookOk(v),
                 _ => false,
             };
@@ -357,6 +405,8 @@ public sealed class AutoPilot
     }
 
     /// <summary>(E5) 가르치는 사람(배우는 사람이 곁에 있음) · 그림을 보는 사람 · 그림을 그리는 사람.</summary>
+    private (int Cell, int Id)? _hoverAnimalPending;
+
     private bool CardLookOk(PersonView v) => _look switch
     {
         "teach" => v.Teaching,

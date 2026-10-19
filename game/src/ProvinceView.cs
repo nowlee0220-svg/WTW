@@ -804,7 +804,10 @@ public partial class ProvinceView : Node2D
     {
         int pid = _spawnTool == 0 ? PickPerson(screen) : -1;
         SetHoverPerson(pid);
-        if (pid >= 0) { SetHover(-1, 0, 0); return; }
+        if (pid >= 0) { SetHoverAnimal((-1, -1)); SetHover(-1, 0, 0); return; }
+        var an = _spawnTool == 0 ? PickAnimal(screen) : (-1, -1);
+        SetHoverAnimal(an);
+        if (an.Item1 >= 0) { SetHover(-1, 0, 0); return; }
         var h = Pick(screen);
         SetHover(h.Cell, h.X, h.Y);
     }

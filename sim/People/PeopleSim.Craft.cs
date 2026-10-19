@@ -895,7 +895,12 @@ public sealed partial class PeopleSim
         WearTool(p, tool, rng);
         if (outcome.Rule is null) { AddThought(p, H_failedTry); return; }
         var rule = outcome.Rule;
-        if (outcome.Success && !pile && rule.Uses > p.CarryCount(input)) { AddThought(p, H_failedTry); return; } // 재료가 모자랐다
+        if (outcome.Success && !pile && rule.Uses > p.CarryCount(input))
+        {
+            // 재료가 모자랐다. (E5b) 셋 이상 드는 것(털가죽 옷 · 바구니)은 하나로 해 보다가도 "이렇게 하면 되겠다"는 것을 알아낸다 — 만들지는 못한다
+            if (!known && rule.Uses >= 3 && !p.Knows(rule.Index)) { Learn(p, rule, wish, input, with, -1); St.ShortDiscoveries++; return; }
+            AddThought(p, H_failedTry); return;
+        }
         if (outcome.Success)
         {
             // 재료를 쓴다

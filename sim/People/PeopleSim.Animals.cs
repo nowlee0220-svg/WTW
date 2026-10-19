@@ -237,7 +237,7 @@ public sealed partial class PeopleSim
         int here = h.Tile(Now);
         bool night = life.IsNight(Now);
         // 사람은 드물게: 밤에 혼자 자는 사람 · 곁에 어른이 없는 아이(낮에는 아이만) — 사람에게 쫓겨난 뒤 한동안은 노리지 않는다
-        if (Now >= h.Wary && rng.NextInt(100) < (night ? 10 : 3) && Vulnerable(life, x, y, 30, here, night) is { } q)
+        if (Now >= h.Wary && rng.NextInt(100) < (night ? 4 : 1) && Vulnerable(life, x, y, 30, here, night) is { } q)
         {
             int qt = q.Tile(Now);
             int goal = HerdBeside(life, qt, h.Id);
@@ -396,7 +396,7 @@ public sealed partial class PeopleSim
         }
         int w = WeaponPower(q);
         int attackers = a.Size >= 3 ? 1 : Math.Min(h.Count, 3);
-        long sev = (a.Fierce * 9_000L + a.Size * 6_000L) * (2 + attackers) / 3;
+        long sev = (a.Fierce * 7_000L + a.Size * 6_000L) * (2 + attackers) / 3;
         sev = sev * (40 + rng.NextInt(71)) / 100;
         int defense = 100 + defenders * 70 + w * 8 + (q.Asleep ? 0 : 25) + (q.HasTrait(T_brave) ? 15 : 0) + Ability(q, PeopleData.Str) * 3;
         sev = sev * 100 / defense;

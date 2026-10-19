@@ -94,7 +94,9 @@ public class AnimalTests
     {
         var w = SpeedTests.Families(3, 3, 12);
         w.AdvanceTo(w.Now + 1_234);
-        Assert.Contains(w.People.Provinces.Values, l => l.Herds.Values.Any(h => h.Motion.Arrive > w.Now)); // 걷는 무리가 있다
+        bool Walking() => w.People.Provinces.Values.Any(l => l.Herds.Values.Any(h => h.Motion.Arrive > w.Now));
+        for (int k = 0; k < 200 && !Walking(); k++) w.AdvanceTo(w.Now + 1_111);
+        Assert.True(Walking()); // 걷는 무리가 있다(맞추는 시각 사이)
         var loaded = SaveGame.FromBytes(SaveGame.ToBytes(w));
         Assert.Equal(SaveGame.Fingerprint(w), SaveGame.Fingerprint(loaded));
         long end = w.Now + 15 * GameTime.TicksPerDay + 17;

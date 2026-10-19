@@ -52,6 +52,7 @@ public sealed class PeopleStats
     /// <summary>(E5b) 짐승: 무리의 판단 · 달아남 · 태어남 · 이웃에서 들어온 무리 · 포식자가 잡은 짐승 · 사람을 노림 · 덮침 · 불에 물러남 · 막아 내며 쓰러뜨린 포식자.</summary>
     public long HerdEvents, HerdFlees, AnimalsBorn, ImmigrantHerds, PreyKilled, Stalks, BeastAttacks, FireRepelled, BeastsKilledDefending;
     /// <summary>(E5b) 사냥: 나섬 · 함께한 사람 · 몰아 봄 · 잡음 · 놓침 · 다침(사냥) · 사냥하다 죽음 · 손질 · 다침(모두) · 물고기 잡으러 · 잡은 물고기 · 길들임 · 해진 옷 · 썩어 버린 것 · 짐승이 줄어 떠남.</summary>
+    public long ShortDiscoveries;
     public long HuntsStarted, HuntHelpers, HuntsTried, HuntSuccess, HuntsLost, HuntInjuries, HuntDeaths, Butchered, Injuries, Fishings, FishCaught, Tamed, ClothesWornOut, Rotted, LeftForGame;
     public readonly long[] HuntBySpecies = new long[16], KillsBySpecies = new long[16];
 }

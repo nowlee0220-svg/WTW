@@ -197,7 +197,7 @@ public sealed partial class PeopleSim
                     History(op.A, (byte)op.B, op.C, op.S);
                     break;
                 case PendingOp.Kinds.Hunt:
-                    if (Get(op.A) is { } hunter) HuntWorld(hunter, op.B, op.C);
+                    if (Get(op.A) is { } hunter) { if (op.C < 0) NewWordConcept(hunter, Fauna.Animals[op.B].Id, op.D); else HuntWorld(hunter, op.B, op.C); }
                     break;
                 default:
                     throw new InvalidOperationException($"모르는 미룬 일: {op.Kind}");
