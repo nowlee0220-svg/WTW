@@ -13,7 +13,7 @@ public static class DiscoverBench
     public sealed class Row
     {
         public ulong Seed; public int Cell; public string Biome = "";
-        public int Alive, Ever, Peak; public long[] Deaths = new long[8];
+        public int Alive, Ever, Peak; public long[] Deaths = new long[12];
         public readonly SortedDictionary<string, int> FirstYear = new(); // 결과 아이템 → 처음 나온 해
         public int PartialRepeats, CraftFails, Lost, Refound, Experiments, Discoveries, Partials, Crafts, FiresLit, FiresTaken, Mined, Cooked, Watched, Wildfires;
         public List<int> PopByYear = new();
@@ -101,7 +101,7 @@ public static class DiscoverBench
     {
         var ps = w.People;
         row.Alive = ps.AliveCount; row.Ever = ps.All.Count;
-        Array.Copy(ps.Stats.Deaths, row.Deaths, 8);
+        Array.Copy(ps.Stats.Deaths, row.Deaths, 12);
         foreach (var (rule, d) in ps.Discoveries)
         {
             string item = ps.Craft.Catalog.Items[ps.Craft.Rules[rule].Result].Id;

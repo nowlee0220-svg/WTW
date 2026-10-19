@@ -43,7 +43,7 @@ public static class PeopleText
     public static string CauseName(DeathCause c) => c switch
     {
         DeathCause.Starvation => "굶주림", DeathCause.Thirst => "목마름", DeathCause.Cold => "추위", DeathCause.Heat => "더위",
-        DeathCause.OldAge => "늙음", DeathCause.Illness => "병", _ => "알 수 없음",
+        DeathCause.OldAge => "늙음", DeathCause.Illness => "병", DeathCause.Beast => "짐승(포식자)", DeathCause.HuntAccident => "사냥 사고", _ => "알 수 없음",
     };
 
     public static string StageName(LifeStage s, bool female) => s switch
@@ -116,8 +116,23 @@ public sealed partial class PeopleSim
             Act.Teach => w ? $"{NameOf(p.Target)}에게 {Hangul.Eul(RuleItem(p.TargetB))} 가르치러 가는 중" : $"{NameOf(p.Target)}에게 {Hangul.Eul(RuleItem(p.TargetB))} 만드는 법을 가르치는 중",
             Act.Learn => $"{NameOf(p.Target)}에게서 {Hangul.Eul(RuleItem(p.TargetB))} 만드는 법을 배우는 중 ({p.LearnProgress(p.TargetB)}%)",
             Act.Study => w ? "그림을 보러 가는 중" : Paintings.TryGetValue(p.Target, out var pg) ? $"{Painting.MediumName(pg.Medium)}의 그림을 들여다보는 중 — {Hangul.I(RuleItem(pg.Rule))} 그려져 있는 것 같다" : "그림을 들여다보는 중",
+            // (E5b)
+            Act.Hunt => HuntText(p, life, w),
+            Act.Butcher => $"잡은 {Hangul.Eul(AnimalName(p.TargetB))} 그 자리에서 손질하는 중" + (p.WhyArg != p.Id ? $" ({NameOf(p.WhyArg)}와 함께)" : ""),
+            Act.Fish => w ? "물고기를 잡으러 물가로 가는 중" : (WeaponPower(p) >= 3 ? "물가에서 창으로 물고기를 찌르는 중" : "물가에서 손으로 물고기를 더듬는 중"),
             _ => "둘러보는 중",
         };
+    }
+
+    private string AnimalName(int species) => (uint)species < (uint)Fauna.Animals.Count ? Fauna.Animals[species].Name : "짐승";
+
+    private string HuntText(Person p, ProvinceLife life, bool w)
+    {
+        string what = life.Herds.TryGetValue(p.Target, out var h) ? AnimalName(h.Species) : "짐승";
+        string tool = WeaponPower(p) switch { >= 5 => "돌창을 들고", >= 3 => "뾰족한 막대를 들고", 2 => "돌을 들고", _ => "맨손으로" };
+        if (p.WhyArg != p.Id) return w ? $"{NameOf(p.WhyArg)}의 {what} 사냥에 함께 가는 중 ({tool})" : $"{Hangul.Eul(what)} 몰며 {NameOf(p.WhyArg)}을(를) 돕는 중";
+        if (w) return p.TargetB > 0 ? $"달아난 {Hangul.Eul(what)} 쫓는 중 ({p.TargetB}번째, {tool})" : $"{Hangul.Eul(what)} 잡으러 가는 중 ({tool})";
+        return $"{Hangul.Eul(what)} 몰고 찌르는 중 ({tool})";
     }
 
     private string RuleItem(int rule) => (uint)rule < (uint)Craft.Rules.Count ? Craft.ItemName(Craft.Rules[rule].Result) : "알 수 없는 무늬";
@@ -260,6 +275,17 @@ public sealed partial class PeopleSim
             Why.MineOre => "반짝이는 광맥이 보여서 — 돌 도구로 캔다",
             Why.MineStone => "돌이 더 있었으면 — 돌 도구로 바위를 캔다",
             Why.CookFood => "익히면 더 배가 차고 배탈이 안 나서",
+            // (E5b)
+            Why.WantFood => $"먹을 것이 아쉬워서 — 오래 두고 먹을 수 있었으면 (바람 {WishStrength(p, "food")}): {TryReason(p, "food")}",
+            Why.WantHunting => $"사냥할 도구가 있었으면 — 큰 짐승을 놓쳐서 (바람 {WishStrength(p, "hunting")}): {TryReason(p, "hunting")}",
+            Why.WantClothing => $"몸을 감쌀 것이 있었으면 — 밤이 추워서 (바람 {WishStrength(p, "clothing")}): {TryReason(p, "clothing")}",
+            Why.HuntFood => p.Food < 50_000 ? $"배가 고픈데 짐승이 보여서 (배부름 {p.Food / 1000}%) — 고기는 열매보다 배가 찬다" : $"먹을 것이 아쉬워서 (바람 {WishStrength(p, "food")})",
+            Why.HuntHide => $"가죽이 있었으면 — 몸을 감쌀 것이 아쉬워서 (바람 {WishStrength(p, "clothing")})",
+            Why.HuntBone => "뼈 · 뿔이 있었으면 — 날카로운 것이 아쉬워서",
+            Why.HuntChase => "짐승이 달아나서 — 따라간다(세 번까지)",
+            Why.JoinHunt => $"{Hangul.I(NameOf(arg))} 큰 짐승을 잡자고 불러서 — 혼자서는 어렵다",
+            Why.FishFood => $"배가 고픈데 물가가 가까워서 (배부름 {p.Food / 1000}%)",
+            Why.Butchering => HasSharpTool(p) ? "날 선 도구가 있어 고기 · 가죽 · 뼈 · 힘줄을 가른다" : "날 선 도구가 없어 고기만 조금 뜯어낸다",
             _ => "",
         } + HowText(p);
     }
@@ -370,6 +396,11 @@ public sealed partial class PeopleSim
         if (p.Heatstroke > 0) c.Body.Add($"더위 먹음 {p.Heatstroke / 1000}%");
         if (p.Conceived >= 0) c.Body.Add($"아이를 가짐 (아빠 {NameOf(p.ChildFather)}, {PeopleText.Date(p.Conceived + PregnancyTicks)}쯤 태어남)");
         c.Body.Add($"걷는 빠르기: 1배속에서 초당 {60.0 / TicksPerTile(p):0.0}타일");
+        if (p.Injury > 0) c.Body.Add($"다침 {p.Injury / 1000}% ({(p.InjuryCause == DeathCause.HuntAccident ? "사냥하다" : "짐승에게")} — 하루에 조금씩 낫는다, 100% 가 되면 죽는다)");
+        if (p.Worn >= 0) c.Body.Add($"입은 것: {ItemName(p.Worn)} (따뜻함 +{Prop(p.Worn, Craft.P_warm) * 4}°C, 닳음 {100 - p.WornWear / 10}%)");
+        if (p.WornFeet >= 0) c.Body.Add($"신은 것: {ItemName(p.WornFeet)} (따뜻함 +{Prop(p.WornFeet, Craft.P_warm) * 3}°C, 닳음 {100 - p.FeetWear / 10}%)");
+        if (p.Worn < 0 && p.WornFeet < 0 && ColdLand(Life(p.Cell))) c.Body.Add("입은 것: 없음 — 밤이 추운 땅이다");
+        if (p.Kills > 0) c.Body.Add($"잡은 짐승 {p.Kills}마리");
         if (p.Dead) c.Body.Add($"{PeopleText.Date(p.DeathTick)}에 죽음 — {PeopleText.CauseName(p.Cause)}{(p.Eaten ? " (시신이 먹혔다)" : "")}");
         if (!p.Dead)
         {
@@ -469,6 +500,15 @@ public sealed partial class PeopleSim
         BioKind.Painted => b.Param >= 0 ? $"{Hangul.Eul(RuleItem(b.Param))} 만드는 법을 그림으로 남겼다" : "알아볼 수 없는 무늬를 그렸다",
         BioKind.NamedLand => LandNames.TryGetValue(b.Param, out var ln) && ln.Find(n => n.Namer == p.Id) is { } mine
             ? $"머물던 땅을 {Hangul.Rago($"'{mine.Word}'")} 부르기 시작했다 (뜻: {LandMeaning(mine)} — {mine.Reason})" : "머물던 땅에 이름을 붙였다",
+        // (E5b)
+        BioKind.Hunted => b.Param > 0 ? $"{b.Param + 1}명이 함께 몰아 {Hangul.Eul(AnimalName(b.Other))} 잡았다" : $"{Hangul.Eul(AnimalName(b.Other))} 잡았다",
+        BioKind.HuntFailed => $"{Hangul.Eul(AnimalName(b.Other))} 잡으려다 놓쳤다",
+        BioKind.Injured => $"{Hangul.Eul(AnimalName(b.Other))} 잡다가 다쳤다 (다침 {b.Param}%)",
+        BioKind.Attacked => $"{AnimalName(b.Other)}에게 덮쳐졌다 (다침 {Math.Min(100, b.Param)}%)",
+        BioKind.Tamed => $"어미를 잃은 새끼 {Hangul.I(AnimalName(b.Other))} 곁에 남아 따라다니기 시작했다",
+        BioKind.Wore => $"{Hangul.Eul(ItemName(b.Param))} 입기 시작했다",
+        BioKind.KilledBeast => $"덮쳐 온 {Hangul.Eul(AnimalName(b.Other))} 쓰러뜨렸다",
+        BioKind.DroveOff => $"{Hangul.Eul(AnimalName(b.Other))} 쫓아냈다",
         _ => "",
     };
 

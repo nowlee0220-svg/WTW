@@ -12,13 +12,15 @@ public sealed record WorldEvent(long Seq, long Tick, WorldEventKind Kind, int Pe
 /// <summary>세계의 일. 값은 저장 파일에 남으므로 뒤에만 더할 것. Discovery = 세계에서 처음, DiscoveryGroup = 그 무리에서 처음, Rediscovered = 잊혔다 다시.</summary>
 public enum WorldEventKind : byte { Spawn = 0, Birth, Death, Pair, Break, LandNamed, Moved, Language, Discovery, DiscoveryLost, Wildfire, DiscoveryGroup, Rediscovered,
     /// <summary>(E5) 한 무리에서 끊김 · 되찾음.</summary>
-    GroupLost, GroupRefound }
+    GroupLost, GroupRefound,
+    /// <summary>(E5b) 세계에서 처음 · 무리에서 처음 큰 짐승을 잡음 · 짐승에게 덮쳐짐 · 새끼 짐승이 따라다님.</summary>
+    HuntFirst, HuntGroup, BeastAttack, Tamed }
 
 /// <summary>측정용 셈(저장하지 않는다 — 결과에 영향 없음).</summary>
 public sealed class PeopleStats
 {
     public long Decisions, Events, Paths, PathFails, Talks, Arguments, Pairs, Births, Breaks, Conceptions, Illnesses;
-    public readonly long[] Deaths = new long[8];
+    public readonly long[] Deaths = new long[12];
     /// <summary>(E4) 정신 붕괴: 나이 단계별 횟수 · 무너질 때 기분을 끌어내린 생각(생각 번호별 기분 합, 음수만).</summary>
     public readonly long[] BreaksByStage = new long[4];
     public readonly long[] RuleFail = new long[64]; public readonly SortedDictionary<string, long> FailKeys = new();
@@ -47,6 +49,11 @@ public sealed class PeopleStats
     public readonly long[] PaintWhy = new long[5], PaintMedium = new long[3];
     /// <summary>물 · 먹을 것을 찾아간 방법별 횟수: [0 보임, 1 기억, 2 따라감, 3 찾아다님].</summary>
     public readonly long[] FindHow = new long[4];
+    /// <summary>(E5b) 짐승: 무리의 판단 · 달아남 · 태어남 · 이웃에서 들어온 무리 · 포식자가 잡은 짐승 · 사람을 노림 · 덮침 · 불에 물러남 · 막아 내며 쓰러뜨린 포식자.</summary>
+    public long HerdEvents, HerdFlees, AnimalsBorn, ImmigrantHerds, PreyKilled, Stalks, BeastAttacks, FireRepelled, BeastsKilledDefending;
+    /// <summary>(E5b) 사냥: 나섬 · 함께한 사람 · 몰아 봄 · 잡음 · 놓침 · 다침(사냥) · 사냥하다 죽음 · 손질 · 다침(모두) · 물고기 잡으러 · 잡은 물고기 · 길들임 · 해진 옷 · 썩어 버린 것 · 짐승이 줄어 떠남.</summary>
+    public long HuntsStarted, HuntHelpers, HuntsTried, HuntSuccess, HuntsLost, HuntInjuries, HuntDeaths, Butchered, Injuries, Fishings, FishCaught, Tamed, ClothesWornOut, Rotted, LeftForGame;
+    public readonly long[] HuntBySpecies = new long[16], KillsBySpecies = new long[16];
 }
 
 /// <summary>
@@ -130,6 +137,7 @@ public sealed partial class PeopleSim
         H_halfSuccess = H("half_success"); H_failedTry = H("failed_try"); H_fireDied = H("fire_died"); H_madeThing = H("made_thing"); H_taught = H("taught"); H_learned = H("learned");
         InitCraft();
         InitKnowledge();
+        InitHunt();
     }
 
     public IReadOnlyList<Person> All => _all;
@@ -173,7 +181,9 @@ public sealed partial class PeopleSim
                 life.People.AddRange(d.People);
                 life.Sched.Import(d.Events, d.SchedHandle, d.SchedOrder);
                 St.Wakes++;
+                WakeAnimals(life, d);
             }
+            else InitAnimals(life); // (E5b) 처음 열린 지방: 먹이만큼 짐승
         }
         return lane.LastLife = life;
     }
@@ -211,6 +221,7 @@ public sealed partial class PeopleSim
         if (st == LifeStage.Child) v -= a == PeopleData.Str ? 3 : a == PeopleData.Dex ? 2 : 1;
         else if (st == LifeStage.Elder && a is PeopleData.Str or PeopleData.Dex) v -= 2;
         if (p.IllUntil > Now) v -= 1;
+        if (p.Injury > 40_000 && a is PeopleData.Str or PeopleData.Dex) v -= 2; // (E5b) 크게 다쳤다
         return Math.Clamp(v, 1, 10);
     }
 
@@ -223,6 +234,7 @@ public sealed partial class PeopleSim
         if (p.IllUntil > Now) t += 5;
         if (p.Malnutrition > 50_000) t += 4;
         if (p.Hypothermia > 50_000) t += 3;
+        if (p.Injury > 30_000) t += 5; // (E5b) 다쳐서 절뚝인다
         return t;
     }
 
@@ -234,6 +246,7 @@ public sealed partial class PeopleSim
         if (p.HasTrait(T_lazy)) pct += 20;
         pct += (5 - Ability(p, PeopleData.Dex)) * 5;
         pct -= p.SkillLevel(PeopleData.Gathering) * 4;
+        if (p.Injury > 30_000) pct += 25;
         return Math.Clamp(pct, 40, 200);
     }
 
@@ -265,6 +278,10 @@ public sealed partial class PeopleSim
         if (p.Social <= 0 && Now - p.LastTalkTick > 3 * GameTime.TicksPerDay) into.Add(H_alone); else if (p.Social < 20_000) into.Add(H_lonely);
         if (p.Joy < 15_000) into.Add(H_bored);
         if (p.IllUntil > Now) into.Add(H_sick);
+        // (E5b) 다침 · 따뜻하게 입음(추울 때) · 따르는 짐승
+        if (p.Injury > 15_000) into.Add(H_injured);
+        if (p.Worn >= 0 && Prop(p.Worn, Craft.P_warm) >= 3 && Life(p.Cell).OutsideTemp10(Now) < 120) into.Add(H_warmClothes);
+        if (CompanionNear(Life(p.Cell), p, 8)) into.Add(H_petNear);
     }
 
     public int Mood(Person p)

@@ -33,7 +33,11 @@ public sealed partial class PeopleSim
             }
         if (st == LifeStage.Child) { p.MoveWhy = Why.None; return; }
         // 아이는 어른 따라, 아이 둔 부모는 아이를 데리고만
-        if (p.Scarcity >= ScarcityToMove) { p.MoveWhy = Why.Scarce; p.MoveTo = -1; return; }
+        if (p.Scarcity >= ScarcityToMove)
+        {
+            if (p.MoveWhy != Why.Scarce && GameScarce(life)) St.LeftForGame++; // (E5b) 측정: 짐승도 줄어 있었다
+            p.MoveWhy = Why.Scarce; p.MoveTo = -1; return;
+        }
         if (p.MoveWhy is Why.Scarce or Why.FollowFamily) p.MoveWhy = Why.None; // 그 까닭이 없어졌다
         // 스스로 떠나는 일(돌아가기 · 짝 찾기 · 호기심)은 한 번 떠난 뒤 한동안 쉰다(이리저리 오가기만 하지 않게)
         if (Now - p.LastMove < 15 * GameTime.TicksPerDay) { if (p.MoveWhy is not (Why.Scarce or Why.FollowFamily)) p.MoveWhy = Why.None; return; }

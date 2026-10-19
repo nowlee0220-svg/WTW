@@ -106,8 +106,9 @@ public sealed partial class PeopleSim
             {
                 sched.Pop();
                 lane.Now = ev.Tick;
-                if (ev.Kind != EventKinds.Person) throw new InvalidOperationException($"지방 예약표에 모르는 예약 종류: {ev.Kind}");
-                OnEvent(ev.Target);
+                if (ev.Kind == EventKinds.Herd) OnHerdEvent(life, ev.Target);
+                else if (ev.Kind == EventKinds.Person) OnEvent(ev.Target);
+                else throw new InvalidOperationException($"지방 예약표에 모르는 예약 종류: {ev.Kind}");
                 lane.EventsDone++;
             }
         }
@@ -194,6 +195,9 @@ public sealed partial class PeopleSim
                     break;
                 case PendingOp.Kinds.History:
                     History(op.A, (byte)op.B, op.C, op.S);
+                    break;
+                case PendingOp.Kinds.Hunt:
+                    if (Get(op.A) is { } hunter) HuntWorld(hunter, op.B, op.C);
                     break;
                 default:
                     throw new InvalidOperationException($"모르는 미룬 일: {op.Kind}");

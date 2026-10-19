@@ -109,6 +109,12 @@
     { "id": "fire_died",    "name": "불이 꺼져 버림",      "mood": -4,  "hours": 16,  "stack": 1 },
     { "id": "made_thing",   "name": "쓸 것을 만듦",        "mood": 3,   "hours": 24,  "stack": 2 },
     { "id": "taught",       "name": "아는 것을 가르쳐 줌",  "mood": 3,   "hours": 16,  "stack": 1 },
-    { "id": "learned",      "name": "새것을 배움",         "mood": 3,   "hours": 16,  "stack": 1 }
+    { "id": "learned",      "name": "새것을 배움",         "mood": 3,   "hours": 16,  "stack": 1 },
+    { "id": "injured",      "name": "다친 곳이 아픔",      "mood": -8,  "hours": 0 },
+    { "id": "hunted",       "name": "사냥에 성공함",       "mood": 6,   "hours": 24,  "stack": 1 },
+    { "id": "hunt_failed",  "name": "사냥감을 놓침",       "mood": -2,  "hours": 12,  "stack": 1 },
+    { "id": "attacked",     "name": "짐승에게 덮쳐짐",     "mood": -14, "hours": 72,  "stack": 1 },
+    { "id": "warm_clothes", "name": "따뜻하게 입음",       "mood": 3,   "hours": 0 },
+    { "id": "pet_near",     "name": "따르는 짐승이 곁에 있음", "mood": 3, "hours": 0 }
   ]
 }

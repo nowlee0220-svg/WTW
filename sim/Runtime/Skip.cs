@@ -17,8 +17,8 @@ public static class EventLevels
 
     public static int Of(WorldEventKind k) => k switch
     {
-        WorldEventKind.Discovery or WorldEventKind.DiscoveryLost or WorldEventKind.Language => World,
-        WorldEventKind.DiscoveryGroup or WorldEventKind.Rediscovered or WorldEventKind.Moved or WorldEventKind.LandNamed => Group,
+        WorldEventKind.Discovery or WorldEventKind.DiscoveryLost or WorldEventKind.Language or WorldEventKind.HuntFirst => World,
+        WorldEventKind.DiscoveryGroup or WorldEventKind.Rediscovered or WorldEventKind.Moved or WorldEventKind.LandNamed or WorldEventKind.HuntGroup => Group,
         // (E5 고침) 무리 단위 끊김 · 되찾음은 ★(그 지방을 볼 때만) — [지식의 행방] 창에는 다 남는다
         _ => Person,
     };
@@ -26,7 +26,7 @@ public static class EventLevels
     public static string Stars(int level) => level >= World ? "★★★" : level == Group ? "★★" : "★";
 
     /// <summary>팝업으로 멈출 수 있는 종류(켜고 끄기 목록).</summary>
-    public static readonly WorldEventKind[] PopupKinds = { WorldEventKind.Discovery, WorldEventKind.DiscoveryLost, WorldEventKind.Language };
+    public static readonly WorldEventKind[] PopupKinds = { WorldEventKind.Discovery, WorldEventKind.DiscoveryLost, WorldEventKind.Language, WorldEventKind.HuntFirst };
 
     public static string KindName(WorldEventKind k) => k switch
     {
@@ -39,6 +39,10 @@ public static class EventLevels
         WorldEventKind.LandNamed => "땅 이름",
         WorldEventKind.GroupLost => "무리에서 끊김",
         WorldEventKind.GroupRefound => "무리가 되찾음",
+        WorldEventKind.HuntFirst => "세계에서 처음 잡은 짐승",
+        WorldEventKind.HuntGroup => "무리에서 처음 잡은 큰 짐승",
+        WorldEventKind.BeastAttack => "짐승에게 덮쳐짐",
+        WorldEventKind.Tamed => "따라다니는 새끼 짐승",
         _ => k.ToString(),
     };
 }
@@ -239,13 +243,13 @@ public sealed class SkipRun
         int deadAll = 0; foreach (var p in w.People.All) if (p.Dead) deadAll++;
         // (E5) 사람 목록의 "지금까지 죽은 사람"과 헷갈리지 않게 — 넘기는 동안의 수와 지금까지의 수를 함께
         lines.Add($"인구 {_startPop}명 → {w.People.AliveCount}명 — 넘기는 동안 태어남 {births} · 죽음 {deaths} (세계에서 지금까지 죽은 사람 모두 {deadAll}명)");
-        foreach (var k in new[] { WorldEventKind.Discovery, WorldEventKind.Rediscovered, WorldEventKind.DiscoveryLost, WorldEventKind.Language, WorldEventKind.GroupLost, WorldEventKind.GroupRefound, WorldEventKind.Moved, WorldEventKind.LandNamed, WorldEventKind.DiscoveryGroup })
+        foreach (var k in new[] { WorldEventKind.Discovery, WorldEventKind.Rediscovered, WorldEventKind.DiscoveryLost, WorldEventKind.Language, WorldEventKind.GroupLost, WorldEventKind.GroupRefound, WorldEventKind.Moved, WorldEventKind.LandNamed, WorldEventKind.DiscoveryGroup, WorldEventKind.HuntFirst, WorldEventKind.HuntGroup, WorldEventKind.BeastAttack, WorldEventKind.Tamed })
         {
             var es = _all.Where(e => e.Kind == k).ToList();
             if (es.Count == 0) continue;
             lines.Add($"{EventLevels.Stars(EventLevels.Of(k))} {EventLevels.KindName(k)} {es.Count}번");
             if (EventLevels.Of(k) >= EventLevels.Group)
-                foreach (var e in es.Take(k == WorldEventKind.DiscoveryGroup ? 3 : 6)) lines.Add($"   · {GameTime.Format(e.Tick)} — {e.Text}");
+                foreach (var e in es.Take(k is WorldEventKind.DiscoveryGroup or WorldEventKind.HuntGroup ? 3 : 6)) lines.Add($"   · {GameTime.Format(e.Tick)} — {e.Text}");
         }
         return lines;
     }

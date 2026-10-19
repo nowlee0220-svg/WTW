@@ -76,8 +76,8 @@ public sealed partial class PeopleSim
     private int FeltAt(Person p, long t)
     {
         var life = Life(p.Cell);
-        if (p.Carrier >= 0 && Here(p.Carrier, p) is { Dead: false } c) return life.FeltTemp10(t, c.Tile(t), true);
-        return life.FeltTemp10(t, p.Tile(t), p.Asleep && p.Huddle);
+        if (p.Carrier >= 0 && Here(p.Carrier, p) is { Dead: false } c) return life.FeltTemp10(t, c.Tile(t), true, ClothWarm(c) / 2);
+        return life.FeltTemp10(t, p.Tile(t), p.Asleep && p.Huddle, ClothWarm(p));
     }
 
     /// <summary>LastUpdate 부터 until 까지 욕구를 몰아서 계산한다(한 시간씩).</summary>
@@ -90,10 +90,11 @@ public sealed partial class PeopleSim
         bool tough = p.HasTrait(T_tough);
         long t = p.LastUpdate;
         var life = Life(p.Cell);
+        int cloth = ClothWarm(p);
         while (t < until)
         {
             long dt = Math.Min(until - t, GameTime.TicksPerHour);
-            int felt = life.FeltTemp10(t, p.Tile(t), p.Asleep && p.Huddle);
+            int felt = life.FeltTemp10(t, p.Tile(t), p.Asleep && p.Huddle, cloth);
             Step(ref n, r, felt, dt, tough);
             if (p.IllUntil > t) n.Health = Clamp(n.Health - (long)p.IllDamage * dt / GameTime.TicksPerDay);
             t += dt;
@@ -116,7 +117,7 @@ public sealed partial class PeopleSim
             // 젖: 안은 사람이 잠깐 배고픈 정도로는 끊기지 않고, 그 사람이 영양실조에 빠지면 끊긴다(젖이 마름 → 아기는 굶는다)
             bool fed = c is { Dead: false } && c.Malnutrition < 20_000;
             var r = new Rates { Food = fed ? 50_000 : -FoodAwake, Water = fed ? 50_000 : 0, /* 젖이 마르면 굶는다(물은 따로 못 마심 → 굶주림으로 셈) */ Rest = 5_000, Joy = 5_000, Social = 5_000 };
-            int felt = c is { Dead: false } ? life.FeltTemp10(t, c.Tile(t), true) : life.FeltTemp10(t, p.Tile(t), false);
+            int felt = c is { Dead: false } ? life.FeltTemp10(t, c.Tile(t), true, ClothWarm(c) / 2) : life.FeltTemp10(t, p.Tile(t), false);
             Step(ref n, r, felt, dt, p.HasTrait(T_tough));
             if (p.IllUntil > t) n.Health = Clamp(n.Health - (long)p.IllDamage * dt / GameTime.TicksPerDay);
             t += dt;
@@ -137,12 +138,13 @@ public sealed partial class PeopleSim
         bool tough = p.HasTrait(T_tough);
         var life = Life(p.Cell);
         int fT = p.Asleep ? 8_000 : UrgentFood, wT = p.Asleep ? 8_000 : UrgentWater;
+        int cloth = ClothWarm(p);
         bool watchF = n.Food >= fT, watchW = n.Water >= wT, watchR = !p.Asleep && n.Rest >= UrgentRest, watchC = n.Hypo < UrgentCold, watchH = n.Heat < UrgentCold;
         long t = from;
         while (t < until)
         {
             long dt = Math.Min(until - t, GameTime.TicksPerHour);
-            int felt = life.FeltTemp10(t, tile, p.Asleep && p.Huddle);
+            int felt = life.FeltTemp10(t, tile, p.Asleep && p.Huddle, cloth);
             var before = n;
             Step(ref n, r, felt, dt, tough);
             long hit = long.MaxValue;
@@ -165,7 +167,7 @@ public sealed partial class PeopleSim
             : p.Dehydration >= Person.Full ? DeathCause.Thirst
             : p.Hypothermia >= Person.Full ? DeathCause.Cold
             : p.Heatstroke >= Person.Full ? DeathCause.Heat
-            : p.Health <= 0 ? DeathCause.Illness : DeathCause.None;
+            : p.Health <= 0 ? (p.Injury > 0 && p.InjuryCause != DeathCause.None ? p.InjuryCause : DeathCause.Illness) : DeathCause.None;
         if (c == DeathCause.None) return false;
         Kill(p, c);
         return true;

@@ -27,6 +27,7 @@ internal sealed class SimLane
 
     public readonly List<(int X, int Y)> Path = new();
     public readonly List<int> TmpThoughts = new();
+    public readonly List<Person> Hunters = new();
     public readonly List<(int Score, int Code)> Opts = new();
     public readonly Dictionary<int, int> Claims = new();
     public readonly Dictionary<(int, int, ulong, int, int), string> WordCache = new();
@@ -39,7 +40,7 @@ internal sealed class SimLane
 /// </summary>
 public sealed class PendingOp
 {
-    public enum Kinds : byte { Notify = 1, Learned = 2, Partial = 3, Painting = 4, History = 5 }
+    public enum Kinds : byte { Notify = 1, Learned = 2, Partial = 3, Painting = 4, History = 5, Hunt = 6 }
     public Kinds Kind;
     public long Tick;
     public int Cell;

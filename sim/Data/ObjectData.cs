@@ -15,6 +15,8 @@ public sealed record ItemDef(string Id, string Name)
     public IReadOnlyDictionary<string, int> Props { get; init; } = new Dictionary<string, int>();
     /// <summary>"" 자원 · "made" 만들어지는 것 · "place" 땅 위에 놓이는 것(모닥불 · 화덕).</summary>
     public string Kind { get; init; } = "";
+    /// <summary>(E5b) 입을 수 있는 것: "" 아님 · "body" 몸 · "feet" 발.</summary>
+    public string Wear { get; init; } = "";
     public int Prop(string id) => Props.TryGetValue(id, out int v) ? v : 0;
 }
 
@@ -151,7 +153,9 @@ public sealed class ObjectCatalog
                             }
                     }
                     string kind = e.TryGetProperty("kind", out var ke) && ke.ValueKind == JsonValueKind.String ? ke.GetString() ?? "" : "";
-                    var it = new ItemDef(id, name) { Traits = traits, Props = props, Kind = kind };
+                    string wear = e.TryGetProperty("wear", out var we) && we.ValueKind == JsonValueKind.String ? we.GetString() ?? "" : "";
+                    if (wear is not ("" or "body" or "feet")) problems.Add($"{where}: wear 는 body · feet 중 하나여야 합니다.");
+                    var it = new ItemDef(id, name) { Traits = traits, Props = props, Kind = kind, Wear = wear };
                     itemById[id] = it; items.Add(it);
                 }
             }

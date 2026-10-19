@@ -178,6 +178,8 @@ public sealed partial class PeopleSim
             else if (hd is not null && HasContainer(p) && p.Scarcity == 0) p.PlanItem = 2;
             return true;
         }
+        // (E5b) 딸 것이 없다 → 보이는 짐승을 잡거나 물고기를 잡는다
+        if (TryHuntForFood(p)) return true;
         // 4) 찾아다님(초록이 짙은 쪽으로 — 이웃 지방도)
         return Search(p, Act.Eat, why, arg, water: false);
     }

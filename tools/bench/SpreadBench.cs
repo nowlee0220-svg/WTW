@@ -16,7 +16,7 @@ public static class SpreadBench
         public ulong Seed; public int Home; public string Biome = "";
         public int Alive, Peak, Births, Inhabited, Opened, MaxHops;
         public long Crossings, Wakes;
-        public long[] Deaths = new long[8], MoveWhy = new long[64];
+        public long[] Deaths = new long[12], MoveWhy = new long[64];
         public long NoWater, NoFood;
         public int Languages, LandNames;
         public double Seconds; public long PersonDays;
@@ -39,7 +39,7 @@ public static class SpreadBench
             });
             var wd = world!;
             row.Home = r.Cell; row.Biome = r.Biome; row.Alive = r.Alive; row.Peak = r.Peak; row.Births = r.Births; row.Seconds = r.Seconds; row.PersonDays = r.PersonDays;
-            Array.Copy(r.Deaths, row.Deaths, 8);
+            Array.Copy(r.Deaths, row.Deaths, 12);
             var st = wd.People.Stats;
             row.Crossings = st.Crossings; row.Wakes = st.Wakes; Array.Copy(st.MoveWhy, row.MoveWhy, 64);
             row.NoWater = st.NoWaterDeaths; row.NoFood = st.NoFoodDeaths;

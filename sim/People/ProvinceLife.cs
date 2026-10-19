@@ -133,7 +133,14 @@ public sealed class ProvinceLife
     /// <summary>(S1) 경계에 닿아 넘겨주기를 기다리는 사람(번호). 저장한다.</summary>
     public readonly List<int> CrossQueue = new();
     /// <summary>(S1) 이 지방의 ("people", 칸) 난수 스트림(RngStreams 의 같은 것 — 처음 쓸 때 채운다).</summary>
-    internal Core.Pcg32? PeopleRng;
+    internal Core.Pcg32? PeopleRng, AnimalRng;
+
+    /// <summary>(E5b) 짐승 무리(번호 순) · 다음 무리 번호 · 민물의 물고기 몫 · 종마다 살 수 있는 마릿수 · 물고기 몫의 한도. 무리 · 번호 · 물고기는 저장한다.</summary>
+    public readonly SortedDictionary<int, Herd> Herds = new();
+    public int NextHerdId = 1;
+    public int FishStock;
+    public int[] AnimalCap = Array.Empty<int>();
+    public int FishCap;
 
     private static List<int>[] NewBuckets() { var a = new List<int>[Buckets * Buckets]; for (int i = 0; i < a.Length; i++) a[i] = new List<int>(); return a; }
 
@@ -245,7 +252,7 @@ public sealed class ProvinceLife
     public int OutsideTemp10(long tick) => Mean10 + Range10 / 2 * Curve[LocalTickOfDay(tick) / (GameTime.TicksPerHour / 4)] / 1000;
 
     /// <summary>그 자리에서 느끼는 기온(0.1°C): 동굴은 늘 연평균 근처, 바위 · 나무 그늘은 밤에 덜 춥고 낮에 덜 덥다, 함께 자면 덜 춥다.</summary>
-    public int FeltTemp10(long tick, int tile, bool huddle)
+    public int FeltTemp10(long tick, int tile, bool huddle, int cloth = 0)
     {
         int t = OutsideTemp10(tick);
         int sh = (uint)tile < HexFrame.TileCount ? Shelter[tile] : 0;
@@ -254,6 +261,8 @@ public sealed class ProvinceLife
         else if (sh == 2) t += night ? 25 : (t > 280 ? -30 : 0);
         else if (sh == 1) t += night ? 15 : (t > 280 ? -40 : 0);
         if (huddle) t += 30;
+        // (E5b) 입은 옷: 따뜻함만큼 — 이미 따뜻하면 여미지 않는다(옷 때문에 22°C 를 넘지는 않는다)
+        if (cloth > 0 && t < 220) t = Math.Min(t + cloth, 220);
         // (E4) 불은 추울 때 데워 준다 — 이미 따뜻하면 사람은 불에서 한 걸음 물러난다(불 때문에 26°C 를 넘지는 않는다)
         if (Fires.Count > 0 || _volcanoFire.Count > 0) { int fw = FireWarmth(tile, tick); if (fw > 0 && t < 260) t = Math.Min(t + fw, 260); }
         return t;

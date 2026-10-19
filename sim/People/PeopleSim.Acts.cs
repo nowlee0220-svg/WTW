@@ -100,6 +100,7 @@ public sealed partial class PeopleSim
         if (p.Rest < UrgentRest) { StartSleep(p, here, Why.Exhausted, collapse: true); return; }
         int felt = FeltNow(p);
         if (felt < 110) AddWish(p, W_warmth, felt < 60 ? 12 : 5);
+        if (felt < 60) AddWish(p, W_clothing, HasCoverItem(p) ? 6 : 2); // (E5b) 몸을 감쌀 것이 있었으면
         if (p.Hypothermia > 10_000 && felt < 60 && (TryWarmByFire(p, Why.VeryCold) || TryLightKnownFire(p) || TryWarm(p, Why.VeryCold))) return;
         if (p.Heatstroke > 10_000 && felt > 400 && TryWarm(p, Why.Hot)) return;
         if (p.Water < UrgentWater && TryDrink(p, Why.VeryThirsty)) return;
@@ -161,6 +162,9 @@ public sealed partial class PeopleSim
         int ts = TeachScore(p, life); if (ts > int.MinValue) Opt(14, ts);
         Painting? study = null;
         int ss = StudyScore(p, life, out study); if (ss > int.MinValue) Opt(15, ss);
+        // (E5b) 사냥 · 물고기
+        int hs = HuntScore(p, life, out var huntHerd); if (hs > int.MinValue) Opt(16, hs);
+        int fsc = FishScore(p, life, out int fishSpot); if (fsc > int.MinValue) Opt(17, fsc);
         opts.Sort((a, b) => b.Score != a.Score ? b.Score.CompareTo(a.Score) : a.Code.CompareTo(b.Code));
         for (int k = 0; k < Math.Min(3, opts.Count); k++)
         {
@@ -181,6 +185,8 @@ public sealed partial class PeopleSim
                 13 => TryMine(p),
                 14 => TryTeach(p),
                 15 => study is not null && TryStudy(p, study),
+                16 => huntHerd is not null && TryHunt(p, huntHerd),
+                17 => fishSpot >= 0 && TryFish(p, fishSpot),
                 _ => false,
             };
             if (ok && p.ActUntil > Now) return;
@@ -374,6 +380,7 @@ public sealed partial class PeopleSim
         if (fireNear) AddThought(p, H_firelight);
         else if (p.SleepShelter == 0 && !p.Huddle && Ability(p, PeopleData.Nerve) <= 3) { AddThought(p, H_dark); AddWish(p, W_warmth, 12); } // 어둠이 무서웠다 → 밝고 따뜻한 것이 있었으면
         else if (p.SleptCold) AddWish(p, W_warmth, 15);
+        if (p.SleptCold) AddWish(p, W_clothing, HasCoverItem(p) ? 15 : 5); // (E5b) 몸을 감쌀 것이 있었으면(가죽을 만져 본 사람일수록)
         if (partnerNear && p.Female) TryConceive(p, Get(p.Partner)!);
         p.Huddle = false;
     }
@@ -487,6 +494,13 @@ public sealed partial class PeopleSim
             case Act.Study:
                 DoStill(p, GameTime.TicksPerHour);
                 return;
+            // (E5b)
+            case Act.Hunt:
+                ArriveHunt(p);
+                return;
+            case Act.Fish:
+                DoStill(p, GameTime.TicksPerHour * WorkPercent(p) / 100);
+                return;
             default:
                 Decide(p);
                 return;
@@ -584,6 +598,17 @@ public sealed partial class PeopleSim
             case Act.Study when done:
                 FinishStudy(p);
                 break;
+            // (E5b)
+            case Act.Hunt when done && p.WhyArg == p.Id:
+                ResolveHunt(p);
+                if (p.Act == Act.Butcher && !p.Dead) return; // 그 자리에서 손질을 시작했다
+                break;
+            case Act.Butcher:
+                FinishButcher(p, done);
+                break;
+            case Act.Fish when done:
+                FinishFish(p);
+                break;
             case Act.DrinkCarried when done:
                 if (p.PotWater > 0) { p.PotWater--; p.Water = Clamp(p.Water + 45_000); p.Dehydration = Math.Max(0, p.Dehydration - 10_000); }
                 break;
@@ -647,7 +672,7 @@ public sealed partial class PeopleSim
 
     private bool CanBeTalkedTo(Person q) =>
         !q.Dead && !q.Asleep && q.Carrier < 0 && q.BreakUntil <= Now && q.Stage(Now) != LifeStage.Baby
-        && q.Act is not (Act.Talk or Act.BreakArgue or Act.Eat or Act.Drink or Act.Sleep or Act.Collapse or Act.EatCorpse or Act.Warm or Act.Carried or Act.Dead or Act.Teach or Act.Learn)
+        && q.Act is not (Act.Talk or Act.BreakArgue or Act.Eat or Act.Drink or Act.Sleep or Act.Collapse or Act.EatCorpse or Act.Warm or Act.Carried or Act.Dead or Act.Teach or Act.Learn or Act.Hunt or Act.Butcher or Act.Fish)
         && q.Why is not (Why.VeryHungry or Why.VeryThirsty or Why.Starving or Why.VeryCold);
 
     /// <summary>다가갔다: 상대가 가까이 있고 말을 받을 수 있으면 상대의 일을 끊고 함께 이야기한다.</summary>

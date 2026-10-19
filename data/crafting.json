@@ -3,8 +3,8 @@
     "재료 다루기와 판정 (E4, 기획서 8-2 · 8-3). 조합식 정답표가 아니라 '어떤 속성 조합 + 행동 + 조건이면 무엇이 나온다'는 규칙이다 — 재료의 속성을 바꾸면 결과도 바뀐다.",
     "actions: 다루는 행동. heat_names: 불의 세기 사다리(0 불 없음 · 1 맨불 · 2 가둔 불 · 3 숯 + 가둔 불).",
     "wishes: '~가 있었으면' 바람. props = 그 바람에 맞을 것 같은 속성(사람은 이 속성이 높은 재료로 실험한다), actions = 해 볼 행동, fire = 불이 있어야 하는 바람.",
-    "rules: action 으로 input(주 재료, 속성 최소값) 을 다룬다. input_max = 넘으면 안 되는 값, with = 둘째 재료(속성 최소값), tool = 들고 있는 도구(속성 최소값), heat = 필요한 불 세기, tinder = 불쏘시개(burns 최소값)가 함께 있어야 함.",
-    "  chance = 조건이 다 맞을 때 성공할 백분율(손재주 · 영리함 · 기술이 더해짐). result/count = 나오는 것, uses = 쓰는 주 재료 수, with_uses = 쓰는 둘째 재료 수, time_min = 걸리는 시간(분), skill = 오르는 기술.",
+    "rules: action 으로 input(주 재료, 속성 최소값) 을 다룬다. input_max = 넘으면 안 되는 값, with = 둘째 재료(속성 최소값), with_max = 둘째 재료가 넘으면 안 되는 값, tool = 들고 있는 도구(속성 최소값), heat = 필요한 불 세기, tinder = 불쏘시개(burns 최소값)가 함께 있어야 함.",
+    "  chance = 조건이 다 맞을 때 성공할 백분율(손재주 · 영리함 · 기술이 더해짐). result/count = 나오는 것, uses = 쓰는 주 재료 수, with_uses = 쓰는 둘째 재료 수, tool_uses = 쓰는 도구 수(끈처럼 묶으면 없어지는 것), time_min = 걸리는 시간(분), skill = 오르는 기술.",
     "  partial: 조건 하나가 모자랄 때(그 속성 이름 · 'heat' · 'tool' · 'with' · 'tinder' · 'chance') 남는 부분 성공 — text(결과 글) · hint(다음 실험의 단서) · result(남는 것). 없으면 generic_hints 의 말을 쓴다.",
     "판정 순서: 같은 행동의 규칙 중 맞는 조건이 가장 많은 것(같으면 먼저 적은 것). 조건이 모두 맞으면 성공(chance), 주 재료 조건의 절반 넘게 맞으면 부분 성공, 아니면 아무 일도 없다."
   ],
@@ -26,7 +26,10 @@
     { "id": "boil",    "name": "끓이기" },
     { "id": "bury",    "name": "묻어 두기" },
     { "id": "pile",    "name": "쌓기" },
-    { "id": "draw",    "name": "그리기" }
+    { "id": "draw",    "name": "그리기" },
+    { "id": "scrape",  "name": "긁기" },
+    { "id": "smoke",   "name": "그을리기" },
+    { "id": "sew",     "name": "꿰매기" }
   ],
   "heat_names": [ "불 없음", "맨불(모닥불)", "가둔 불(돌 화덕)", "숯 + 가둔 불" ],
   "generic_hints": {
@@ -61,7 +64,10 @@
     { "id": "cooking",   "name": "익히기",   "props": ["edible"],                      "actions": ["roast", "dry", "boil", "pile"], "fire": true },
     { "id": "carry",     "name": "나르기",   "props": ["fibrous", "bends", "holds"],   "actions": ["weave", "twist"] },
     { "id": "shiny",     "name": "반짝이는 돌", "props": ["melts", "reduces", "malleable"], "actions": ["melt", "strike"], "fire": true },
-    { "id": "record",    "name": "남겨 두기", "props": ["stains"],                    "actions": ["draw"] }
+    { "id": "record",    "name": "남겨 두기", "props": ["stains"],                    "actions": ["draw"] },
+    { "id": "food",      "name": "먹을 것",  "props": ["edible", "meat"],              "actions": ["dry", "roast", "smoke"] },
+    { "id": "hunting",   "name": "사냥 도구", "props": ["pierces", "sharp"],           "actions": ["roast", "twist", "strike", "grind", "cut"] },
+    { "id": "clothing",  "name": "입을 것",  "props": ["covers", "warm"],              "actions": ["scrape", "dry", "smoke", "twist", "sew", "grind"] }
   ],
   "rules": [
     { "id": "flake",        "name": "돌을 깨뜨려 날을 낸다",     "action": "strike", "input": { "splits": 3, "sharpens": 3 }, "tool": { "hardness": 3 }, "result": "flake", "count": 2, "uses": 1, "time_min": 40, "skill": "crafting",
@@ -112,7 +118,7 @@
       "partial": { "moldable": { "text": "굽다가 금이 갔다 — 덜 말랐다", "hint": "더 말린 뒤에 구워야 할 것 같다", "result": "cracked_pot" } } },
     { "id": "cooked_fruit", "name": "열매를 불에 익힌다",          "action": "roast", "input": { "edible": 3 }, "input_max": { "poison": 1 }, "heat": 1, "result": "cooked_fruit", "count": 1, "uses": 1, "time_min": 20, "skill": "cooking",
       "partial": { "heat": { "text": "불이 없어 익힐 수 없었다" } } },
-    { "id": "roasted_mushroom", "name": "버섯을 구워 독을 뺀다",   "action": "roast", "input": { "edible": 2, "poison": 2 }, "heat": 1, "result": "roasted_mushroom", "count": 1, "uses": 1, "time_min": 20, "skill": "cooking" },
+    { "id": "roasted_mushroom", "name": "버섯을 구워 독을 뺀다",   "action": "roast", "input": { "edible": 2, "poison": 2 }, "input_max": { "meat": 0 }, "heat": 1, "result": "roasted_mushroom", "count": 1, "uses": 1, "time_min": 20, "skill": "cooking" },
     { "id": "roasted_acorn", "name": "딱딱한 열매를 구워 먹을 수 있게 한다", "action": "roast", "input": { "edible": 1, "hardness": 3 }, "heat": 1, "result": "roasted_acorn", "count": 1, "uses": 1, "time_min": 25, "skill": "cooking" },
     { "id": "spear",        "name": "막대 끝을 불에 그을려 뾰족하게 한다", "action": "roast", "input": { "toughness": 3, "burns": 2 }, "input_max": { "weight": 1, "edible": 0 }, "heat": 1, "result": "spear", "count": 1, "uses": 1, "time_min": 30, "skill": "crafting" },
 
@@ -131,6 +137,29 @@
       "partial": { "rain": { "text": "비에 불이 꺼져 버렸다", "hint": "돌로 둘러싸 가두면 비에도 꺼지지 않을 것 같다" }, "fuel": { "text": "땔감이 금방 다 타 버린다", "hint": "돌로 둘러싸 가두면 더 오래 탈 것 같다" }, "heat": { "text": "불이 없는 자리에 돌만 쌓였다" }, "hardness": { "text": "돌이 불에 바스러졌다" } } },
 
     { "id": "paint",        "name": "숯 · 재 · 진흙을 바위 면에 문질러 그림을 남긴다", "action": "draw", "input": { "stains": 3 }, "chance": 60, "result": "painting", "count": 1, "uses": 1, "time_min": 120, "skill": "crafting",
-      "partial": { "stains": { "text": "자국이 희미하게 남았다가 지워졌다", "hint": "더 진하게 묻어나는 것(숯 · 재 · 진흙)을 쓰면 남을 것 같다" }, "chance": { "text": "줄을 그었지만 무엇인지 알아볼 수 없었다", "hint": "더 해 보면 알아볼 수 있게 그릴 것 같다" } } }
+      "partial": { "stains": { "text": "자국이 희미하게 남았다가 지워졌다", "hint": "더 진하게 묻어나는 것(숯 · 재 · 진흙)을 쓰면 남을 것 같다" }, "chance": { "text": "줄을 그었지만 무엇인지 알아볼 수 없었다", "hint": "더 해 보면 알아볼 수 있게 그릴 것 같다" } } },
+    { "id": "cooked_meat",  "name": "고기를 불에 익힌다",          "action": "roast", "input": { "meat": 3 }, "heat": 1, "result": "cooked_meat", "count": 1, "uses": 1, "time_min": 30, "skill": "cooking",
+      "partial": { "heat": { "text": "불이 없어 익힐 수 없었다" } } },
+    { "id": "cooked_fish",  "name": "생선을 불에 굽는다",          "action": "roast", "input": { "meat": 2 }, "input_max": { "meat": 2 }, "heat": 1, "result": "cooked_fish", "count": 1, "uses": 1, "time_min": 20, "skill": "cooking" },
+    { "id": "dried_meat",   "name": "고기를 얇게 말려 둔다",        "action": "dry", "input": { "meat": 2, "dries": 3 }, "result": "dried_meat", "count": 1, "uses": 1, "time_min": 240, "skill": "cooking",
+      "partial": { "dries": { "text": "덜 말라 끈적였다" } } },
+    { "id": "smoked_meat",  "name": "고기를 연기에 그을려 오래 둔다", "action": "smoke", "input": { "meat": 2, "dries": 2 }, "heat": 1, "result": "smoked_meat", "count": 1, "uses": 1, "time_min": 300, "skill": "cooking",
+      "partial": { "heat": { "text": "불이 없어 연기를 쐴 수 없었다", "hint": "불가에서 연기를 쐬면 오래갈 것 같다" } } },
+    { "id": "scrape_hide",  "name": "날가죽 안쪽의 기름과 살을 긁어 낸다", "action": "scrape", "input": { "covers": 2, "rots": 4 }, "tool": { "sharp": 3 }, "result": "scraped_hide", "count": 1, "uses": 1, "time_min": 90, "skill": "crafting",
+      "partial": { "tool": { "text": "손톱으로는 기름과 살이 긁히지 않았다", "hint": "날이 선 돌(긁개 · 돌 날)로 긁으면 될 것 같다" }, "rots": { "text": "긁을 것이 없었다" } } },
+    { "id": "dry_hide",     "name": "긁은 가죽을 펴서 말린다",       "action": "dry", "input": { "covers": 2, "dries": 3, "toughness": 2 }, "input_max": { "rots": 3 }, "result": "dried_hide", "count": 1, "uses": 1, "time_min": 480, "skill": "crafting",
+      "partial": { "rots": { "text": "말리다가 썩는 냄새가 났다 — 안쪽에 기름과 살이 붙어 있었다", "hint": "날카로운 돌로 안쪽을 긁어 낸 뒤 말려야 할 것 같다" }, "dries": { "text": "말라 버석거릴 뿐이었다" } } },
+    { "id": "tan_hide",     "name": "마른 가죽을 연기에 그을려 부드럽게 한다", "action": "smoke", "input": { "covers": 3, "toughness": 4 }, "heat": 1, "result": "tanned_hide", "count": 1, "uses": 1, "time_min": 240, "skill": "crafting",
+      "partial": { "heat": { "text": "불이 없어 연기를 쐴 수 없었다", "hint": "불가에서 연기를 쐬면 부드러워질 것 같다" }, "toughness": { "text": "그을리다가 찢어졌다", "hint": "먼저 잘 말린 가죽이라야 할 것 같다" } } },
+    { "id": "soften_hide",  "name": "마른 가죽을 비틀고 주물러 부드럽게 한다(불 없이 — 오래 걸린다)", "action": "twist", "input": { "covers": 3, "toughness": 4 }, "input_max": { "bends": 1 }, "result": "tanned_hide", "count": 1, "uses": 1, "time_min": 420, "skill": "crafting",
+      "partial": { "toughness": { "text": "주무르다가 찢어졌다", "hint": "먼저 잘 말린 가죽이라야 할 것 같다" } } },
+    { "id": "bone_needle",  "name": "뼈 조각을 갈아 바늘을 만든다",   "action": "grind", "input": { "sharpens": 3, "splits": 2, "toughness": 2 }, "input_max": { "weight": 1 }, "with": { "hardness": 3 }, "result": "bone_needle", "count": 1, "uses": 1, "time_min": 120, "skill": "crafting",
+      "partial": { "weight": { "text": "너무 굵고 무거워 바늘이 되지 않았다", "hint": "작고 가벼운 것(뼈 조각)을 갈아야 할 것 같다" } } },
+    { "id": "fur_coat",     "name": "무두질한 가죽을 꿰매 털가죽 옷을 짓는다", "action": "sew", "input": { "covers": 4 }, "with": { "fibrous": 4, "toughness": 3 }, "tool": { "pierces": 3 }, "result": "fur_coat", "count": 1, "uses": 3, "with_uses": 1, "time_min": 360, "skill": "crafting",
+      "partial": { "tool": { "text": "가죽에 구멍이 나지 않아 꿰맬 수 없었다", "hint": "뾰족하고 가는 것(뼈를 갈아 만든 바늘)이 있으면 꿰맬 수 있을 것 같다" }, "with": { "text": "꿰맬 실이 없었다", "hint": "질긴 실(힘줄 · 끈)이 있어야 할 것 같다" }, "covers": { "text": "꿰맸지만 뻣뻣하게 갈라졌다", "hint": "연기에 그을려 부드럽게 한 가죽이라야 할 것 같다" } } },
+    { "id": "fur_boots",    "name": "마른 가죽을 꿰매 신을 짓는다",   "action": "sew", "input": { "covers": 3, "toughness": 4 }, "input_max": { "covers": 3 }, "with": { "fibrous": 4, "toughness": 3 }, "tool": { "pierces": 3 }, "result": "fur_boots", "count": 1, "uses": 1, "with_uses": 1, "time_min": 180, "skill": "crafting",
+      "partial": { "tool": { "text": "가죽에 구멍이 나지 않아 꿰맬 수 없었다", "hint": "뾰족하고 가는 것(뼈를 갈아 만든 바늘)이 있으면 꿰맬 수 있을 것 같다" }, "with": { "text": "꿰맬 실이 없었다", "hint": "질긴 실(힘줄 · 끈)이 있어야 할 것 같다" } } },
+    { "id": "stone_spear",  "name": "돌 날을 막대 끝에 끈으로 묶어 창을 만든다", "action": "twist", "input": { "sharp": 3, "pierces": 2 }, "with": { "toughness": 4, "hardness": 2 }, "with_max": { "weight": 1 }, "tool": { "fibrous": 4, "toughness": 4 }, "tool_uses": 1, "result": "stone_spear", "count": 1, "uses": 1, "with_uses": 1, "time_min": 60, "skill": "crafting",
+      "partial": { "tool": { "text": "묶을 것이 없어 날이 빠져 버렸다", "hint": "질긴 끈(끈 · 힘줄)으로 묶으면 될 것 같다" }, "with": { "text": "꽂을 막대가 없었다", "hint": "곧고 질긴 나무 막대가 있어야 할 것 같다" } } }
   ]
 }

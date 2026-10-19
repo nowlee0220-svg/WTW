@@ -48,6 +48,12 @@ T = [
  ("sim/Province/ProvinceGenerator.cs", [("public static ProvinceMap Generate(", "MapGen")]),
  ("sim/Scheduling/Scheduler.cs", [("public ScheduledEvent Pop()", "Schedule")]),
  ("sim/World/GameWorld.cs", [("public void AdvanceTo(long targetTick)", "Sim")]),
+ # (E5b) 짐승 · 사냥 — X1 무리의 판단 · X2 사냥할까 · X3 둘레의 사람 · X4 늘고 줄기 · X5 사냥 · 물고기 · X6 옷 · 썩음
+ ("sim/People/PeopleSim.Animals.cs", [("internal void OnHerdEvent(ProvinceLife life, int id)", "X1"), ("private Person? NearestPerson(", "X3"), ("private Person? Vulnerable(", "X3"),
+   ("private void AnimalsDaily(ProvinceLife life)", "X4"), ("private bool TryStalk(", "X1")]),
+ ("sim/People/PeopleSim.Hunt.cs", [("private int HuntScore(Person p, ProvinceLife life, out Herd? target)", "X2"), ("private void HuntHelpers(", "X2"), ("private bool TryHunt(Person p, Herd h)", "X5"),
+   ("private void ArriveHunt(Person p)", "X5"), ("private void ResolveHunt(Person p)", "X5"), ("private void FinishButcher(Person p, bool done)", "X5"), ("private int FishScore(", "X5"),
+   ("private void BodyDaily(Person p, Pcg32 rng)", "X6"), ("private void RotGround(", "X6")]),
 ]
 here = os.path.dirname(os.path.abspath(__file__))
 src = os.path.join(here, "..", "..", "sim", "Core", "Prof.cs")

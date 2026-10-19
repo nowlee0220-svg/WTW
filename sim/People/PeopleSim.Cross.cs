@@ -281,6 +281,7 @@ public sealed partial class PeopleSim
             q.ArrivedTick = Now;
             q.NewMotion().SetStill(Now, entry % S * 1000 + 500, entry / S * 1000 + 500);
         }
+        MoveCompanions(p, from, to, entry);
         p.SearchDir = b.InDir8;
         St.Crossings++;
         if (p.Why is Why.Scarce or Why.SeekMate or Why.Explore or Why.NoWater or Why.NoFood or Why.FollowFamily or Why.Break || !VisitedBefore(p, b.Nb))
@@ -344,6 +345,7 @@ public sealed partial class PeopleSim
         foreach (int cell in empty)
         {
             var life = Provinces[cell];
+            SleepAnimals(life);
             Provinces.Remove(cell);
             _livesDirty = true;
             Dormant[cell] = new DormantProvince(cell, life.Stocks.Select(kv => (kv.Key, kv.Value)).ToArray(), life.Revealed.ToArray(), life.People)
@@ -353,6 +355,7 @@ public sealed partial class PeopleSim
                 Dug = life.Dug.ToArray(),
                 // (S1) 예약 번호는 지방마다 이어진다(잠들었다 깨어나도 — 잠든 상태가 결과에 영향이 없게)
                 SchedHandle = life.Sched.NextHandle, SchedOrder = life.Sched.NextOrder, Events = life.Sched.ExportSorted(),
+                Herds = life.Herds.Values.ToList(), NextHerdId = life.NextHerdId, FishStock = life.FishStock, SleptAt = Now, AnimalsReady = true,
             };
         }
         ForgetLastLife();
@@ -384,6 +387,12 @@ public sealed record DormantProvince(int Cell, (int Tile, TileStock Stock)[] Sto
     public long SchedHandle { get; init; } = 1;
     public long SchedOrder { get; init; } = 1;
     public Scheduling.ScheduledEvent[] Events { get; init; } = Array.Empty<Scheduling.ScheduledEvent>();
+    /// <summary>(E5b) 짐승 무리 · 다음 무리 번호 · 물고기 몫 · 잠든 시각(−1 = 저장할 때 깨어 있었다 — 예약이 그대로 있다) · 짐승을 이미 만들었나(버전 9 이하 파일은 아니다).</summary>
+    public List<Herd> Herds { get; init; } = new();
+    public int NextHerdId { get; init; } = 1;
+    public int FishStock { get; init; }
+    public long SleptAt { get; init; } = -1;
+    public bool AnimalsReady { get; init; }
 }
 
 /// <summary>경계를 넘은 일 하나(화면 · 지구본의 이동 표시).</summary>
