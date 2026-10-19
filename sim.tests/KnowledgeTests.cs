@@ -1,4 +1,5 @@
 using Wtw.Sim.Data;
+using Wtw.Sim;
 using Wtw.Sim.People;
 using Wtw.Sim.Persistence;
 using Wtw.Sim.Time;
@@ -86,7 +87,7 @@ public class KnowledgeTests
         var rule = C.Rule("cord")!;
         ps.Learn(p, rule, 0, I("grass"), -1, -1);
         int i = p.KnownIndex(rule.Index);
-        var k = p.Known[i]; k.LastUse = w.Now - 3 * GameTime.TicksPerYear; p.Known[i] = k;
+        var k = p.Known[i]; k.LastUse = w.Now - 6 * GameTime.TicksPerYear; p.Known[i] = k;
         int start = k.Level;
         // 날마다(하루 경계와 같은 셈): 안 쓴 지 오래면 흐려진다
         for (int d = 1; d <= 12; d++) { w.AdvanceTo(d * GameTime.TicksPerDay); KeepOld(p, rule.Index, w.Now); }
@@ -96,7 +97,7 @@ public class KnowledgeTests
         ps.UseKnowledge(p, rule.Index);
         Assert.True(p.KnowLevel(rule.Index) > faded);
         // 아주 흐려지면 잊는다
-        i = p.KnownIndex(rule.Index); k = p.Known[i]; k.Level = PeopleSim.ForgetBelow; k.LastUse = w.Now - 3 * GameTime.TicksPerYear; p.Known[i] = k;
+        i = p.KnownIndex(rule.Index); k = p.Known[i]; k.Level = PeopleSim.ForgetBelow; k.LastUse = w.Now - 6 * GameTime.TicksPerYear; p.Known[i] = k;
         for (int d = 13; d <= 30 && p.Knows(rule.Index); d++) { w.AdvanceTo(d * GameTime.TicksPerDay); KeepOld(p, rule.Index, w.Now); }
         Assert.False(p.Knows(rule.Index));
         Assert.Contains(p.Bio, b => b.Kind == BioKind.Forgot && b.Param == rule.Index);
@@ -116,7 +117,62 @@ public class KnowledgeTests
         int i = p.KnownIndex(rule);
         if (i < 0) return;
         var k = p.Known[i];
-        if (now - k.LastUse < PeopleSim.FadeAfter) { k.LastUse = now - 3 * GameTime.TicksPerYear; p.Known[i] = k; }
+        if (now - k.LastUse < 5 * GameTime.TicksPerYear) { k.LastUse = now - 6 * GameTime.TicksPerYear; p.Known[i] = k; }
+    }
+
+    [Fact]
+    public void EasyRulesFadeSlowerThanHardOnes()
+    {
+        // 단계가 적은 법(불씨 · 마른 풀 · 장작 · 끈)은 쉬움, 토기 굽기 · 숯은 보통, 구리는 어려움
+        foreach (var id in new[] { "sparks", "dry_grass", "split_wood", "cord" }) Assert.True(PeopleSim.RuleSteps(C.Rule(id)!) <= 2, id);
+        foreach (var id in new[] { "pot", "charcoal" }) Assert.Equal(3, PeopleSim.RuleSteps(C.Rule(id)!));
+        Assert.True(PeopleSim.RuleSteps(C.Rule("copper")!) >= 4);
+        var easy = PeopleSim.FadeOf(C.Rule("dry_grass")!); var normal = PeopleSim.FadeOf(C.Rule("pot")!); var hard = PeopleSim.FadeOf(C.Rule("copper")!);
+        Assert.True(easy.After > normal.After && normal.After > hard.After);
+        Assert.True(easy.Every > normal.Every && normal.Every > hard.Every);
+        // 실제로: 같은 사람이 6년 안 쓴 쉬운 법(구리 날 두드리기 — 2단계)과 어려운 법(구리 녹이기) — 30일 뒤 어려운 법이 더 흐려진다(둘 다 재료가 없어 쓸 수 없다)
+        var (w, cell, spots) = NewWorld();
+        var ps = w.People;
+        var p = Spawn(w, cell, spots[0]);
+        p.Traits.Clear(); p.BirthTick = -30 * GameTime.TicksPerYear;
+        ps.Learn(p, C.Rule("copper_blade")!, 0, I("copper_lump"), -1, -1);
+        ps.Learn(p, C.Rule("copper")!, 0, I("copper_ore"), -1, -1);
+        Array.Clear(p.Wish); p.RecordRule = -1; // 세계에서 처음 알아낸 것을 그림으로 남기러 가지 않게(그리면 그 법을 "쓴" 것이 된다)
+        foreach (int r in new[] { C.Rule("copper_blade")!.Index, C.Rule("copper")!.Index }) { int i = p.KnownIndex(r); var k = p.Known[i]; k.LastUse = -6 * GameTime.TicksPerYear; p.Known[i] = k; }
+        for (int d = 1; d <= 30; d++) { w.AdvanceTo(d * GameTime.TicksPerDay); KeepOld(p, C.Rule("copper_blade")!.Index, w.Now); KeepOld(p, C.Rule("copper")!.Index, w.Now); }
+        int lostEasy = 80 - p.KnowLevel(C.Rule("copper_blade")!.Index), lostHard = 80 - p.KnowLevel(C.Rule("copper")!.Index);
+        Assert.True(lostHard > lostEasy && lostEasy >= 0, $"쉬운 법 −{lostEasy} · 어려운 법 −{lostHard}");
+    }
+
+    [Fact]
+    public void WordMeaningIsTheSameEverywhere()
+    {
+        var (w, cell, spots) = NewWorld();
+        var ps = w.People;
+        w.Apply(new Intervention(0, Intervention.Kinds.SpawnFamily, new long[] { cell, spots[0].X, spots[0].Y }));
+        var a = ps.All[0]; var b = ps.All[1];
+        var fire = C.Rule("campfire")!;
+        ps.Learn(a, fire, 0, I("twigs"), I("ember"), -1);
+        ps.Learn(b, C.Rule("pot")!, 0, I("dry_pot"), -1, -1);
+        var snap = new Runtime.WorldSnapshot();
+        snap.Fill(w, 1, 0, 0);
+        int c = ps.Lang.ConceptIndex("fire");
+        string word = ps.WordOf(a, c), meaning = ps.Lang.Concepts[c].Meaning;
+        Assert.Equal("불", meaning);
+        // [지식의 행방] 창(위 줄 · 펼친 낱말 줄은 같은 값을 쓴다)
+        var d = snap.Discoveries.Single(x => x.Rule == fire.Index);
+        Assert.Equal(word, d.Word);
+        Assert.Equal(meaning, d.WordMeaning);
+        // 카드의 새 낱말 · 가르칠 때의 말풍선
+        var card = ps.Card(a.Id)!;
+        Assert.Contains(card.NewWords, x => x.Word == word && x.Meaning == meaning);
+        a.TargetB = fire.Index;
+        Assert.Equal((word, meaning), ps.TeachWord(a));
+        // 토기도: 낱말마다 뜻이 하나다(다른 뜻과 섞이지 않는다)
+        int pc = ps.Lang.ConceptIndex("pot");
+        var dp = snap.Discoveries.Single(x => x.Rule == C.Rule("pot")!.Index);
+        Assert.Equal(ps.Lang.Concepts[pc].Meaning, dp.WordMeaning);
+        Assert.NotEqual(d.WordMeaning, dp.WordMeaning);
     }
 
     [Fact]
@@ -142,7 +198,7 @@ public class KnowledgeTests
         int looks = 0;
         for (; looks < 60 && !b.Knows(rule.Index); looks++) { b.Target = g.Id; ps.FinishStudy(b); }
         Assert.True(b.Knows(rule.Index));
-        Assert.True(looks >= 5, $"그림은 느리게 가르친다 ({looks}번 만에)");
+        Assert.True(looks >= 4, $"그림은 느리게 가르친다 ({looks}번 만에)");
         Assert.Equal(Via.Painting, b.Known[b.KnownIndex(rule.Index)].Via);
         Assert.False(ps.Discoveries[rule.Index].Lost);
         Assert.Equal(1, g.Taught);
@@ -200,7 +256,7 @@ public class KnowledgeTests
                 ps.Learn(q, C.Rule("flake")!, 1, I("flint"), -1, -1);
             }
             var p0 = ps.All[0];
-            var k = p0.Known[0]; k.Level = 40; k.LastUse = -3 * GameTime.TicksPerYear; p0.Known[0] = k;
+            var k = p0.Known[0]; k.Level = 40; k.LastUse = -6 * GameTime.TicksPerYear; p0.Known[0] = k;
             ps.AddLearning(ps.All[^1], C.Rule("leaf_cup")!, 30, -1, Via.Watch, 3, -1, -1);
             p0.RecordRule = C.Rule("cord")!.Index;
             ps.MakePainting(p0, p0.Tile(w.Now), new Core.Pcg32(5, 5));

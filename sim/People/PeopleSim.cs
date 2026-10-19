@@ -38,7 +38,7 @@ public sealed class PeopleStats
     public readonly long[] RuleDone = new long[64];
     public long Experiments, Discoveries, Partials, Crafts, FiresLit, FiresTaken, Mined, CookedMeals, BadStomachs, Watched, Lost, Refound, Wildfires, CraftFails, PartialRepeats;
     /// <summary>(E5) 지식: 수업 · 수업으로 쌓인 양 합 · 알아듣기 합 · 수업으로 다 배움 · 보고 다 배움 · 단서 나눔 · 되살아남 · 잊음 · 그림 · 바랜 그림 · 그림 보기 · 그림으로 다 배움 · 아는 법의 흐려진 실패.</summary>
-    public long Lessons, LessonAmount, LessonUnderstand, TaughtFull, WatchedFull, CluesShared, Refreshed, Forgot, Paintings, PaintingsFaded, Studies, LearnedFromPainting, FadedFails, ClueAvoid;
+    public long Lessons, LessonAmount, LessonUnderstand, TaughtFull, WatchedFull, CluesShared, Refreshed, Forgot, Paintings, PaintingsFaded, Studies, LearnedFromPainting, FadedFails, ClueAvoid, LostByForget;
     /// <summary>(E5) 무리 단위: 끊김 · 되찾음 · 되찾기까지 걸린 틱 · 되찾은 길별(0 다시 발견 · 1 이웃 · 2 그림 · 3 옮겨 옴) · 아는 법 표본(날마다 무리 × 법) · 그중 한 사람만 앎.</summary>
     public long GroupLost, GroupRefound, GroupKnownSamples, GroupSoleSamples;
     public readonly List<long> RefoundDelays = new();

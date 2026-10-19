@@ -153,6 +153,7 @@ public sealed partial class PeopleSim
     /// <summary>하루에 한 번(세계 하루 경계): 나이 · 병 · 늙음 · 아기 · 출산 · 원한이 풀림 · 솜씨가 무뎌짐.</summary>
     internal void OnDay()
     {
+        _forgotToday.Clear();
         for (int i = 0; i < _all.Count; i++)
         {
             var p = _all[i];

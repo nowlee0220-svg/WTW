@@ -18,7 +18,8 @@ public static class EventLevels
     public static int Of(WorldEventKind k) => k switch
     {
         WorldEventKind.Discovery or WorldEventKind.DiscoveryLost or WorldEventKind.Language => World,
-        WorldEventKind.DiscoveryGroup or WorldEventKind.Rediscovered or WorldEventKind.Moved or WorldEventKind.LandNamed or WorldEventKind.GroupLost or WorldEventKind.GroupRefound => Group,
+        WorldEventKind.DiscoveryGroup or WorldEventKind.Rediscovered or WorldEventKind.Moved or WorldEventKind.LandNamed => Group,
+        // (E5 고침) 무리 단위 끊김 · 되찾음은 ★(그 지방을 볼 때만) — [지식의 행방] 창에는 다 남는다
         _ => Person,
     };
 

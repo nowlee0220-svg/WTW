@@ -10,11 +10,18 @@ using Wtw.Sim.World;
 /// </summary>
 public static class SceneBench
 {
-    public static void Run(string outDir, ulong seed, bool onlyArtisan = false)
+    public static void Run(string outDir, ulong seed, bool onlyArtisan = false, bool onlyCopper = false)
     {
         Directory.CreateDirectory(outDir);
         var index = new List<string>();
         if (onlyArtisan) index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("last-artisan")));
+        if (onlyCopper)
+        {
+            index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("copper-village")));
+            CopperScene(outDir, seed, index);
+            File.WriteAllLines(Path.Combine(outDir, "index.txt"), index);
+            return;
+        }
         GameWorld New()
         {
             var w = GameWorld.Create(seed, new WorldConfig { DotCount = 0 });
@@ -50,6 +57,7 @@ public static class SceneBench
         if (pot > 0) Save("first-pot.wtw", "첫 토기 직전", "이틀 뒤에 누군가 처음으로 진흙 그릇을 불에 구워 토기를 만든다", pot - 2 * GameTime.TicksPerDay);
         Save("village-50y.wtw", "50년 뒤 마을", "세 가족이 50년을 산 뒤의 마을 — 가르치고 · 배우고 · 그림으로 남기는 모습. [지식의 행방] 창과 카드의 [지식]을 보세요", 50 * GameTime.TicksPerYear);
         }
+        if (!onlyArtisan) CopperScene(outDir, seed, index);
         // (E5) 마지막 장인이 늙음: 세계에서 그 법을 아는 사람이 셋 이하이고 모두 45살 넘은 때 가운데 가장 "끊기기 쉬운" 때
         // (아는 사람이 적을수록 · 가장 젊은 아는 사람도 늙었을수록). 150년 안. 결정론이라 늘 같은 장면.
         {
@@ -86,5 +94,17 @@ public static class SceneBench
             else Console.WriteLine("마지막 장인 장면: 150년 안에 찾지 못함");
         }
         File.WriteAllLines(Path.Combine(outDir, "index.txt"), index);
+    }
+
+    /// <summary>(E5 고침) 구리 광맥 곁 마을 — 구리 광맥이 드러난 지방, 불 · 토기를 아는 세 가족(CopperBench 와 같은 세계).</summary>
+    private static void CopperScene(string outDir, ulong seed, List<string> index)
+    {
+        var w = CopperBench.NewVillage(seed, 300, out int cell);
+        if (w is null) { Console.WriteLine("구리 광맥 곁 마을: 이 행성에 구리가 드러난 따뜻한 지방이 없음"); return; }
+        string file = "copper-village.wtw";
+        SaveGame.SaveFile(w, Path.Combine(outDir, file));
+        string land = Wtw.Sim.Planet.PlanetNames.Of(w.Planet.Biome[cell]);
+        index.Add($"{file}|구리 광맥 곁 마을|구리 광맥이 드러난 {land} 지방(칸 {cell})에 세 가족 — 어른들은 처음부터 불 피우기와 토기 굽기를 안다. 돌 화덕 · 숯 · 구리까지 갈까요? [넘기기] → 고른 물건 · 구리 덩이 ({GameTime.Format(w.Now)} · 사람 {w.People.AliveCount}명)");
+        Console.WriteLine($"{file}: 칸 {cell}({land}) · 사람 {w.People.AliveCount}명");
     }
 }

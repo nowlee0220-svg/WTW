@@ -68,7 +68,7 @@ public partial class DiscoveryPanel : PanelContainer
             var top = new HBoxContainer();
             v.AddChild(top);
             top.AddChild(PeopleUi.L(d.Item, UiTheme.FontSizeSmall + 4, d.Lost ? new Color(0.75f, 0.55f, 0.5f) : UiTheme.Accent, bold: true));
-            if (d.Word.Length > 0) top.AddChild(PeopleUi.L($"'{d.Word}'(그 말로 {d.WordMeaning})", UiTheme.FontSizeSmall, UiTheme.TextDim));
+            if (d.Word.Length > 0) top.AddChild(PeopleUi.L($"'{d.Word}'(그 말로 {d.WordMeaning})", UiTheme.FontSizeSmall + 1, UiTheme.TextDim));
             top.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
             top.AddChild(PeopleUi.L(d.Lost ? $"사라짐 — 아는 사람 0명" : $"아는 사람 {d.Knowers}명", UiTheme.FontSizeSmall + 1, d.Lost ? new Color(1f, 0.5f, 0.45f) : new Color(0.6f, 0.9f, 0.55f), bold: true));
             v.AddChild(PeopleUi.L($"어떻게: {d.RuleName}" + (d.Heat.Length > 0 ? $" ({d.Heat}에서)" : ""), UiTheme.FontSizeSmall + 1, null, wrap: true));
@@ -120,7 +120,7 @@ public partial class DiscoveryPanel : PanelContainer
     {
         var dim = UiTheme.TextDim;
         v.AddChild(new HSeparator());
-        if (d.Word.Length > 0) v.AddChild(PeopleUi.L($"낱말: '{d.Word}'(뜻: {d.WordMeaning}) — {d.WordOrigin}", UiTheme.FontSizeSmall, null, wrap: true));
+        if (d.Word.Length > 0) v.AddChild(PeopleUi.L($"낱말: '{d.Word}'(뜻: {d.WordMeaning}) — {d.WordOrigin}", UiTheme.FontSizeSmall + 2, null, wrap: true));
         if (d.OtherWords.Length > 0) v.AddChild(PeopleUi.L("다른 말들의 낱말: " + string.Join(" · ", d.OtherWords), UiTheme.FontSizeSmall, dim, wrap: true));
         v.AddChild(PeopleUi.L($"지금 누가 아나 — {d.Knowers}명 · 무리 {d.Groups}곳", UiTheme.FontSizeSmall + 1, UiTheme.Accent, bold: true));
         if (d.People.Length == 0) v.AddChild(PeopleUi.L("아무도 모른다.", UiTheme.FontSizeSmall, dim));

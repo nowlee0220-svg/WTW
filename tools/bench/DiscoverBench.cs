@@ -22,7 +22,7 @@ public static class DiscoverBench
         public string Detail = "";
         public int Popups1, Popups5, Level3, Level2;
         // (E5) 지식
-        public long Lessons, TaughtFull, WatchedFull, Forgot, Refreshed, Paintings, Studies, FromPainting, GroupLost, GroupRefound, Known, Sole, ClueShared, ClueAvoid, FadedFails, Und; public long[] How = new long[4]; public List<long> Delays = new(); // 끝에 살아 있는 사람 중 아는 법이 하나라도 있는 사람
+        public long LostByForget, Lessons, TaughtFull, WatchedFull, Forgot, Refreshed, Paintings, Studies, FromPainting, GroupLost, GroupRefound, Known, Sole, ClueShared, ClueAvoid, FadedFails, Und; public long[] How = new long[4]; public List<long> Delays = new(); // 끝에 살아 있는 사람 중 아는 법이 하나라도 있는 사람
     }
 
     /// <summary>know = "fire" 이면 뿌린 사람들이 처음부터 불 피우는 법(부싯돌 불씨 · 모닥불)을 안다(추운 땅에서 "불을 아는 사람"의 생존을 따로 재기 위해).</summary>
@@ -95,7 +95,7 @@ public static class DiscoverBench
         row.Experiments = (int)st.Experiments; row.Discoveries = (int)st.Discoveries; row.Partials = (int)st.Partials; row.Crafts = (int)st.Crafts; row.CraftFails = (int)st.CraftFails; row.PartialRepeats = (int)st.PartialRepeats;
         row.FiresLit = (int)st.FiresLit; row.FiresTaken = (int)st.FiresTaken; row.Mined = (int)st.Mined; row.Cooked = (int)st.CookedMeals; row.Watched = (int)st.Watched; row.Wildfires = (int)st.Wildfires;
         row.Known1y = ps.All.Count(q => !q.Dead && q.Known.Count > 0);
-        row.Lessons = st.Lessons; row.TaughtFull = st.TaughtFull; row.WatchedFull = st.WatchedFull; row.Forgot = st.Forgot; row.Refreshed = st.Refreshed; row.Paintings = st.Paintings;
+        row.LostByForget = st.LostByForget; row.Lessons = st.Lessons; row.TaughtFull = st.TaughtFull; row.WatchedFull = st.WatchedFull; row.Forgot = st.Forgot; row.Refreshed = st.Refreshed; row.Paintings = st.Paintings;
         row.Studies = st.Studies; row.FromPainting = st.LearnedFromPainting; row.GroupLost = st.GroupLost; row.GroupRefound = st.GroupRefound; row.Known = st.GroupKnownSamples; row.Sole = st.GroupSoleSamples;
         row.ClueShared = st.CluesShared; row.ClueAvoid = st.ClueAvoid; row.FadedFails = st.FadedFails; row.Und = st.LessonUnderstand; Array.Copy(st.RefoundHow, row.How, 4); row.Delays.AddRange(st.RefoundDelays);
     }
@@ -162,6 +162,7 @@ public static class DiscoverBench
         long exps = rows.Sum(r => (long)r.Experiments), reps = rows.Sum(r => (long)r.PartialRepeats);
         sb.AppendLine($"- (E5) 같은 헛수고 비율 {reps * 100.0 / Math.Max(1, exps):0.0}% (실험 {exps:N0} 중 {reps:N0}) · 단서 나눔 {rows.Sum(r => r.ClueShared):N0} · 단서를 보고 같은 실험을 피함 {rows.Sum(r => r.ClueAvoid):N0}");
         sb.AppendLine($"- (E5) 수업 {rows.Sum(r => r.Lessons):N0}번(평균 알아듣기 {rows.Sum(r => r.Und) / (double)Math.Max(1, rows.Sum(r => r.Lessons)):0}%) · 수업으로 다 배움 {rows.Sum(r => r.TaughtFull):N0} · 보고 다 배움 {rows.Sum(r => r.WatchedFull):N0} · 흐려져 되살림 {rows.Sum(r => r.Refreshed):N0} · 잊음 {rows.Sum(r => r.Forgot):N0} · 흐려진 헛손질 {rows.Sum(r => r.FadedFails):N0}");
+        sb.AppendLine($"- (E5) 세계에서 사라짐 {rows.Sum(r => r.Lost)}번 가운데 마지막으로 알던 사람이 잊어서 {rows.Sum(r => r.LostByForget)}번 · 잊음 시드 중앙값 {PeopleBench.Median(rows.Select(r => (double)r.Forgot)):0}번");
         sb.AppendLine($"- (E5) 그림 {rows.Sum(r => r.Paintings)}점(그린 시드 {rows.Count(r => r.Paintings > 0)}/{seeds}) · 그림 보기 {rows.Sum(r => r.Studies):N0}번 · 그림으로 다 배움 {rows.Sum(r => r.FromPainting)}명");
         long gl = rows.Sum(r => r.GroupLost), gr = rows.Sum(r => r.GroupRefound);
         var delays = rows.SelectMany(r => r.Delays).Select(d => d / (double)GameTime.TicksPerYear).ToList();

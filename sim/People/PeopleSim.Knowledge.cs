@@ -43,10 +43,29 @@ public sealed partial class PeopleSim
     /// <summary>한 사람이 가르치는 사이(사흘) — 날마다 가르치면 수업이 일보다 많아진다.</summary>
     public const long TeachCooldown = 3 * GameTime.TicksPerDay;
     /// <summary>한 사람이 그림을 그리는 사이(5년) — 나무껍질 그림이 바랠 때마다 다시 그리지 않게.</summary>
-    public const long PaintCooldown = 5 * GameTime.TicksPerYear;
+    public const long PaintCooldown = 10 * GameTime.TicksPerYear;
+    /// <summary>같은 무리가 같은 법을 다시 그리지 않는 동안(40년) — 그림은 드물고 귀하게.</summary>
+    public const long RepaintAfter = 40 * GameTime.TicksPerYear;
     public const int ForgetBelow = 15;
-    /// <summary>안 쓴 지 이만큼 지나면 흐려지기 시작한다(2년).</summary>
+    /// <summary>안 쓴 지 이만큼 지나면 흐려지기 시작한다(보통 법 2년 — 쉬운 법은 4년, 어려운 법은 1년 반).</summary>
     public const long FadeAfter = 2 * GameTime.TicksPerYear;
+
+    /// <summary>
+    /// (E5 고침) 법의 단계 수 = 재료 하나 + 둘째 재료 + 도구 + 불 세기 + "너무 ~하면 안 됨" 조건. 단계가 적은 법(불씨 · 마른 풀 · 장작 · 끈 · 그릇 빚기 …)은 천천히,
+    /// 많은 법(토기 굽기 · 숯 · 구리 …)은 빨리 잊는다.
+    /// </summary>
+    public static int RuleSteps(CraftRule r) => 1 + (r.HasWith ? 1 : 0) + (r.HasTool ? 1 : 0) + r.Heat + (r.InputMax.Count > 0 ? 1 : 0);
+
+    /// <summary>쉬움(단계 2 이하) · 보통(3) · 어려움(4 이상)에 따라: 흐려지기 시작하는 때 · 며칠에 1씩 흐려지나 · 늙어서 며칠에 1씩 더 잊나.</summary>
+    public static (long After, int Every, int ElderEvery) FadeOf(CraftRule r) => RuleSteps(r) switch
+    {
+        <= 2 => (4 * GameTime.TicksPerYear, 6, 16),
+        3 => (FadeAfter, 3, 8),
+        _ => (GameTime.TicksPerYear * 3 / 2, 2, 5),
+    };
+
+    /// <summary>오늘(하루 경계) 잊힌 법들 — "잊어서 세계에서 사라짐"을 가르는 데만 쓴다(같은 하루 경계 안에서만 — 저장하지 않음).</summary>
+    private readonly SortedSet<int> _forgotToday = new();
     public readonly SortedDictionary<int, Painting> Paintings = new();
     public int NextPaintingId { get; internal set; } = 1;
     public readonly SortedDictionary<long, GroupKnow> GroupKnows = new();
@@ -133,8 +152,9 @@ public sealed partial class PeopleSim
         {
             var k = p.Known[i];
             int dec = 0;
-            if (Now - k.LastUse > FadeAfter && day % 3 == 0) dec++;
-            if (elder && day % 8 == 0) dec++;
+            var (after, every, elderEvery) = FadeOf(Craft.Rules[k.Rule]);
+            if (Now - k.LastUse > after && day % every == 0) dec++;
+            if (elder && day % elderEvery == 0) dec++;
             if (stubborn && day % 2 == 0) dec = 0; // 고지식함: 아는 법을 덜 잊는다
             if (dec == 0) continue;
             k.Level -= dec;
@@ -142,6 +162,7 @@ public sealed partial class PeopleSim
             {
                 p.Known.RemoveAt(i);
                 Stats.Forgot++;
+                _forgotToday.Add(k.Rule);
                 AddBio(p, BioKind.Forgot, -1, k.Rule);
                 continue;
             }
@@ -292,7 +313,7 @@ public sealed partial class PeopleSim
     // ───────── 그림 ─────────
 
     /// <summary>그릴 자리: 동굴 안(40타일) → 바위 면(25) → 나무(10). 서서 그릴 타일 · 벽 타일 · 매체. 없으면 false.</summary>
-    private bool FindSurface(Person p, ProvinceLife life, int here, out int stand, out int wall, out byte medium)
+    private bool FindSurface(Person p, ProvinceLife life, int here, out int stand, out int wall, out byte medium, bool allowBark = true)
     {
         stand = wall = -1; medium = 0;
         int hx = here % S, hy = here / S, reg = life.Region[here];
@@ -307,6 +328,7 @@ public sealed partial class PeopleSim
                 int sh = life.Shelter[t];
                 if (sh == 0 || !life.Walk[t] || life.Region[t] != reg) continue;
                 int m = sh == 3 ? 2 : sh == 2 ? 1 : 0;
+                if (m == 0 && !allowBark) continue;
                 int lim = m == 2 ? 40 : m == 1 ? 25 : 10;
                 int cd = Math.Max(Math.Abs(dx), Math.Abs(dy));
                 if (cd > lim || m < bestMed) continue;
@@ -379,7 +401,7 @@ public sealed partial class PeopleSim
     private int StudyScore(Person p, ProvinceLife life, out Painting? target)
     {
         target = null;
-        if (Paintings.Count == 0 || p.Stage(Now) < LifeStage.Child || Now - p.LastStudy < 3 * GameTime.TicksPerDay || life.IsNight(Now)) return int.MinValue;
+        if (Paintings.Count == 0 || p.Stage(Now) < LifeStage.Child || Now - p.LastStudy < 2 * GameTime.TicksPerDay || life.IsNight(Now)) return int.MinValue;
         int here = p.Tile(Now);
         long bd = 31L * 31;
         foreach (var (_, g) in Paintings)
@@ -415,7 +437,7 @@ public sealed partial class PeopleSim
         if (!Paintings.TryGetValue(p.Target, out var g) || !g.Alive(Now) || g.Rule < 0) return;
         g.Seen++;
         Stats.Studies++;
-        int amount = Math.Max(3, 6 + (Ability(p, PeopleData.Int) - 5) * 2 + (p.HasTrait(T_curious) ? 2 : 0));
+        int amount = Math.Max(5, 12 + (Ability(p, PeopleData.Int) - 5) * 3 + (p.HasTrait(T_curious) ? 3 : 0)); // (E5 고침) 그림은 드물지만 보고 배우는 힘은 조금 세게
         bool knew = p.Knows(g.Rule);
         AddLearning(p, Craft.Rules[g.Rule], amount, g.Painter, Via.Painting, -1, -1, -1);
         if (!knew && p.Knows(g.Rule)) { g.Taught++; Stats.LearnedFromPainting++; }
@@ -437,11 +459,13 @@ public sealed partial class PeopleSim
             {
                 if (k.Level < 40 || k.Rule == R_paint?.Index) continue;
                 int n = counts.GetValueOrDefault(k.Rule);
-                if (old && n <= 2 && 8 > amount) { pick = k.Rule; why = Why.RecordOld; amount = 8; }
-                else if (n == 1 && alive >= 3 && 4 > amount) { pick = k.Rule; why = Why.RecordOnly; amount = 4; }
+                // (E5 고침) 그림은 드물고 귀하게: 무리에서 혼자만 알 때만(늙었거나 · 마흔 넘어 무리가 셋 이상일 때)
+                if (n != 1) continue;
+                if (old && 8 > amount) { pick = k.Rule; why = Why.RecordOld; amount = 8; }
+                else if (alive >= 3 && q.AgeYears(Now) >= 40 && 4 > amount) { pick = k.Rule; why = Why.RecordOnly; amount = 4; }
             }
             if (pick < 0 || HasPainting(cell, pick)) continue;
-            if (GroupKnows.TryGetValue(GroupKey(cell, pick), out var pgk) && Now - pgk.Painted < 20 * GameTime.TicksPerYear) continue; // 이 무리가 20년 안에 이미 그렸다
+            if (GroupKnows.TryGetValue(GroupKey(cell, pick), out var pgk) && Now - pgk.Painted < RepaintAfter) continue; // 이 무리가 40년 안에 이미 그렸다
             AddWish(q, W_record, amount);
             if (q.RecordRule < 0 || !q.Knows(q.RecordRule)) { q.RecordRule = pick; q.RecordWhy = why; }
         }

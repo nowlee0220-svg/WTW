@@ -423,5 +423,5 @@ public partial class AlertsPanel : VBoxContainer
 
     public void Reset() { _primed = false; foreach (var (b, _) in _items) { RemoveChild(b); b.QueueFree(); } _items.Clear(); }
 
-    private static string Icon(WorldEventKind k) => k switch { WorldEventKind.Birth => "＋", WorldEventKind.Death => "†", WorldEventKind.Pair => "♥", WorldEventKind.Break => "!", WorldEventKind.Discovery => "★★★", WorldEventKind.DiscoveryLost => "★★★ ✕", WorldEventKind.Language => "★★★", WorldEventKind.DiscoveryGroup or WorldEventKind.Rediscovered or WorldEventKind.Moved or WorldEventKind.LandNamed => "★★", WorldEventKind.GroupLost => "★★ ✕", WorldEventKind.GroupRefound => "★★", WorldEventKind.Wildfire => "▲", _ => "·" };
+    private static string Icon(WorldEventKind k) => k switch { WorldEventKind.Birth => "＋", WorldEventKind.Death => "†", WorldEventKind.Pair => "♥", WorldEventKind.Break => "!", WorldEventKind.Discovery => "★★★", WorldEventKind.DiscoveryLost => "★★★ ✕", WorldEventKind.Language => "★★★", WorldEventKind.DiscoveryGroup or WorldEventKind.Rediscovered or WorldEventKind.Moved or WorldEventKind.LandNamed => "★★", WorldEventKind.GroupLost => "★ ✕", WorldEventKind.GroupRefound => "★", WorldEventKind.Wildfire => "▲", _ => "·" };
 }

@@ -366,7 +366,9 @@ public sealed partial class PeopleSim
         // (E5) 그리기: 바위 면 · 동굴 벽 · 나무 곁으로 가서
         if (action == A_draw)
         {
-            if (!FindSurface(p, life, here, out int stand, out _, out _)) { Stats.PlanWhy[4]++; return false; }
+            // (E5 고침) 아는 법으로 그릴 때는 오래가는 동굴 벽 · 바위 면만 — 나무껍질은 늙은 장인이 다른 데가 없을 때만
+            bool bark = !known || p.RecordWhy == Why.RecordOld;
+            if (!FindSurface(p, life, here, out int stand, out _, out _, bark)) { Stats.PlanWhy[4]++; return false; }
             p.PlanAction = action; p.PlanInput = input; p.PlanWith = with; p.PlanTool = tool; p.PlanRule = rule?.Index ?? -1;
             if (stand != here && !WalkTo(p, stand)) return false;
             SetWhy(p, known ? Act.Craft : Act.Experiment, known ? Why.KnowHow : follow is not null ? Why.Clue : WishWhy(wish), wish);
@@ -1083,8 +1085,8 @@ public sealed partial class PeopleSim
             d.Lost = true; d.LostTick = Now; d.LostCount++; Stats.Lost++;
             var who = Get(d.Person);
             // (E5) 마지막으로 알던 사람이 죽었나, 잊었나 · 그림이 남았나
-            bool forgot = false;
-            foreach (var p in _all) if (!p.Dead && p.Bio.Count > 0 && p.Bio[^1].Kind == BioKind.Forgot && p.Bio[^1].Param == rule && p.Bio[^1].Tick == Now) { forgot = true; break; }
+            bool forgot = _forgotToday.Contains(rule);
+            if (forgot) Stats.LostByForget++;
             int pc = PaintingsOf(rule);
             string text = $"{Craft.ItemName(Craft.Rules[rule].Result)} 만드는 법이 세계에서 사라졌습니다 — " + (forgot ? "마지막으로 알던 사람마저 잊었습니다" : "마지막으로 아는 사람이 죽었습니다") + (pc > 0 ? $" (그림 {pc}곳에 남아 있다 — 보고 되찾을 길이 있다)" : " (그림도 남지 않았다)");
             Notify(WorldEventKind.DiscoveryLost, who ?? _all[0], rule, text);
