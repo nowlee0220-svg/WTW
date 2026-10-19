@@ -28,6 +28,7 @@ public static class PeopleBench
         int I(string k, int d) => o.TryGetValue(k, out var v) ? int.Parse(v) : d;
         // (S1) 세계 하나를 CPU 여러 개로(지방마다) — --parallel(시드를 나눠 돌리기)과 함께 쓸 수 있다
         SpeedBench.AutoThreads = Sx("threads", "1") == "auto";
+        PeopleSim.UsePool = !o.ContainsKey("nopool"); // (S1) 비교용: 부를 때마다 Parallel.ForEach
         GameWorld.DefaultThreads = SpeedBench.AutoThreads ? 1 : Math.Max(1, I("threads", 1));
         if (SpeedBench.AutoThreads) Console.WriteLine("(S1) 세계마다 CPU: 자동(코어 수 ÷ 돌고 있는 세계 수, --threads auto)");
         else if (GameWorld.DefaultThreads > 1) Console.WriteLine($"(S1) 세계마다 CPU {GameWorld.DefaultThreads}개(--threads)");
