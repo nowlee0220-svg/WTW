@@ -21,11 +21,13 @@ namespace Wtw.Sim.Persistence;
 /// 버전 7(E4): 지방의 불 · 땅에 놓인 물건 · 캐낸 바위, 발견 목록 · 부분 성공 · 무리마다 처음 안 때, 말의 낱말 출처, 사람의 바람 · 아는 법 · 단서 · 계획 · 불씨 · 그릇의 물 · 별명.
 /// 버전 8(E5): 그림 · 무리마다 아는 법(끊김 · 되찾음) · 지식의 역사, 사람의 아는 정도 · 마지막으로 쓴 때 · 어떻게 알았나 · 배우는 중 · 가르치기/그림 시각 · 남기려는 법.
 ///   버전 7 이하의 아는 법은 처음 알 때의 정도(스스로 80 · 보고 50)로 읽는다.
+/// 버전 9(S1): 지방마다 CPU — 사람의 예약은 지방마다의 예약표에(지방마다 다음 예약 번호, 잠든 지방도), 맞추는 시각까지 미뤄 둔 세계의 일, 상한 셈 기준.
+///   세계 예약표에는 시험용 점만 남는다. 버전 8 이하의 사람 예약은 그 사람의 지방 예약표로 옮겨 읽는다.
 /// 버전 1(E0) · 2(E1) · 3(E2) 파일도 읽는다(행성 설정은 기본값, 사람 없음).
 /// </summary>
 public static class SaveGame
 {
-    public const int Version = 8;
+    public const int Version = 9;
     private static readonly byte[] Magic = "WTWS"u8.ToArray();
 
     public static byte[] ToBytes(GameWorld w)
@@ -140,6 +142,10 @@ public static class SaveGame
                 foreach (var (t, l) in life.Items) foreach (var (item, n) in l) { bw.Write(t); bw.Write(item); bw.Write(n); }
                 bw.Write(life.Dug.Count);
                 foreach (int t in life.Dug) bw.Write(t);
+                var evs = life.Sched.ExportSorted();
+                bw.Write(life.Sched.NextHandle); bw.Write(life.Sched.NextOrder); bw.Write(evs.Length);
+                foreach (var e in evs) { bw.Write(e.Handle); bw.Write(e.Order); bw.Write(e.Tick); bw.Write(e.Target); bw.Write(e.Kind); }
+                bw.Write(true); bw.Write(life.EmptySince); // (S1) 깨어 있었나 — 사람이 다 죽은 뒤 잠들기 전(불은 계속 탄다)도 그대로
             }
             else
             {
@@ -154,6 +160,9 @@ public static class SaveGame
                 foreach (var (t, item, n) in d.Ground) { bw.Write(t); bw.Write(item); bw.Write(n); }
                 bw.Write(d.Dug.Length);
                 foreach (int t in d.Dug) bw.Write(t);
+                bw.Write(d.SchedHandle); bw.Write(d.SchedOrder); bw.Write(d.Events.Length);
+                foreach (var e in d.Events) { bw.Write(e.Handle); bw.Write(e.Order); bw.Write(e.Tick); bw.Write(e.Target); bw.Write(e.Kind); }
+                bw.Write(false);
             }
         }
         // (E4) 발견 목록 · 부분 성공 · 무리마다 처음
@@ -211,6 +220,15 @@ public static class SaveGame
         }
         bw.Write(ps.All.Count);
         foreach (var p in ps.All) WritePerson(bw, p);
+        // (S1) 맞추는 시각까지 미뤄 둔 세계의 일(적용할 차례대로) · 상한 셈 기준
+        var ops = ps.PendingOpsForSave();
+        bw.Write(ops.Count);
+        foreach (var op in ops)
+        {
+            bw.Write((byte)op.Kind); bw.Write(op.Tick); bw.Write(op.Cell);
+            bw.Write(op.A); bw.Write(op.B); bw.Write(op.C); bw.Write(op.D); bw.Write(op.E); bw.Write(op.F); bw.Write(op.L); bw.Write(op.S);
+        }
+        bw.Write(ps.CapBase);
     }
 
     private static void WriteFire(BinaryWriter bw, int tile, Fire f) { bw.Write(tile); bw.Write(f.Kind); bw.Write(f.Stamp); bw.Write(f.Fuel); bw.Write(f.Charcoal); bw.Write(f.Lighter); }
@@ -270,6 +288,8 @@ public static class SaveGame
     private static void ReadPeople(BinaryReader br, GameWorld w, int version)
     {
         var ps = w.People;
+        int[] crossQueue = Array.Empty<int>(); long crossAt = long.MaxValue;
+        var awake = new List<(int Cell, long EmptySince)>();
         ps.NextEventSeq = br.ReadInt64();
         int ne = br.ReadInt32();
         for (int i = 0; i < ne; i++)
@@ -295,6 +315,14 @@ public static class SaveGame
                 var dug = new int[br.ReadInt32()];
                 for (int k = 0; k < dug.Length; k++) dug[k] = br.ReadInt32();
                 dp = dp with { Fires = fires, Ground = ground, Dug = dug };
+            }
+            if (version >= 9)
+            {
+                long nh = br.ReadInt64(), no = br.ReadInt64();
+                var evs = new ScheduledEvent[br.ReadInt32()];
+                for (int k = 0; k < evs.Length; k++) evs[k] = new ScheduledEvent(br.ReadInt64(), br.ReadInt64(), br.ReadInt64(), br.ReadInt32(), br.ReadInt32());
+                dp = dp with { SchedHandle = nh, SchedOrder = no, Events = evs };
+                if (br.ReadBoolean()) awake.Add((cell, br.ReadInt64()));
             }
             ps.Dormant[cell] = dp;
         }
@@ -347,7 +375,7 @@ public static class SaveGame
             int nq = br.ReadInt32();
             var q = new int[nq];
             for (int k = 0; k < nq; k++) q[k] = br.ReadInt32();
-            ps.LoadCrossQueue(q, at);
+            crossQueue = q; crossAt = at;
             int nn = br.ReadInt32();
             for (int i = 0; i < nn; i++)
             {
@@ -393,6 +421,26 @@ public static class SaveGame
                 p.LangId = lid;
             }
             ps.AddLoaded(p);
+        }
+        // (S1) 깨어 있던 지방은 깨어 있게(산 사람이 없어도 — 잠들기 전까지 불 · 들불이 계속된다)
+        foreach (var (cell, since) in awake) ps.Life(cell).EmptySince = since;
+        // 넘겨주기 대기는 사람이 다 들어온 뒤 그 사람의 지방에
+        ps.LoadCrossQueue(crossQueue, crossAt);
+        if (version >= 9)
+        {
+            int nop = br.ReadInt32();
+            var ops = new List<PendingOp>(nop);
+            for (int i = 0; i < nop; i++)
+                ops.Add(new PendingOp { Kind = (PendingOp.Kinds)br.ReadByte(), Tick = br.ReadInt64(), Cell = br.ReadInt32(),
+                    A = br.ReadInt32(), B = br.ReadInt32(), C = br.ReadInt32(), D = br.ReadInt32(), E = br.ReadInt32(), F = br.ReadInt32(), L = br.ReadInt64(), S = br.ReadString() });
+            ps.LoadPendingOps(ops);
+            ps.CapBase = br.ReadInt32();
+        }
+        else
+        {
+            // 버전 8 이하: 사람 예약을 세계 예약표에서 지방 예약표로
+            ps.TakePersonEvents(w.Scheduler);
+            ps.AfterSync();
         }
     }
 

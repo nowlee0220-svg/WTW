@@ -47,11 +47,8 @@ public sealed partial class PeopleSim
             if (HexFrame.EdgeDistance(here, s) >= SightTiles) continue;
             var b = BorderOf(p.Cell, s);
             if (b is null || b.Gates.Length == 0) continue;
-            for (int k = 0; k < b.SightTile.Length; k++)
-            {
-                long dx = b.SightX[k] - px, dy = b.SightY[k] - py, d = dx * dx + dy * dy;
-                if (d < bd) { bd = d; best = (b, k); }
-            }
+            int k = b.NearestSight(px, py, ref bd); // (S1) 색인으로 — 같은 거리면 앞 변 · 작은 번호(모두 훑을 때와 같다)
+            if (k >= 0) best = (b, k);
         }
         return best;
     }
@@ -59,9 +56,16 @@ public sealed partial class PeopleSim
     /// <summary>기억 목록 맨 앞에 넣는다(같은 지방의 가까운 자리 — 4타일 안 — 는 하나로 친다).</summary>
     private static void Remember(List<int> list, int place, int cap)
     {
+        // (S1) 같은 지방인지는 나눗셈 없이(칸 × 타일 수 ≤ 값 < (칸 + 1) × 타일 수) — 결과는 같다
         int cell = Person.PlaceCell(place), tile = Person.PlaceTile(place);
+        int lo = cell * HexFrame.TileCount, hi = lo + HexFrame.TileCount, tx = tile % S, ty = tile / S;
         for (int i = 0; i < list.Count; i++)
-            if (Person.PlaceCell(list[i]) == cell && Cheb(Person.PlaceTile(list[i]), tile) <= 4) { list.RemoveAt(i); break; }
+        {
+            int v = list[i];
+            if (v < lo || v >= hi) continue;
+            int t = v - lo;
+            if (Math.Abs(t % S - tx) <= 4 && Math.Abs(t / S - ty) <= 4) { list.RemoveAt(i); break; }
+        }
         list.Insert(0, place);
         if (list.Count > cap) list.RemoveAt(list.Count - 1);
     }
@@ -94,7 +98,7 @@ public sealed partial class PeopleSim
             int gi = NearestGate(far.B, life, here, far.B.SightX[far.K], far.B.SightY[far.K]);
             if (gi >= 0 && StartCross(p, far.B, gi, why, arg))
             {
-                Stats.FindHow[0]++; p.How = 0; p.HowArg = Person.Place(far.B.Nb, far.B.SightTile[far.K]); p.SearchMiss = 0;
+                St.FindHow[0]++; p.How = 0; p.HowArg = Person.Place(far.B.Nb, far.B.SightTile[far.K]); p.SearchMiss = 0;
                 return true;
             }
         }
@@ -109,7 +113,7 @@ public sealed partial class PeopleSim
             if (q.Act == Act.Cross) return FollowAcross(p, q, why, arg);
             tile = q.Target; how = 2; howArg = q.Id; Teach(p, tile, true);
         }
-        if (tile >= 0 && WalkTo(p, tile)) { Stats.FindHow[how]++; SetWhy(p, Act.Drink, why, arg); p.How = how; p.HowArg = howArg; p.Target = tile; p.SearchMiss = 0; return true; }
+        if (tile >= 0 && WalkTo(p, tile)) { St.FindHow[how]++; SetWhy(p, Act.Drink, why, arg); p.How = how; p.HowArg = howArg; p.Target = tile; p.SearchMiss = 0; return true; }
         // 4) 찾아다님(낮은 곳으로 — 이웃 지방도)
         return Search(p, Act.Drink, why, arg, water: true);
     }
@@ -135,10 +139,11 @@ public sealed partial class PeopleSim
                 if (b.Dead && !b.Eaten && b.Id != p.Id) { long d = ProvinceLife.D2(b.Tile(Now), hx, hy); if (d < bd && d < 40 * 40) { bd = d; best = b; } }
             if (best is not null && WalkTo(p, best.Tile(Now))) { SetWhy(p, Act.EatCorpse, Why.Starving); p.Target = best.Id; return true; }
         }
-        _claims.Clear();
+        var claims = L.Claims;
+        claims.Clear();
         foreach (var o in life.People)
-            if (o.Act == Act.Eat && o.Walking && !o.Dead && o.Id != p.Id && o.How != 3) _claims[o.Target] = _claims.GetValueOrDefault(o.Target) + Math.Max(1, o.TargetB);
-        life.Claims = _claims;
+            if (o.Act == Act.Eat && o.Walking && !o.Dead && o.Id != p.Id && o.How != 3) claims[o.Target] = claims.GetValueOrDefault(o.Target) + Math.Max(1, o.TargetB);
+        life.Claims = claims;
         int arg = p.Food / 1000;
         byte how = 0; int howArg = -1;
         // 1) 보임
@@ -146,7 +151,7 @@ public sealed partial class PeopleSim
         // 2) 기억(남은 몫이 있는 곳 — 가 보니 없으면 잊는다)
         if (tile < 0)
         {
-            tile = NearestKnown(p.KnownFood, p.Cell, here, life, t => t != skipTile && life.StockAt(t, Now) > (_claims.TryGetValue(t, out int c) ? c : 0));
+            tile = NearestKnown(p.KnownFood, p.Cell, here, life, t => t != skipTile && life.StockAt(t, Now) > (claims.TryGetValue(t, out int c) ? c : 0));
             if (tile >= 0) how = 1;
         }
         life.Claims = null;
@@ -161,7 +166,7 @@ public sealed partial class PeopleSim
         }
         if (tile >= 0 && WalkTo(p, tile))
         {
-            Stats.FindHow[how]++;
+            St.FindHow[how]++;
             SetWhy(p, Act.Eat, why, arg);
             p.How = how; p.HowArg = howArg;
             p.Target = tile;
@@ -213,7 +218,7 @@ public sealed partial class PeopleSim
             if (d < bd) { bd = d; bestB = b; bestGate = gi; bestPlace = place; }
         }
         if (bestB is null || !StartCross(p, bestB, bestGate, why, arg)) return false;
-        Stats.FindHow[1]++; p.How = 1; p.HowArg = bestPlace; p.SearchMiss = 0;
+        St.FindHow[1]++; p.How = 1; p.HowArg = bestPlace; p.SearchMiss = 0;
         return true;
     }
 
@@ -223,7 +228,7 @@ public sealed partial class PeopleSim
         var b = BorderOf(q.Cell, q.TargetB);
         int gi = b is null ? -1 : Array.BinarySearch(b.Gates, q.Target);
         if (b is null || gi < 0 || !StartCross(p, b, gi, why, arg)) return false;
-        Stats.FindHow[2]++; p.How = 2; p.HowArg = q.Id;
+        St.FindHow[2]++; p.How = 2; p.HowArg = q.Id;
         return true;
     }
 
@@ -301,13 +306,13 @@ public sealed partial class PeopleSim
         {
             if (!StartCross(p, crossB, crossGate, why, arg)) return false;
             p.SearchDir = bestDir;
-            Stats.FindHow[3]++;
+            St.FindHow[3]++;
             p.How = 3; p.HowArg = -1;
             return true;
         }
         if (bestTile < 0 || !WalkTo(p, bestTile)) return false;
         p.SearchDir = bestDir;
-        Stats.FindHow[3]++;
+        St.FindHow[3]++;
         SetWhy(p, act, why, arg);
         p.How = 3; p.HowArg = -1;
         p.Target = bestTile;

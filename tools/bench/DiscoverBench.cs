@@ -21,12 +21,16 @@ public static class DiscoverBench
         public int Known1y;
         public string Detail = "";
         public int Popups1, Popups5, Level3, Level2;
+        // (S1) 정신 붕괴: 나이 단계별 횟수 · 사람·년(아기 빼고)
+        public long BreaksChild, BreaksAdult; public double ChildYears, AdultYears;
         // (E5) 지식
         public long LostByForget, Lessons, TaughtFull, WatchedFull, Forgot, Refreshed, Paintings, Studies, FromPainting, GroupLost, GroupRefound, Known, Sole, ClueShared, ClueAvoid, FadedFails, Und; public long[] How = new long[4]; public List<long> Delays = new(); // 끝에 살아 있는 사람 중 아는 법이 하나라도 있는 사람
     }
 
     /// <summary>know = "fire" 이면 뿌린 사람들이 처음부터 불 피우는 법(부싯돌 불씨 · 모닥불)을 안다(추운 땅에서 "불을 아는 사람"의 생존을 따로 재기 위해).</summary>
     public static string Know = "";
+    /// <summary>(S1) 끝난 세계를 저장할 곳(시드 하나일 때 — 속도 측정용 장면 만들기).</summary>
+    public static string? SaveTo;
 
     public static Row Simulate(ulong seed, int people, int years, string where, int cap)
     {
@@ -52,11 +56,21 @@ public static class DiscoverBench
         long seen = 0;
         var sw = Stopwatch.StartNew();
         long end = years * GameTime.TicksPerYear;
+        SpeedBench.WorldStarted();
+        try {
         for (long t = 0; t < end; t += GameTime.TicksPerDay)
         {
+            SpeedBench.Pace(w);
             w.AdvanceTo(Math.Min(end, t + GameTime.TicksPerDay));
             int alive = w.People.AliveCount;
             row.PersonDays += alive; row.Peak = Math.Max(row.Peak, alive);
+            foreach (var q in w.People.All)
+            {
+                if (q.Dead) continue;
+                var stg = q.Stage(w.Now);
+                if (stg == LifeStage.Child) row.ChildYears += 1.0 / GameTime.DaysPerYear;
+                else if (stg >= LifeStage.Adult) row.AdultYears += 1.0 / GameTime.DaysPerYear;
+            }
             // (E4) 큰 일 팝업: 하루에 생긴 ★★★ 를 한 팝업으로 묶는다(1배속 · 5배속 규칙으로 각각)
             bool p1 = false, p5 = false;
             foreach (var e in w.People.Events)
@@ -73,9 +87,13 @@ public static class DiscoverBench
             if (t % GameTime.TicksPerYear == 0) row.PopByYear.Add(alive);
             if (alive == 0) break;
         }
+        } finally { SpeedBench.WorldDone(); }
         row.Seconds = sw.Elapsed.TotalSeconds;
+        var bst = w.People.Stats;
+        row.BreaksChild = bst.BreaksByStage[(int)LifeStage.Child]; row.BreaksAdult = bst.BreaksByStage[(int)LifeStage.Adult] + bst.BreaksByStage[(int)LifeStage.Elder];
         Fill(row, w);
         row.Detail = Summary(w);
+        if (SaveTo is not null) Wtw.Sim.Persistence.SaveGame.SaveFile(w, SaveTo);
         return row;
     }
 
@@ -159,6 +177,8 @@ public static class DiscoverBench
         sb.AppendLine($"- 인구(10년마다, 시드 중앙값): " + string.Join(" · ", Enumerable.Range(0, years / 10 + 1).Select(i => PeopleBench.Median(rows.Select(r => (double)(i * 10 < r.PopByYear.Count ? r.PopByYear[i * 10] : 0))).ToString("0"))));
         sb.AppendLine($"- (E4) 큰 일: ★★★ {PeopleBench.Median(rows.Select(r => (double)r.Level3))}번 · ★★ {PeopleBench.Median(rows.Select(r => (double)r.Level2))}번(중앙값) → 멈추는 팝업 1배속 규칙 {PeopleBench.Median(rows.Select(r => (double)r.Popups1))}번 · 5배속 규칙 {PeopleBench.Median(rows.Select(r => (double)r.Popups5))}번 ({years}년, 같은 날의 일은 팝업 하나, 실제 시간 30초 간격은 빼고 셈)");
         sb.AppendLine($"- 사람 하루당 {rows.Sum(r => r.Seconds) * 1e6 / Math.Max(1, rows.Sum(r => r.PersonDays)):0}µs");
+        sb.AppendLine($"- (S1) 정신 붕괴(번/사람·년, 시드 중앙값): 어른 {PeopleBench.Median(rows.Select(r => r.BreaksAdult / Math.Max(1e-9, r.AdultYears))):0.000} · 아이 {PeopleBench.Median(rows.Select(r => r.BreaksChild / Math.Max(1e-9, r.ChildYears))):0.000} (모든 시드 합: 어른 {rows.Sum(r => r.BreaksAdult)}번 / {rows.Sum(r => r.AdultYears):0}사람·년 · 아이 {rows.Sum(r => r.BreaksChild)}번 / {rows.Sum(r => r.ChildYears):0}사람·년)");
+        sb.AppendLine($"- (S1) 걸린 시간(시드 합) {rows.Sum(r => r.Seconds):0}초 · 사람 하루 {rows.Sum(r => r.PersonDays):N0}");
         // (E5) 지식
         long exps = rows.Sum(r => (long)r.Experiments), reps = rows.Sum(r => (long)r.PartialRepeats);
         sb.AppendLine($"- (E5) 같은 헛수고 비율 {reps * 100.0 / Math.Max(1, exps):0.0}% (실험 {exps:N0} 중 {reps:N0}) · 단서 나눔 {rows.Sum(r => r.ClueShared):N0} · 단서를 보고 같은 실험을 피함 {rows.Sum(r => r.ClueAvoid):N0}");

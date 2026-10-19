@@ -26,11 +26,17 @@ public static class PeopleBench
             o[args[i][2..]] = i + 1 < args.Length && !args[i + 1].StartsWith("--") ? args[++i] : "1";
         }
         int I(string k, int d) => o.TryGetValue(k, out var v) ? int.Parse(v) : d;
+        // (S1) 세계 하나를 CPU 여러 개로(지방마다) — --parallel(시드를 나눠 돌리기)과 함께 쓸 수 있다
+        SpeedBench.AutoThreads = Sx("threads", "1") == "auto";
+        PeopleSim.UsePool = !o.ContainsKey("nopool"); // (S1) 비교용: 부를 때마다 Parallel.ForEach
+        GameWorld.DefaultThreads = SpeedBench.AutoThreads ? 1 : Math.Max(1, I("threads", 1));
+        if (SpeedBench.AutoThreads) Console.WriteLine("(S1) 세계마다 CPU: 자동(코어 수 ÷ 돌고 있는 세계 수, --threads auto)");
+        else if (GameWorld.DefaultThreads > 1) Console.WriteLine($"(S1) 세계마다 CPU {GameWorld.DefaultThreads}개(--threads)");
         string Sx(string k, string d) => o.TryGetValue(k, out var v) ? v : d;
         switch (mode)
         {
             case "seeds": Seeds(I("seeds", 20), I("people", 10), I("years", 50), Sx("passion", "on"), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
-            case "cap": Cap(I("people", 500), I("years", 100), (ulong)I("seed", 1), I("per", 25), I("cap", 500)); break;
+            case "cap": Cap(I("people", 500), I("years", 100), (ulong)I("seed", 1), I("per", 25), I("cap", 500)); if (o.GetValueOrDefault("save") is string sp && _lastWorld is { } lw) { SaveGame.SaveFile(lw, sp); Console.WriteLine($"저장: {sp}"); } break;
             case "nosource": NoSource(I("seeds", 20), I("cells", 5), I("people", 5), I("years", 3), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "water": WaterBench.Run(I("seeds", 20), I("cells", 30), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "spread": SpreadBench.Run(I("seeds", 20), I("people", 10), I("years", 100), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
@@ -41,7 +47,8 @@ public static class PeopleBench
             case "breaks": BreakBench.Run(I("seeds", 4), I("people", 10), I("years", 30), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home")); break;
             case "scenes": SceneBench.Run(o.GetValueOrDefault("out") ?? "game/scenes", (ulong)I("seed", 20261016), o.ContainsKey("artisan"), o.ContainsKey("copper")); break;
             case "copper": CopperBench.Run(I("seeds", 4), I("years", 200), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), I("cap", 300)); break;
-            case "discover": DiscoverBench.Know = o.GetValueOrDefault("know") ?? ""; DiscoverBench.Run(I("seeds", 20), I("people", 10), I("years", 200), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300)); break;
+            case "skip": SpeedBench.Skip(Sx("scene", "game/scenes/village-50y.wtw"), I("years", 50)); break;
+            case "discover": DiscoverBench.Know = o.GetValueOrDefault("know") ?? ""; DiscoverBench.SaveTo = o.GetValueOrDefault("save"); DiscoverBench.Run(I("seeds", 20), I("people", 10), I("years", 200), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300)); break;
             default: Console.WriteLine("모드: seeds | cap | one"); break;
         }
     }
@@ -105,7 +112,9 @@ public static class PeopleBench
         };
         _lastWorld = w;
         long end = years * GameTime.TicksPerYear;
-        for (long t = 0; t < end; t += GameTime.TicksPerDay) w.AdvanceTo(Math.Min(end, t + GameTime.TicksPerDay));
+        SpeedBench.WorldStarted();
+        try { for (long t = 0; t < end; t += GameTime.TicksPerDay) { SpeedBench.Pace(w); w.AdvanceTo(Math.Min(end, t + GameTime.TicksPerDay)); } }
+        finally { SpeedBench.WorldDone(); }
         run.Seconds = sw.Elapsed.TotalSeconds;
         var st = w.People.Stats;
         run.Alive = w.People.AliveCount; run.Ever = w.People.All.Count;
@@ -185,6 +194,7 @@ public static class PeopleBench
         GC.Collect();
         long mem0 = GC.GetTotalMemory(true);
         long peakMem = 0;
+        var gc = SpeedBench.GcMark.Now();
         var r = Simulate(seed, people, years, true, cap: cap, perProvince: per, perDay: (w, d) => { if (d % 200 == 0) peakMem = Math.Max(peakMem, GC.GetTotalMemory(false)); });
         double us = r.Seconds * 1e6 / Math.Max(1, r.PersonDays);
         double projected = us * people * years * GameTime.DaysPerYear / 1e6;
@@ -194,6 +204,7 @@ public static class PeopleBench
         Console.WriteLine($"  인구(10년마다): {string.Join(" · ", r.PopByYear.Where((_, i) => i % 10 == 0))} · 끝 {r.Alive} · 가장 많을 때 {r.Peak} · 태어남 {r.Births}");
         Console.WriteLine($"  죽음: " + string.Join(" · ", Enumerable.Range(1, 6).Select(c => $"{CauseNames[c]} {r.Deaths[c]}")));
         Console.WriteLine($"  메모리(관리 힙): 처음 {mem0 / 1048576.0:0} MB → 가장 클 때 {peakMem / 1048576.0:0} MB · 프로세스 {Process.GetCurrentProcess().PeakWorkingSet64 / 1048576.0:0} MB");
+        Console.WriteLine("  " + SpeedBench.GcMark.Now().Since(gc, r.Seconds));
         Console.WriteLine($"  예약 {r.Events:N0} · 판단 {r.Decisions:N0} · 길 찾기 {r.Paths:N0} (실패 {r.PathFails:N0})");
         if (_lastWorld is { } w)
         {
@@ -201,6 +212,7 @@ public static class PeopleBench
             double days = years * GameTime.DaysPerYear;
             int awake = w.People.Provinces.Count, dormant = w.People.Dormant.Count;
             Console.WriteLine($"  (E3b) 지방 넘기: 경계를 넘은 사람 {st.Crossings:N0}번(하루 {st.Crossings / days:0.0}번) · 넘겨주기가 일어난 시각 {st.CrossBatches:N0}번(하루 {st.CrossBatches / days:0.00}번) · 잠든 지방이 깨어남 {st.Wakes:N0}번");
+            Console.WriteLine($"  지문 {SaveGame.Fingerprint(w):X16}");
             Console.WriteLine($"  (E3b) 끝에 깨어 있는 지방 {awake}곳 · 잠든 지방 {dormant}곳 · 사람 사는 지방 {w.People.Provinces.Count(kv => kv.Value.People.Exists(q => !q.Dead))}곳 · 지도 기억 {Wtw.Sim.Provinces.ProvinceCache.Count}장 · 말 {w.People.All.Where(q => !q.Dead).Select(q => q.LangId).Distinct().Count()}개 · 이름 붙은 땅 {w.People.LandNames.Count}곳");
         }
     }

@@ -34,15 +34,16 @@ public sealed partial class PeopleSim
     private bool WalkTo(Person p, int goal, bool straightOnly = false)
     {
         var life = Life(p.Cell);
+        var path = L.Path;
         p.Position(Now, out int x, out int y);
-        if (straightOnly) { if (!life.Paths.TryStraight(x, y, goal, _path)) return false; }
+        if (straightOnly) { if (!life.Paths.TryStraight(x, y, goal, path)) return false; }
         else
         {
-            Stats.Paths++;
-            if (!life.Paths.Find(x, y, goal, _path)) { Stats.PathFails++; return false; }
+            St.Paths++;
+            if (!life.Paths.Find(x, y, goal, path)) { St.PathFails++; return false; }
         }
         var m = p.NewMotion();
-        m.SetPath(Now, _path, TicksPerTile(p));
+        m.SetPath(Now, path, TicksPerTile(p));
         p.Walking = true;
         p.ActUntil = m.Arrive;
         Schedule(p, m.Arrive);
@@ -67,7 +68,6 @@ public sealed partial class PeopleSim
         return goal;
     }
 
-    private readonly Dictionary<int, int> _claims = new();
 
     private static readonly int[] DX8 = { 1, 1, 0, -1, -1, -1, 0, 1 };
     private static readonly int[] DY8 = { 0, 1, 1, 1, 0, -1, -1, -1 };
@@ -78,7 +78,7 @@ public sealed partial class PeopleSim
 
     private void Decide(Person p)
     {
-        Stats.Decisions++;
+        St.Decisions++;
         PurgeThoughts(p);
         p.Target = -1; p.TargetB = -1;
         p.Asleep = false;
@@ -138,8 +138,9 @@ public sealed partial class PeopleSim
         }
 
         // 하고 싶은 것 고르기 (점수 + 조금의 무작위) — 1순위가 안 되면 다음 순위(세 번까지)
-        _opts.Clear();
-        void Opt(int code, int score) => _opts.Add((score + rng.NextInt(12), code));
+        var opts = L.Opts;
+        opts.Clear();
+        void Opt(int code, int score) => opts.Add((score + rng.NextInt(12), code));
         if (p.Food < 55_000) Opt(1, (55_000 - p.Food) / 500 + 20);
         if (p.Water < 50_000) Opt(2, (50_000 - p.Water) / 500 + 25);
         if (p.Social < 60_000) Opt(3, (60_000 - p.Social) / 600 + (p.HasTrait(T_eloquent) ? 8 : 0) + (p.HasTrait(T_blunt) ? -5 : 0));
@@ -152,7 +153,7 @@ public sealed partial class PeopleSim
         if (carried < 6) Opt(8, 3 + (p.HasTrait(T_curious) ? 10 : 0) - (p.HasTrait(T_stubborn) ? 3 : 0));
         Opt(9, 6);
         // (E4) 실험 · 아는 법대로 만들기 · 불 지키기 · 캐기
-        int ex = ExperimentScore(p, life); if (ex > int.MinValue) Opt(10, ex); else Stats.PlanWhy[8]++;
+        int ex = ExperimentScore(p, life); if (ex > int.MinValue) Opt(10, ex); else St.PlanWhy[8]++;
         int cs = CraftScore(p); if (cs > int.MinValue) Opt(11, cs);
         if (p.Known.Count > 0) Opt(12, 14);
         if ((p.Wish[W_shiny] >= 20 || p.Wish[W_hardTool] >= 40 || p.HasTrait(T_curious)) && HasHardTool(p) && !life.IsNight(Now)) Opt(13, 8 + p.Wish[W_shiny] / 4);
@@ -160,10 +161,10 @@ public sealed partial class PeopleSim
         int ts = TeachScore(p, life); if (ts > int.MinValue) Opt(14, ts);
         Painting? study = null;
         int ss = StudyScore(p, life, out study); if (ss > int.MinValue) Opt(15, ss);
-        _opts.Sort((a, b) => b.Score != a.Score ? b.Score.CompareTo(a.Score) : a.Code.CompareTo(b.Code));
-        for (int k = 0; k < Math.Min(3, _opts.Count); k++)
+        opts.Sort((a, b) => b.Score != a.Score ? b.Score.CompareTo(a.Score) : a.Code.CompareTo(b.Code));
+        for (int k = 0; k < Math.Min(3, opts.Count); k++)
         {
-            int best = _opts[k].Code;
+            int best = opts[k].Code;
             bool ok = best switch
             {
                 1 => TryEat(p, Why.Hungry),
@@ -174,7 +175,7 @@ public sealed partial class PeopleSim
                 6 => TryWarm(p, felt > 320 ? Why.Hot : Why.Cold),
                 7 => TryWander(p, p.HasTrait(T_curious) ? Why.Curious : Why.Nothing),
                 8 => TryGather(p),
-                10 => (Stats.PlanWhy[9]++ >= 0) && TryExperiment(p),
+                10 => (St.PlanWhy[9]++ >= 0) && TryExperiment(p),
                 11 => TryCraftKnown(p),
                 12 => TryTendFire(p),
                 13 => TryMine(p),
@@ -183,12 +184,11 @@ public sealed partial class PeopleSim
                 _ => false,
             };
             if (ok && p.ActUntil > Now) return;
-            if (ok) Stats.PlanWhy[19]++; // 하겠다고 했는데 아무것도 잡히지 않았다 — 다음 할 일로(멈춰 서서 굶지 않게)
+            if (ok) St.PlanWhy[19]++; // 하겠다고 했는데 아무것도 잡히지 않았다 — 다음 할 일로(멈춰 서서 굶지 않게)
         }
         if (!TryWander(p, Why.Nothing)) StartRest(p, Why.Nothing);
     }
 
-    private readonly List<(int Score, int Code)> _opts = new();
 
     /// <summary>아이가 따라다닐 어른: 어머니 → 아버지 → 안아 주던 사람.</summary>
     private Person? Guardian(Person p)
@@ -430,7 +430,7 @@ public sealed partial class PeopleSim
                 DoStill(p, 200L * WorkPercent(p) / 100);
                 return;
             case Act.EatCorpse:
-                if (Get(p.Target) is { Dead: true, Eaten: false }) { DoStill(p, 2 * GameTime.TicksPerHour); return; }
+                if (Here(p.Target, p) is { Dead: true, Eaten: false }) { DoStill(p, 2 * GameTime.TicksPerHour); return; }
                 Decide(p);
                 return;
             case Act.Sleep:
@@ -543,7 +543,7 @@ public sealed partial class PeopleSim
                 break;
             }
             case Act.EatCorpse when done:
-                if (Get(p.Target) is { Dead: true, Eaten: false } body) { body.Eaten = true; p.Food = Person.Full; p.Malnutrition = Math.Max(0, p.Malnutrition - 30_000); }
+                if (Here(p.Target, p) is { Dead: true, Eaten: false } body) { body.Eaten = true; p.Food = Person.Full; p.Malnutrition = Math.Max(0, p.Malnutrition - 30_000); }
                 break;
             case Act.Talk or Act.BreakArgue:
                 EndTalk(p);
@@ -560,10 +560,10 @@ public sealed partial class PeopleSim
                 FinishMaterial(p);
                 break;
             case Act.Experiment or Act.Craft:
-                Stats.PlanWhy[16]++;
+                St.PlanWhy[16]++;
                 break;
             case Act.Material:
-                Stats.PlanWhy[17]++;
+                St.PlanWhy[17]++;
                 break;
             case Act.TendFire when done:
                 FinishTend(p);
@@ -602,8 +602,8 @@ public sealed partial class PeopleSim
         if (p.HasTrait(T_nervous)) xp = xp * 11 / 10;
         int before = p.SkillLevel(s);
         p.SkillXp[s] += xp;
-        if (pas > 0) { Stats.GatherXpPassion += xp; Stats.GatherActsPassion++; AddThought(p, H_passion); }
-        else { Stats.GatherXpPlain += xp; Stats.GatherActsPlain++; }
+        if (pas > 0) { St.GatherXpPassion += xp; St.GatherActsPassion++; AddThought(p, H_passion); }
+        else { St.GatherXpPlain += xp; St.GatherActsPlain++; }
         p.LastGather = Now;
         if (!_w.Config.Passion) return;
         // 좋은 일이 겹치면(많이 땄고 기분이 좋음 · 솜씨가 늘었음) 열정 점수가 쌓인다
@@ -653,7 +653,7 @@ public sealed partial class PeopleSim
     /// <summary>다가갔다: 상대가 가까이 있고 말을 받을 수 있으면 상대의 일을 끊고 함께 이야기한다.</summary>
     private void BeginTalk(Person p)
     {
-        var q = Get(p.Target);
+        var q = Here(p.Target, p);
         int here = p.Tile(Now);
         bool argue = p.Act == Act.BreakArgue;
         if (q is null || !CanBeTalkedTo(q) || Cheb(q.Tile(Now), here) > 3)
@@ -678,14 +678,14 @@ public sealed partial class PeopleSim
         p.Walking = false;
         Schedule(p, PredictUrgent(p, Now, p.ActUntil, here));
         Schedule(q, PredictUrgent(q, Now, q.ActUntil, q.Tile(Now)));
-        Stats.Talks++;
+        St.Talks++;
     }
 
     /// <summary>이야기가 끝남: 말을 건 사람이 두 사람 몫의 결과를 정한다(한 번만).</summary>
     private void EndTalk(Person p)
     {
         if (p.TargetB is not (1 or 3)) return; // 말을 받은 쪽은 결과를 정하지 않는다
-        var q = Get(p.Target);
+        var q = Here(p.Target, p);
         bool argue = p.TargetB == 3;
         p.TargetB = -1;
         if (q is null || q.Dead) return;
@@ -696,7 +696,7 @@ public sealed partial class PeopleSim
         int chance = 4 + (p.HasTrait(T_abrasive) ? 8 : 0) + (q.HasTrait(T_abrasive) ? 8 : 0) + (rp.Opinion < -20 ? 10 : 0) + (rp.Grudge > 30 ? 10 : 0);
         if (argue || rng.NextInt(100) < chance)
         {
-            Stats.Arguments++;
+            St.Arguments++;
             Argue(p, q, ref rp, ref rq);
         }
         else
@@ -747,7 +747,7 @@ public sealed partial class PeopleSim
         p.Partner = q.Id; q.Partner = p.Id;
         AddThought(p, H_newPartner, q.Id); AddThought(q, H_newPartner, p.Id);
         AddBio(p, BioKind.Paired, q.Id); AddBio(q, BioKind.Paired, p.Id);
-        Stats.Pairs++;
+        St.Pairs++;
         Notify(WorldEventKind.Pair, p, q.Id, $"{Hangul.Gwa(DisplayName(p))} {Hangul.I(DisplayName(q))} 짝이 되었습니다");
     }
 
@@ -756,11 +756,12 @@ public sealed partial class PeopleSim
     private void StartBreak(Person p, int mood)
     {
         var rng = Rng(p.Cell);
-        Stats.Breaks++;
-        Stats.BreaksByStage[(int)p.Stage(Now)]++;
-        _tmpThoughts.Clear(); StateThoughts(p, _tmpThoughts);
-        foreach (int t in _tmpThoughts) if (Data.Thoughts[t].Mood < 0 && t < 256) Stats.BreakDrag[t] -= Data.Thoughts[t].Mood;
-        foreach (var (def, count) in ActiveThoughtCounts(p)) if (Data.Thoughts[def].Mood < 0 && def < 256) Stats.BreakDrag[def] -= Data.Thoughts[def].Mood * count;
+        St.Breaks++;
+        St.BreaksByStage[(int)p.Stage(Now)]++;
+        var tmp = L.TmpThoughts;
+        tmp.Clear(); StateThoughts(p, tmp);
+        foreach (int t in tmp) if (Data.Thoughts[t].Mood < 0 && t < 256) St.BreakDrag[t] -= Data.Thoughts[t].Mood;
+        foreach (var (def, count) in ActiveThoughtCounts(p)) if (Data.Thoughts[def].Mood < 0 && def < 256) St.BreakDrag[def] -= Data.Thoughts[def].Mood * count;
         p.Breaks++;
         p.LastBreak = Now;
         if (p.Stage(Now) == LifeStage.Child)
@@ -834,7 +835,7 @@ public sealed partial class PeopleSim
         if (rng.NextInt(100) < 30 && PickNewLand(p, life, here) is { } nb)
         {
             int gi = NearestGate(nb, life, here, px, py);
-            if (gi >= 0 && StartCross(p, nb, gi, Why.Break, Mood(p))) { p.BreakUntil = Now + GameTime.TicksPerDay; Stats.MoveWhy[(int)Why.Break]++; return true; }
+            if (gi >= 0 && StartCross(p, nb, gi, Why.Break, Mood(p))) { p.BreakUntil = Now + GameTime.TicksPerDay; St.MoveWhy[(int)Why.Break]++; return true; }
         }
         for (int tries = 0; tries < 16; tries++)
         {

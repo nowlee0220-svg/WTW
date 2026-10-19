@@ -11,7 +11,7 @@ namespace Wtw.Sim.Provinces;
 /// </summary>
 public static class ProvinceCache
 {
-    public const int Capacity = 64;
+    public const int Capacity = 512;
     private static readonly object Lock = new();
     private static readonly ConditionalWeakTable<Planet.Planet, LinkedList<ProvinceMap>> ByPlanet = new();
     private static Planet.Planet? _last;

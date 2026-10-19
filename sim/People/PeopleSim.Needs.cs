@@ -76,7 +76,7 @@ public sealed partial class PeopleSim
     private int FeltAt(Person p, long t)
     {
         var life = Life(p.Cell);
-        if (p.Carrier >= 0 && Get(p.Carrier) is { Dead: false } c) return life.FeltTemp10(t, c.Tile(t), true);
+        if (p.Carrier >= 0 && Here(p.Carrier, p) is { Dead: false } c) return life.FeltTemp10(t, c.Tile(t), true);
         return life.FeltTemp10(t, p.Tile(t), p.Asleep && p.Huddle);
     }
 
@@ -106,7 +106,7 @@ public sealed partial class PeopleSim
     /// <summary>안긴 아기: 안은 사람이 굶지 않으면 젖을 먹고, 안은 사람의 품에서 따뜻하다.</summary>
     private void IntegrateBaby(Person p, long until)
     {
-        var c = Get(p.Carrier);
+        var c = Here(p.Carrier, p);
         var n = Read(p);
         long t = p.LastUpdate;
         var life = Life(p.Cell);

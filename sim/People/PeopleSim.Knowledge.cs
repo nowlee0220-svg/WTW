@@ -128,7 +128,7 @@ public sealed partial class PeopleSim
             int before = k.Level;
             k.Level = Math.Min(100, k.Level + amount / 2); k.LastUse = Now;
             q.Known[ki] = k;
-            if (before < 50 && k.Level >= 50) { AddBio(q, BioKind.Refreshed, from, rule.Index); Stats.Refreshed++; }
+            if (before < 50 && k.Level >= 50) { AddBio(q, BioKind.Refreshed, from, rule.Index); St.Refreshed++; }
             return;
         }
         int li = q.Learning.FindIndex(l => l.Rule == rule.Index);
@@ -161,7 +161,7 @@ public sealed partial class PeopleSim
             if (k.Level < ForgetBelow)
             {
                 p.Known.RemoveAt(i);
-                Stats.Forgot++;
+                St.Forgot++;
                 _forgotToday.Add(k.Rule);
                 AddBio(p, BioKind.Forgot, -1, k.Rule);
                 continue;
@@ -242,7 +242,7 @@ public sealed partial class PeopleSim
     /// <summary>다가갔다: 배울 사람이 곁에 있고 말을 받을 수 있으면 그 사람의 일을 끊고 함께 한 시간 남짓 가르친다.</summary>
     internal void BeginLesson(Person p)
     {
-        var q = Get(p.Target);
+        var q = Here(p.Target, p);
         int here = p.Tile(Now);
         if (q is null || !CanBeTalkedTo(q) || Cheb(q.Tile(Now), here) > 3) { if (!TryWander(p, Why.Nothing)) StartRest(p, Why.Nothing); return; }
         var rng = Rng(p.Cell);
@@ -258,7 +258,7 @@ public sealed partial class PeopleSim
         p.PlanHeat = (int)(Now / 60); // 수업 시작(분 단위 — 끝에 얼마나 했나를 셈)
         Schedule(p, PredictUrgent(p, Now, p.ActUntil, here));
         Schedule(q, PredictUrgent(q, Now, q.ActUntil, q.Tile(Now)));
-        Stats.Lessons++;
+        St.Lessons++;
     }
 
     /// <summary>
@@ -267,7 +267,7 @@ public sealed partial class PeopleSim
     /// </summary>
     internal void FinishLesson(Person p, bool done)
     {
-        var q = Get(p.Target);
+        var q = Here(p.Target, p);
         int rule = p.TargetB;
         if (q is null || q.Dead || (uint)rule >= (uint)Craft.Rules.Count || !p.Knows(rule) || Cheb(q.Tile(Now), p.Tile(Now)) > 4) return;
         long start = (long)p.PlanHeat * 60;
@@ -278,7 +278,7 @@ public sealed partial class PeopleSim
         int amount = 20 + Ability(p, PeopleData.Soc) * 2 + p.SkillLevel(PeopleData.Teaching) * 3 + (Ability(q, PeopleData.Int) - 5) * 3
                      + (q.Stage(Now) == LifeStage.Child ? 10 : q.Stage(Now) == LifeStage.Elder ? -6 : 0) + (p.HasTrait(T_eloquent) ? 5 : 0);
         amount = Math.Max(4, amount) * (25 + 75 * und / 100) / 100 * pct / 100;
-        Stats.LessonAmount += amount; Stats.LessonUnderstand += und;
+        St.LessonAmount += amount; St.LessonUnderstand += und;
         var k = p.Known[p.KnownIndex(rule)];
         bool knewBefore = q.Knows(rule);
         AddLearning(q, Craft.Rules[rule], Math.Max(1, amount), p.Id, Via.Teach, k.Wish, k.Input, k.With);
@@ -288,7 +288,7 @@ public sealed partial class PeopleSim
         var rp = p.GetRelation(q.Id); rp.Opinion = Math.Min(100, rp.Opinion + 2); rp.Talks++; p.SetRelation(rp);
         var rq = q.GetRelation(p.Id); rq.Opinion = Math.Min(100, rq.Opinion + 3); rq.Favor = Math.Min(100, rq.Favor + 2); rq.Talks++; q.SetRelation(rq);
         AddThought(p, H_taught, q.Id);
-        if (!knewBefore && q.Knows(rule)) { AddBio(p, BioKind.Taught, q.Id, rule); Stats.TaughtFull++; }
+        if (!knewBefore && q.Knows(rule)) { AddBio(p, BioKind.Taught, q.Id, rule); St.TaughtFull++; }
         ShareClue(p, q, Rng(p.Cell));
     }
 
@@ -304,7 +304,7 @@ public sealed partial class PeopleSim
                 if (to.Knows(c.Rule)) continue;
                 bool has = false; foreach (var x in to.Clues) if (x.Rule == c.Rule && x.Key == c.Key) { has = true; break; }
                 if (has) continue;
-                if (rng.NextInt(100) < 50) { AddClue(to, c); Stats.CluesShared++; }
+                if (rng.NextInt(100) < 50) { AddClue(to, c); St.CluesShared++; }
                 break;
             }
         }
@@ -383,20 +383,26 @@ public sealed partial class PeopleSim
                 if (n < bestN) { bestN = n; rule = k.Rule; }
             }
         }
-        var g = new Painting { Id = NextPaintingId++, Cell = p.Cell, Tile = wall, Stand = stand, Rule = rule, Painter = p.Id, Medium = med, Tick = Now, Until = Now + PaintingLife(med, rng) };
-        Paintings[g.Id] = g;
-        Stats.PaintMedium[med]++;
-        Stats.PaintWhy[p.PlanRule < 0 ? 4 : p.RecordWhy switch { Why.RecordOld => 1, Why.RecordOnly => 2, Why.RecordFirst => 3, _ => 0 }]++;
-        if (rule >= 0) PaintedAt[GroupKey(p.Cell, rule)] = Now;
+        long until = Now + PaintingLife(med, rng);
+        St.PaintMedium[med]++;
+        St.PaintWhy[p.PlanRule < 0 ? 4 : p.RecordWhy switch { Why.RecordOld => 1, Why.RecordOnly => 2, Why.RecordFirst => 3, _ => 0 }]++;
         p.RecordRule = -1;
         p.LastPaint = Now;
-        Stats.Paintings++;
+        St.Paintings++;
+        if (rule >= 0) UseKnowledge(p, rule);
+        // (S1) 그림 번호 · 그림 목록 · 역사는 세계 전체의 것 → 지방 계산 중이면 맞추는 시각에
+        if (InProvince) Defer(new PendingOp { Kind = PendingOp.Kinds.Painting, A = p.Id, B = wall, C = stand, D = rule, E = med, L = until });
+        else PaintingWorld(p, p.Cell, wall, stand, rule, med, until);
+    }
+
+    /// <summary>(S1) 그림을 세계에 남긴다: 번호 · 목록 · 그 땅에서 그린 때 · 그린 사람의 기록 · 지식의 역사.</summary>
+    private void PaintingWorld(Person p, int cell, int wall, int stand, int rule, byte med, long until)
+    {
+        var g = new Painting { Id = NextPaintingId++, Cell = cell, Tile = wall, Stand = stand, Rule = rule, Painter = p.Id, Medium = med, Tick = Now, Until = until };
+        Paintings[g.Id] = g;
+        if (rule >= 0) PaintedAt[GroupKey(cell, rule)] = Now;
         AddBio(p, BioKind.Painted, g.Id, rule);
-        if (rule >= 0)
-        {
-            UseKnowledge(p, rule);
-            History(rule, 5, p.Cell, $"{Hangul.I(DisplayName(p))} {LandLabelOr(p.Cell, "한 땅")}의 {Painting.MediumName(med)}에 그려 남겼다");
-        }
+        if (rule >= 0) History(rule, 5, cell, $"{Hangul.I(DisplayName(p))} {LandLabelOr(cell, "한 땅")}의 {Painting.MediumName(med)}에 그려 남겼다");
     }
 
     /// <summary>그림을 들여다볼 만한가(점수): 곁(30타일)에 모르는 법을 그린 그림이 있고, 하루에 한 번, 낮에.</summary>
@@ -438,11 +444,11 @@ public sealed partial class PeopleSim
     {
         if (!Paintings.TryGetValue(p.Target, out var g) || !g.Alive(Now) || g.Rule < 0) return;
         g.Seen++;
-        Stats.Studies++;
+        St.Studies++;
         int amount = Math.Max(5, 12 + (Ability(p, PeopleData.Int) - 5) * 3 + (p.HasTrait(T_curious) ? 3 : 0)); // (E5 고침) 그림은 드물지만 보고 배우는 힘은 조금 세게
         bool knew = p.Knows(g.Rule);
         AddLearning(p, Craft.Rules[g.Rule], amount, g.Painter, Via.Painting, -1, -1, -1);
-        if (!knew && p.Knows(g.Rule)) { g.Taught++; Stats.LearnedFromPainting++; }
+        if (!knew && p.Knows(g.Rule)) { g.Taught++; St.LearnedFromPainting++; }
     }
 
     // ───────── 남기고 싶은 마음 ─────────
@@ -519,7 +525,7 @@ public sealed partial class PeopleSim
             if (gk.Known && n == 0 && Now - gk.EmptySince >= LoseAfter)
             {
                 gk.Known = false; gk.LostTick = gk.EmptySince; gk.LostCount++; gk.EmptySince = -1;
-                Stats.GroupLost++;
+                St.GroupLost++;
                 bool painted = HasPainting(cell, rule);
                 var who = FirstAlive(cell);
                 string text = $"{LandLabelOr(cell, "한 땅")}의 무리에서 {Hangul.I(Craft.ItemName(Craft.Rules[rule].Result))} 끊겼습니다 — 아는 사람이 없습니다" + (painted ? " (그림은 남아 있다)" : "");
@@ -529,11 +535,11 @@ public sealed partial class PeopleSim
             else if (!gk.Known && n > 0)
             {
                 gk.Known = true; gk.RefoundCount++; gk.Knowers = n;
-                Stats.GroupRefound++;
+                St.GroupRefound++;
                 long delay = Now - gk.LostTick;
-                Stats.RefoundDelays.Add(delay);
+                St.RefoundDelays.Add(delay);
                 var (how, person) = RegainHow(cell, rule, gk.LostTick);
-                Stats.RefoundHow[(int)how]++;
+                St.RefoundHow[(int)how]++;
                 string text = $"{LandLabelOr(cell, "한 땅")}의 무리가 {Hangul.Eul(Craft.ItemName(Craft.Rules[rule].Result))} 되찾았습니다 — {RegainName(how, person)} ({delay / (double)GameTime.TicksPerYear:0.#}년 만에)";
                 if (person is not null) (refoundNotes ??= new()).Add((cell, rule, person, Craft.ItemName(Craft.Rules[rule].Result), text));
                 History(rule, 2, cell, text);
@@ -553,7 +559,7 @@ public sealed partial class PeopleSim
                 if (!GroupKnows.ContainsKey(key)) GroupKnows[key] = new GroupKnow { Since = Now, Knowers = n };
             }
             // 한 사람만 아는 법(측정)
-            foreach (var (_, n) in counts) { Stats.GroupKnownSamples++; if (n == 1) Stats.GroupSoleSamples++; }
+            foreach (var (_, n) in counts) { St.GroupKnownSamples++; if (n == 1) St.GroupSoleSamples++; }
             if (Provinces.TryGetValue(cell, out var life)) RecordWishes(cell, life, counts, world);
         }
         // 바랜 그림
@@ -564,7 +570,7 @@ public sealed partial class PeopleSim
             {
                 var g = Paintings[id];
                 Paintings.Remove(id);
-                Stats.PaintingsFaded++;
+                St.PaintingsFaded++;
                 if (g.Rule >= 0) History(g.Rule, 6, g.Cell, $"{LandLabelOr(g.Cell, "한 땅")}의 {Painting.MediumName(g.Medium)} 그림이 바래 사라졌다");
             }
     }
@@ -621,6 +627,7 @@ public sealed partial class PeopleSim
 
     internal void History(int rule, byte kind, int cell, string text)
     {
+        if (InProvince) { Defer(new PendingOp { Kind = PendingOp.Kinds.History, A = rule, B = kind, C = cell, S = text }); return; }
         if (!KnowHistory.TryGetValue(rule, out var list)) KnowHistory[rule] = list = new List<KnowEvent>();
         list.Add(new KnowEvent(Now, kind, cell, text));
         if (list.Count > HistoryKept) list.RemoveAt(1); // 맨 처음(첫 발견)은 남긴다

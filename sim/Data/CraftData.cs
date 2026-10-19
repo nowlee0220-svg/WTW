@@ -52,7 +52,19 @@ public sealed class CraftData
 
     public int PropIndex(string id) { foreach (var p in Properties) if (p.Id == id) return p.Index; return -1; }
     public int ActionIndex(string id) { foreach (var a in Actions) if (a.Id == id) return a.Index; return -1; }
-    public int ItemIndex(string id) { for (int i = 0; i < Catalog.Items.Count; i++) if (Catalog.Items[i].Id == id) return i; return -1; }
+    public int ItemIndex(string id)
+    {
+        // (S1) 판단마다 불리므로 아이디 → 번호 표를 한 번 만든다(같은 아이디가 여럿이면 앞의 것 — 훑을 때와 같다)
+        var map = _itemIndex ??= BuildItemIndex();
+        return map.TryGetValue(id, out int i) ? i : -1;
+    }
+    private Dictionary<string, int>? _itemIndex;
+    private Dictionary<string, int> BuildItemIndex()
+    {
+        var m = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (int i = 0; i < Catalog.Items.Count; i++) m.TryAdd(Catalog.Items[i].Id, i);
+        return m;
+    }
     public CraftRule? Rule(string id) { foreach (var r in Rules) if (r.Id == id) return r; return null; }
     public int Prop(int item, int prop) => (uint)item < (uint)ItemProps.Length && prop >= 0 ? ItemProps[item][prop] : 0;
     public int Prop(int item, string prop) => Prop(item, PropIndex(prop));

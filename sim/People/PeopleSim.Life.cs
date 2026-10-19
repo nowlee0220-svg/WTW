@@ -189,7 +189,7 @@ public sealed partial class PeopleSim
                 {
                     p.IllUntil = Now + (3 + rng.NextInt(8)) * GameTime.TicksPerDay;
                     p.IllDamage = 3_000 + rng.NextInt(6_000) + (st == LifeStage.Elder ? 4_000 : 0) + (p.HasTrait(T_frail) ? 3_000 : 0) - (p.HasTrait(T_tough) ? 2_000 : 0);
-                    Stats.Illnesses++;
+                    St.Illnesses++;
                     AddBio(p, BioKind.Ill);
                 }
             }
@@ -231,22 +231,39 @@ public sealed partial class PeopleSim
         if (woman.Conceived >= 0 || man.Dead || man.Cell != woman.Cell) return;
         int wa = woman.AgeYears(Now), ma = man.AgeYears(Now);
         if (wa < 16 || wa > 45 || ma < 16 || woman.Malnutrition > 20_000 || woman.IllUntil > Now) return;
-        if (AliveCount + Pregnant >= _w.Config.PeopleCap) return; // 상한(안전장치)
+        if (CapUsed(woman) >= _w.Config.PeopleCap) return; // 상한(안전장치)
         int ch = 50; // 1,000 분의 (한 밤)
         foreach (int cid in woman.Children)
-            if (Get(cid) is { Dead: false } c && c.AgeTicks(Now) < GameTime.TicksPerYear * 3 / 2) { ch /= 3; break; }
+            if (Get(cid) is { } c && c.Cell == woman.Cell && c.AgeTicks(Now) < GameTime.TicksPerYear * 3 / 2 && !c.Dead) { ch /= 3; break; } // (S1) 젖먹이는 늘 같은 지방에 안겨 있다
         if (Rng(woman.Cell).NextInt(1_000) >= ch) return;
         woman.Conceived = Now;
+        if (InProvince) L.PregnantDelta++; else _pregnant++;
         woman.ChildFather = man.Id;
-        Stats.Conceptions++;
+        St.Conceptions++;
     }
 
-    private int Pregnant { get { int n = 0; foreach (var p in _all) if (!p.Dead && p.Conceived >= 0) n++; return n; } }
+    /// <summary>아이 밴 산 사람 수(S1: 셈을 따로 둔다 — 날마다 모든 사람을 훑지 않게).</summary>
+    private int Pregnant => _pregnant;
+    private int _pregnant;
+
+    /// <summary>
+    /// (S1) 상한 셈: 산 사람 + 아이 밴 사람. 지방 계산 중에는 다른 지방을 볼 수 없으므로 지난 맞추는 시각의 값(CapBase)에
+    /// 그 뒤 이 지방에서 생긴 아이만 더한다(CPU 수와 상관없이 같다 — 여러 지방에서 같은 6분 안에 생긴 아이는 상한을 조금 넘을 수 있다).
+    /// </summary>
+    private int CapUsed(Person woman)
+    {
+        if (!InProvince) return AliveCount + Pregnant;
+        long since = (Now - 1) / CrossInterval * CrossInterval;
+        int n = CapBase;
+        foreach (var q in Life(woman.Cell).People) if (!q.Dead && q.Conceived > since) n++;
+        return n;
+    }
 
     private void GiveBirth(Person mother, Pcg32 rng)
     {
         var father = Get(mother.ChildFather);
         mother.Conceived = -1;
+        _pregnant--;
         mother.Position(Now, out int x, out int y);
         var baby = Make(mother.Cell, (y / 1000) * S + x / 1000, 0, rng.NextInt(2) == 0 ? Sex.Male : Sex.Female, mother, father, rng, newborn: true);
         // 부모가 그 말로 뜻이 있는 이름을 짓는다(이름이 있는 쪽이 — 둘 다 없으면 엄마)
@@ -259,7 +276,7 @@ public sealed partial class PeopleSim
             AddBio(par, BioKind.ChildBorn, baby.Id);
             var r1 = par.GetRelation(baby.Id); r1.Opinion = 70; par.SetRelation(r1);
         }
-        Stats.Births++;
+        St.Births++;
         Notify(WorldEventKind.Birth, baby, mother.Id, $"{Hangul.I(DisplayName(mother))} 아이 {Hangul.Eul(baby.Name)} 낳았습니다 — 이름의 뜻: {NameMeaning(baby)}");
     }
 
@@ -297,11 +314,12 @@ public sealed partial class PeopleSim
         if (p.Carrier >= 0 && Get(p.Carrier) is { } c) c.Position(Now, out x, out y);
         p.NewMotion().SetStill(Now, x, y);
         p.Dead = true; p.DeathTick = Now; p.Cause = cause;
+        if (p.Conceived >= 0) { if (InProvince) L.PregnantDelta--; else _pregnant--; }
         p.Walking = false; p.Asleep = false; p.Conceived = -1;
         SetWhy(p, Act.Dead, Why.None);
         p.Carrier = -1;
-        AliveCount--;
-        Stats.Deaths[(int)cause]++;
+        if (InProvince) L.AliveDelta--; else AliveCount--;
+        St.Deaths[(int)cause]++;
         int deathTile = (y / 1000) * S + x / 1000;
         // (E4) 들고 있던 것은 그 자리에 남는다
         if (p.Carry.Count > 0 && (uint)deathTile < HexFrame.TileCount)
@@ -310,8 +328,8 @@ public sealed partial class PeopleSim
             foreach (var (item, n) in p.Carry) if (item != I_ember) lifeHere.Drop(deathTile, item, n);
             p.Carry.Clear(); p.PotWater = 0; p.EmberTick = -1;
         }
-        if (cause == DeathCause.Thirst && !Life(p.Cell).HasDrinkFrom(deathTile)) Stats.NoWaterDeaths++;
-        if (cause == DeathCause.Starvation && !Life(p.Cell).HasFoodFrom(deathTile)) Stats.NoFoodDeaths++;
+        if (cause == DeathCause.Thirst && !Life(p.Cell).HasDrinkFrom(deathTile)) St.NoWaterDeaths++;
+        if (cause == DeathCause.Starvation && !Life(p.Cell).HasFoodFrom(deathTile)) St.NoFoodDeaths++;
         AddBio(p, BioKind.Died, -1, (int)cause);
         foreach (var q in Life(p.Cell).People)
         {

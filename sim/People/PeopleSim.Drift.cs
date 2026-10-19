@@ -78,7 +78,7 @@ public sealed partial class PeopleSim
                     Shift(list, mean);
                     foreach (var p in list) p.LangId = child.Id;
                     foreach (var p in _all) if (!p.Dead && p.Cell == cell && p.LangId == lang.Id && p.Stage(Now) == LifeStage.Baby) p.LangId = child.Id; // 그 무리의 아기도
-                    Stats.LanguageSplits++;
+                    St.LanguageSplits++;
                     Notify(WorldEventKind.Language, list[0], -1,
                         $"{LandLabelOr(cell, "한 땅")}에 사는 무리의 말이 조금씩 달라져 {Hangul.Ro(LanguageLabel(child.Id).Split('(')[0])} 갈라졌습니다 — 사투리의 시작(아직은 거의 알아듣는다)");
                 }
@@ -90,7 +90,7 @@ public sealed partial class PeopleSim
         {
             if (!Languages.TryGetValue(id, out var lang)) continue;
             var rng = _w.Rng.Get("language", id);
-            if (rng.NextInt(1000) < WordChangePerMille) { lang.ReplaceNextWord(BaseConcepts); Stats.WordChanges++; }
+            if (rng.NextInt(1000) < WordChangePerMille) { lang.ReplaceNextWord(BaseConcepts); St.WordChanges++; }
         }
     }
 

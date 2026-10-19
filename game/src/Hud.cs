@@ -20,6 +20,7 @@ public partial class Hud : Control
     public event Action<int>? SpawnToolRequested;   // 지방 화면: 0 끔 · 1 사람 뿌리기 · 2 가족 뿌리기
     public event Action? DiscoveriesRequested;      // (E4) 발견 목록
     public event Action? SkipRequested;             // (E4) 넘기기
+    public event Action? ThreadsRequested;          // (S1) 사람 계산에 쓰는 CPU 수 바꾸기
 
     private Label _date = null!, _speed = null!, _metrics = null!, _notice = null!;
     private readonly Button[] _speedButtons = new Button[Speed.Max + 1];
@@ -32,6 +33,7 @@ public partial class Hud : Control
     private readonly List<Control> _globeOnly = new();
     private readonly List<Control> _provinceOnly = new();
     private Button _spawnOne = null!, _spawnFamily = null!;
+    private Button _cpu = null!;
 
     public override void _Ready()
     {
@@ -57,6 +59,10 @@ public partial class Hud : Control
         _metrics.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeSmall);
         _metrics.AddThemeColorOverride("font_color", UiTheme.TextDim);
         topRow.AddChild(_metrics);
+        // (S1) 사람 계산에 쓰는 CPU 수(누를 때마다 하나씩 — 다 쓰면 1로). 결과는 같고 빠르기만 바뀐다.
+        _cpu = MakeButton("CPU", () => ThreadsRequested?.Invoke(), "사람 계산에 쓰는 CPU 수 — 누를 때마다 바뀐다. 기본은 코어 수 − 1(화면 몫을 남김). 몇 개를 쓰든 같은 세계가 된다(빠르기만 다름).");
+        _cpu.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeSmall);
+        topRow.AddChild(_cpu);
 
         // 아래 메뉴 막대
         var bottom = new PanelContainer { MouseFilter = MouseFilterEnum.Stop };
@@ -186,6 +192,7 @@ public partial class Hud : Control
     public void UpdateInfo(WorldSnapshot snap, SimHost host, double delta)
     {
         _date.Text = GameTime.Format((long)host.RenderTick);
+        _cpu.Text = $"CPU {host.Threads}/{System.Environment.ProcessorCount}";
         int shown = host.Paused ? 0 : host.SpeedLevel;
         _speed.Text = host.Paused ? $"멈춤 ({Speed.Label(host.SpeedLevel)})" : Speed.Label(host.SpeedLevel);
         for (int s = 0; s <= Speed.Max; s++) _speedButtons[s].SetPressedNoSignal(s == shown);

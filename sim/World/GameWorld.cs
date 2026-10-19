@@ -51,6 +51,19 @@ public sealed class GameWorld
     /// <summary>하루 경계 훅(지방끼리 주고받기 자리). 등록한 순서대로 부른다. 인자 = 새로 시작한 날 번호.</summary>
     public event Action<GameWorld, long>? DayBoundary;
 
+    /// <summary>
+    /// (S1) 사람 계산에 쓸 CPU 수(1 = 한 줄기). 결과와 상관없다 — 저장하지 않는다. 게임은 코어 수 − 1(화면 몫), 측정 도구는 --threads.
+    /// </summary>
+    public int Threads { get; set; } = DefaultThreads;
+
+    /// <summary>(S1) 새로 만들거나 불러온 세계의 처음 CPU 수(측정 도구의 --threads).</summary>
+    public static int DefaultThreads { get; set; } = 1;
+
+    /// <summary>(S1) 맞추는 시각의 간격(= 넘겨주기 간격). 지방끼리는 이 시각에만 주고받는다.</summary>
+    public const long SyncInterval = PeopleSim.CrossInterval;
+
+    internal void AddEventsProcessed(long n) => EventsProcessed += n;
+
     private GameWorld(ulong seed, WorldConfig config)
     {
         Seed = seed;
@@ -94,43 +107,39 @@ public sealed class GameWorld
 
     /// <summary>
     /// targetTick 까지 계산한다. 시각이 targetTick 이하인 예약을 모두 처리하고 Now = targetTick.
-    /// 하루 경계는 그 시각의 예약보다 먼저 처리한다.
+    /// (S1) 시간을 맞추는 시각(SyncInterval)으로 자른다: 맞추는 시각까지 지방마다 예약을 처리하고(Threads 개 CPU),
+    /// 맞추는 시각에 한 줄기로 — 미뤄 둔 세계의 일 → 지방 넘겨주기 → (하루 경계면) 하루 일.
+    /// 맞추는 시각 ≤ Now 는 모두 처리된 상태다(그 사이 어디서 멈추고 저장해도 이어서 같은 결과).
     /// </summary>
     public void AdvanceTo(long targetTick)
     {
         if (targetTick < Now) throw new ArgumentOutOfRangeException(nameof(targetTick), "시간은 뒤로 가지 않는다");
-        while (true)
+        while (Now < targetTick)
         {
-            bool hasEvent = Scheduler.TryPeek(out var next);
-            long eventTick = hasEvent ? next.Tick : long.MaxValue;
-            long crossTick = People.CrossTick;
-            // 같은 시각이면: 하루 경계 → 예약 → 지방 넘겨주기
-            if (NextDayBoundary <= targetTick && NextDayBoundary <= eventTick && NextDayBoundary <= crossTick)
-            {
-                Now = NextDayBoundary;
-                NextDayBoundary += GameTime.TicksPerDay;
-                DaysElapsed++;
-                People.OnDay();
-                DayBoundary?.Invoke(this, GameTime.DayIndex(Now));
-                continue;
-            }
-            if (eventTick <= targetTick && eventTick <= crossTick)
+            long boundary = (Now / SyncInterval + 1) * SyncInterval;
+            long t = Math.Min(boundary, targetTick);
+            // 시험용 점(E0)은 사람과 상관없이 세계 예약표에서 한 줄기로
+            while (Scheduler.TryPeek(out var next) && next.Tick <= t)
             {
                 var ev = Scheduler.Pop();
                 Now = ev.Tick;
                 Dispatch(ev);
                 EventsProcessed++;
-                continue;
             }
-            if (crossTick <= targetTick)
+            People.RunProvinces(t, Threads);
+            Now = t;
+            if (t != boundary) break;
+            People.ApplyOps();
+            People.DoCrossings();
+            if (NextDayBoundary <= t)
             {
-                Now = crossTick;
-                People.DoCrossings();
-                continue;
+                NextDayBoundary += GameTime.TicksPerDay;
+                DaysElapsed++;
+                People.OnDay();
+                DayBoundary?.Invoke(this, GameTime.DayIndex(Now));
             }
-            break;
+            People.AfterSync();
         }
-        Now = targetTick;
     }
 
     private void Dispatch(in ScheduledEvent ev)
@@ -151,9 +160,6 @@ public sealed class GameWorld
                 Dots.OnArrive(d, Now, Rng.Get(DotField.StreamName, d.Province), Scheduler);
                 break;
             }
-            case EventKinds.Person:
-                People.OnEvent(ev.Target);
-                break;
             default:
                 throw new InvalidOperationException($"모르는 예약 종류: {ev.Kind}");
         }
