@@ -13,6 +13,9 @@ namespace Wtw.Sim.People;
 /// </summary>
 public sealed partial class PeopleSim
 {
+    /// <summary>(S1) 지방 계산을 나눌 때 세워 둔 일꾼(ProvincePool)을 쓰나, 부를 때마다 Parallel.ForEach 를 쓰나(빠르기 비교용 — 결과는 같다).</summary>
+    public static bool UsePool = true;
+
     /// <summary>상한 셈의 기준(지난 맞추는 시각의 산 사람 + 아이 밴 사람). 저장한다.</summary>
     internal int CapBase;
 
@@ -66,12 +69,27 @@ public sealed partial class PeopleSim
         {
             // 큰 지방부터(예약이 많은 곳) — 나눠 맡는 순서는 결과와 상관없고 빠르기에만
             work.Sort((a, b) => b.Sched.Count != a.Sched.Count ? b.Sched.Count.CompareTo(a.Sched.Count) : a.Cell.CompareTo(b.Cell));
-            Parallel.ForEach(Partitioner.Create(0, work.Count, 1), new ParallelOptions { MaxDegreeOfParallelism = threads }, range =>
+            if (UsePool)
             {
-                var lane = TakeLane();
-                try { for (int i = range.Item1; i < range.Item2; i++) RunOne(lane, work[i], upTo); }
-                finally { _freeLanes.Add(lane); }
-            });
+                var pool = ProvincePool.Rent(threads - 1);
+                try
+                {
+                    pool.Run(work.Count, i =>
+                    {
+                        var lane = TakeLane();
+                        try { RunOne(lane, work[i], upTo); }
+                        finally { _freeLanes.Add(lane); }
+                    });
+                }
+                finally { ProvincePool.Return(pool); }
+            }
+            else
+                Parallel.ForEach(Partitioner.Create(0, work.Count, 1), new ParallelOptions { MaxDegreeOfParallelism = threads }, range =>
+                {
+                    var lane = TakeLane();
+                    try { for (int i = range.Item1; i < range.Item2; i++) RunOne(lane, work[i], upTo); }
+                    finally { _freeLanes.Add(lane); }
+                });
         }
         MergeLanes();
     }

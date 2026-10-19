@@ -12,14 +12,14 @@ public static class Prof
     public enum S : byte
     {
         Other = 0, Decide, Path, Near, Experiment, Material, Fire, Teach, Paint, Group, Language, Talk, Needs, Mood,
-        Cross, Wake, MapGen, Record, Day, Sync, Schedule, Sim, Count,
+        Cross, Wake, MapGen, Record, Day, Sync, Schedule, Sim, X1, X2, X3, X4, X5, X6, Count,
     }
 
     public static readonly string[] Names =
     {
         "그 밖(시뮬 밖 · 나머지)", "판단(그 밖)", "길 찾기", "주변 찾기(물 · 먹을 것 · 그늘 · 둘러보기)", "실험 · 만들기(계획)", "재료 구하기", "불 돌보기",
         "가르치기 · 배우기", "그림(그리기 · 보기)", "무리 셈 · 잊기(하루 경계)", "말(닮아 감 · 갈라짐 · 이름 · 지명)", "이야기 · 짝", "욕구 · 기온 셈", "기분 · 생각",
-        "지방 넘기(옮겨 가기)", "지방 깨우기 · 경계 만들기", "지방 지도 만들기", "저장용 기록 · 알림", "하루 경계(그 밖)", "맞추는 시각 · CPU 나눔", "예약(스케줄러)", "시뮬 그 밖(예약 처리 · 판단 밖)",
+        "지방 넘기(옮겨 가기)", "지방 깨우기 · 경계 만들기", "지방 지도 만들기", "저장용 기록 · 알림", "하루 경계(그 밖)", "맞추는 시각 · CPU 나눔", "예약(스케줄러)", "시뮬 그 밖(예약 처리 · 판단 밖)", "(조사 1)", "(조사 2)", "(조사 3)", "(조사 4)", "(조사 5)", "(조사 6)",
     };
 
     public static readonly bool On = Environment.GetEnvironmentVariable("WTW_PROF") == "1";
