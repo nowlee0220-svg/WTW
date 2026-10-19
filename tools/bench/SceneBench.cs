@@ -10,10 +10,18 @@ using Wtw.Sim.World;
 /// </summary>
 public static class SceneBench
 {
-    public static void Run(string outDir, ulong seed)
+    public static void Run(string outDir, ulong seed, bool onlyArtisan = false, bool onlyCopper = false)
     {
         Directory.CreateDirectory(outDir);
         var index = new List<string>();
+        if (onlyArtisan) index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("last-artisan")));
+        if (onlyCopper)
+        {
+            index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("copper-village")));
+            CopperScene(outDir, seed, index);
+            File.WriteAllLines(Path.Combine(outDir, "index.txt"), index);
+            return;
+        }
         GameWorld New()
         {
             var w = GameWorld.Create(seed, new WorldConfig { DotCount = 0 });
@@ -42,11 +50,61 @@ public static class SceneBench
             index.Add($"{file}|{title}|{desc} ({GameTime.Format(w.Now)} · 사람 {w.People.AliveCount}명)");
             Console.WriteLine($"{file}: {GameTime.Format(w.Now)} · 사람 {w.People.AliveCount}명 · {new FileInfo(Path.Combine(outDir, file)).Length / 1024}KB");
         }
-        long fire = FirstTick("campfire", 80);
+        if (!onlyArtisan) {
+        long fire = FirstTick("campfire", 100);
         if (fire > 0) Save("first-fire.wtw", "첫 불 직전", "따뜻한 숲의 세 가족 — 이틀 뒤에 누군가 처음으로 모닥불을 피운다. 1배속으로 지켜보세요", fire - 2 * GameTime.TicksPerDay);
         long pot = FirstTick("pot", 150);
         if (pot > 0) Save("first-pot.wtw", "첫 토기 직전", "이틀 뒤에 누군가 처음으로 진흙 그릇을 불에 구워 토기를 만든다", pot - 2 * GameTime.TicksPerDay);
-        Save("village-50y.wtw", "50년 뒤 마을", "세 가족이 50년을 산 뒤 — 불 · 돌칼 · 그릇을 아는 마을. [발견] 창과 카드의 [지식]을 보세요", 50 * GameTime.TicksPerYear);
+        Save("village-50y.wtw", "50년 뒤 마을", "세 가족이 50년을 산 뒤의 마을 — 가르치고 · 배우는 모습. [지식의 행방] 창과 카드의 [지식]을 보세요", 50 * GameTime.TicksPerYear);
+        }
+        if (!onlyArtisan) CopperScene(outDir, seed, index);
+        // (E5) 마지막 장인이 늙음: 세계에서 그 법을 아는 사람이 셋 이하이고 모두 45살 넘은 때 가운데 가장 "끊기기 쉬운" 때
+        // (아는 사람이 적을수록 · 가장 젊은 아는 사람도 늙었을수록). 150년 안. 결정론이라 늘 같은 장면.
+        {
+            var w = New();
+            var c = w.People.Craft;
+            string? best = null; byte[]? bestBytes = null; int bestScore = int.MinValue;
+            for (long t = 0; t < 150 * GameTime.TicksPerYear; t += GameTime.TicksPerDay)
+            {
+                w.AdvanceTo(t + GameTime.TicksPerDay);
+                if (t < 10 * GameTime.TicksPerYear || (t / GameTime.TicksPerDay) % 5 != 0) continue;
+                foreach (var (rule, d) in w.People.Discoveries)
+                {
+                    if (d.Lost || c.Rules[rule].Id == "paint") continue;
+                    var knowers = w.People.All.Where(q => !q.Dead && q.Knows(rule)).ToList();
+                    if (knowers.Count == 0 || knowers.Count > 3) continue;
+                    int young = knowers.Min(q => q.AgeYears(w.Now));
+                    if (young < 45) continue;
+                    int score = young - knowers.Count * 8;
+                    if (score <= bestScore) continue;
+                    var oldest = knowers.OrderByDescending(q => q.AgeYears(w.Now)).First();
+                    int pics = w.People.PaintingsOf(rule);
+                    string who = string.Join(" · ", knowers.Select(q => $"{w.People.DisplayName(q)}(나이 {q.AgeYears(w.Now)}, {w.People.LandLabelOr(q.Cell, "이름 없는 땅")})"));
+                    best = $"세계에서 {c.ItemName(c.Rules[rule].Result)} 만드는 법을 아는 사람은 {knowers.Count}명뿐 — {who}" + (pics > 0 ? $" · 그림 {pics}점이 남아 있다" : " · 그림은 없다") + $" ({GameTime.Format(w.Now)} · 사람 {w.People.AliveCount}명)";
+                    bestScore = score; bestBytes = SaveGame.ToBytes(w);
+                }
+            }
+            string file = "last-artisan.wtw";
+            if (bestBytes is not null)
+            {
+                File.WriteAllBytes(Path.Combine(outDir, file), bestBytes);
+                index.Add($"{file}|마지막 장인이 늙음|{best}. [넘기기] → 지식 · 세계에서 사라짐, 그리고 [지식의 행방] 창");
+                Console.WriteLine($"{file}: {best}");
+            }
+            else Console.WriteLine("마지막 장인 장면: 150년 안에 찾지 못함");
+        }
         File.WriteAllLines(Path.Combine(outDir, "index.txt"), index);
+    }
+
+    /// <summary>(E5 고침) 구리 광맥 곁 마을 — 구리 광맥이 드러난 지방, 불 · 토기를 아는 세 가족(CopperBench 와 같은 세계).</summary>
+    private static void CopperScene(string outDir, ulong seed, List<string> index)
+    {
+        var w = CopperBench.NewVillage(seed, 300, out int cell);
+        if (w is null) { Console.WriteLine("구리 광맥 곁 마을: 이 행성에 구리가 드러난 따뜻한 지방이 없음"); return; }
+        string file = "copper-village.wtw";
+        SaveGame.SaveFile(w, Path.Combine(outDir, file));
+        string land = Wtw.Sim.Planet.PlanetNames.Of(w.Planet.Biome[cell]);
+        index.Add($"{file}|구리 광맥 곁 마을|구리 광맥이 드러난 {land} 지방(칸 {cell})에 세 가족 — 어른들은 처음부터 불 피우기와 토기 굽기를 안다. 돌 화덕 · 숯 · 구리까지 갈까요? [넘기기] → 고른 물건 · 구리 덩이 ({GameTime.Format(w.Now)} · 사람 {w.People.AliveCount}명)");
+        Console.WriteLine($"{file}: 칸 {cell}({land}) · 사람 {w.People.AliveCount}명");
     }
 }

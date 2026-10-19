@@ -42,6 +42,8 @@ public sealed partial class PeopleSim
                     r.Joy = p.HasTrait(T_lazy) ? 16_000 : 12_000; r.Rest = -1_500; break;
                 case Act.Talk when p.Target >= 0:
                     r.Social = 40_000; r.Joy = 5_000; break;
+                case Act.Teach or Act.Learn:
+                    r.Social = 25_000; r.Joy = 3_000; break;
                 case Act.BreakLeave or Act.BreakWander:
                     r.Joy = 4_000; break;
             }

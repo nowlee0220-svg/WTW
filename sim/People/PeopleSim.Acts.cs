@@ -156,6 +156,10 @@ public sealed partial class PeopleSim
         int cs = CraftScore(p); if (cs > int.MinValue) Opt(11, cs);
         if (p.Known.Count > 0) Opt(12, 14);
         if ((p.Wish[W_shiny] >= 20 || p.Wish[W_hardTool] >= 40 || p.HasTrait(T_curious)) && HasHardTool(p) && !life.IsNight(Now)) Opt(13, 8 + p.Wish[W_shiny] / 4);
+        // (E5) 가르치기 · 그림 보기
+        int ts = TeachScore(p, life); if (ts > int.MinValue) Opt(14, ts);
+        Painting? study = null;
+        int ss = StudyScore(p, life, out study); if (ss > int.MinValue) Opt(15, ss);
         _opts.Sort((a, b) => b.Score != a.Score ? b.Score.CompareTo(a.Score) : a.Code.CompareTo(b.Code));
         for (int k = 0; k < Math.Min(3, _opts.Count); k++)
         {
@@ -174,6 +178,8 @@ public sealed partial class PeopleSim
                 11 => TryCraftKnown(p),
                 12 => TryTendFire(p),
                 13 => TryMine(p),
+                14 => TryTeach(p),
+                15 => study is not null && TryStudy(p, study),
                 _ => false,
             };
             if (ok && p.ActUntil > Now) return;
@@ -474,6 +480,13 @@ public sealed partial class PeopleSim
             case Act.Cook:
                 DoStill(p, 1_000L * WorkPercent(p) / 100);
                 return;
+            // (E5)
+            case Act.Teach:
+                BeginLesson(p);
+                return;
+            case Act.Study:
+                DoStill(p, GameTime.TicksPerHour);
+                return;
             default:
                 Decide(p);
                 return;
@@ -564,6 +577,13 @@ public sealed partial class PeopleSim
             case Act.EatCarried when done:
                 FinishEatCarried(p);
                 break;
+            // (E5)
+            case Act.Teach when !p.Walking:
+                FinishLesson(p, done);
+                break;
+            case Act.Study when done:
+                FinishStudy(p);
+                break;
             case Act.DrinkCarried when done:
                 if (p.PotWater > 0) { p.PotWater--; p.Water = Clamp(p.Water + 45_000); p.Dehydration = Math.Max(0, p.Dehydration - 10_000); }
                 break;
@@ -627,7 +647,7 @@ public sealed partial class PeopleSim
 
     private bool CanBeTalkedTo(Person q) =>
         !q.Dead && !q.Asleep && q.Carrier < 0 && q.BreakUntil <= Now && q.Stage(Now) != LifeStage.Baby
-        && q.Act is not (Act.Talk or Act.BreakArgue or Act.Eat or Act.Drink or Act.Sleep or Act.Collapse or Act.EatCorpse or Act.Warm or Act.Carried or Act.Dead)
+        && q.Act is not (Act.Talk or Act.BreakArgue or Act.Eat or Act.Drink or Act.Sleep or Act.Collapse or Act.EatCorpse or Act.Warm or Act.Carried or Act.Dead or Act.Teach or Act.Learn)
         && q.Why is not (Why.VeryHungry or Why.VeryThirsty or Why.Starving or Why.VeryCold);
 
     /// <summary>다가갔다: 상대가 가까이 있고 말을 받을 수 있으면 상대의 일을 끊고 함께 이야기한다.</summary>
@@ -689,7 +709,7 @@ public sealed partial class PeopleSim
             AddThought(q, rq.Opinion >= 40 ? H_goodTalk : H_talked, p.Id);
         }
         p.SetRelation(rp); q.SetRelation(rq);
-        if (!argue) { Converge(p, q, rng); TryPair(p, q, rng); }
+        if (!argue) { Converge(p, q, rng); TryPair(p, q, rng); ShareClue(p, q, rng); }
     }
 
     private int TalkDelta(Person speaker, Person listener, Pcg32 rng)

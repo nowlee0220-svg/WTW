@@ -1,7 +1,7 @@
 {
   "_설명": [
     "재료 속성 목록 (E4, 기획서 8-1). 값은 0~max 세기(없으면 0). 화학이 아니라 이 속성들의 조합으로 판정한다(crafting.json 의 규칙).",
-    "아이템의 속성 값은 items.json 의 props 에 있다. 기획서에 없던 속성을 더한 것: holds(담는다 — 그릇의 크기), sharp(날이 서 있다 — 만든 도구의 날; sharpens 는 '날이 설 수 있다'), melt_heat(녹는 불 세기 — 0 녹지 않음 · 1 맨불 · 2 가둔 불 · 3 숯 + 가둔 불)."
+    "아이템의 속성 값은 items.json 의 props 에 있다. 기획서에 없던 속성을 더한 것: holds(담는다 — 그릇의 크기), sharp(날이 서 있다 — 만든 도구의 날; sharpens 는 '날이 설 수 있다'), melt_heat(녹는 불 세기 — 0 녹지 않음 · 1 맨불 · 2 가둔 불 · 3 숯 + 가둔 불), (E5) stains(묻어난다 — 문지르면 자국이 남는다: 숯 · 재 · 진흙, 그림의 재료)."
   ],
   "properties": [
     { "id": "burns",      "name": "탄다",            "group": "열" },
@@ -25,6 +25,7 @@
     { "id": "dries",      "name": "마른다",          "group": "물·시간" },
     { "id": "mixes",      "name": "섞인다",          "group": "섞임" },
     { "id": "sticky",     "name": "끈적인다",        "group": "섞임" },
+    { "id": "stains",     "name": "묻어난다(색이 남는다)", "group": "섞임" },
     { "id": "fibrous",    "name": "실이 된다",       "group": "섞임" },
     { "id": "edible",     "name": "먹을 수 있다(영양)", "group": "몸" },
     { "id": "poison",     "name": "독",              "group": "몸" },

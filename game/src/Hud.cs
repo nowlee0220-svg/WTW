@@ -79,7 +79,7 @@ public partial class Hud : Control
             row.AddChild(b);
         }
         row.AddChild(new VSeparator());
-        row.AddChild(MakeButton("발견", () => DiscoveriesRequested?.Invoke(), "이 세계에서 처음 나온 것들 — 누가 · 언제 · 왜 (키 D)"));
+        row.AddChild(MakeButton("지식의 행방", () => DiscoveriesRequested?.Invoke(), "지식의 행방 — 이 세계에서 처음 나온 것들: 누가 아나 · 어디에 남았나 · 잃음과 되찾음 (키 D)"));
         row.AddChild(MakeButton("넘기기", () => SkipRequested?.Invoke(), "다음 발견 · 10년 · 50년 … 까지 화면 없이 빠르게 (키 N)"));
         row.AddChild(new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill });
         // 지방 화면: 플레이어의 첫 권능 — 사람 뿌리기
@@ -205,10 +205,19 @@ public partial class Hud : Control
             c.A = (float)Mathf.Clamp(_noticeTime, 0, 1);
             _notice.Modulate = c;
             if (_noticeTime <= 0) _notice.Visible = false;
+            PlaceNotice(); // (E5) 지방 단추 줄이 뒤늦게 나타나도 겹치지 않게 날마다 자리를 다시 잡는다
         }
     }
 
     private static string FormatRate(double v) => v >= 10 ? v.ToString("0") : v >= 0.1 ? v.ToString("0.00") : v.ToString("0.0000");
+
+    /// <summary>알림 자리: 위 막대 아래, 지방 단추 줄이 보이면 그 아래(실제 크기로).</summary>
+    private void PlaceNotice()
+    {
+        float y = UiTheme.TopBarHeight + 16;
+        if (_provBar.Visible) y = Math.Max(y, _provBar.GetGlobalRect().End.Y + 12);
+        _notice.Position = new Vector2((GetViewportRect().Size.X - _notice.Size.X) / 2f, y);
+    }
 
     public void ShowNotice(string text)
     {
@@ -217,6 +226,6 @@ public partial class Hud : Control
         _notice.Modulate = Colors.White;
         _noticeTime = 3.0;
         _notice.ResetSize();
-        _notice.Position = new Vector2((GetViewportRect().Size.X - _notice.Size.X) / 2f, UiTheme.TopBarHeight + (_provBar.Visible ? 80 : 16));
+        PlaceNotice();
     }
 }

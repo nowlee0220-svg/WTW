@@ -19,11 +19,13 @@ namespace Wtw.Sim.Persistence;
 /// 버전 6(E3b): 지방 넘기 — 잠든 지방도 같은 목록에(깨어 있든 잠들었든 칸 번호 순), 넘겨주기 대기, 땅 이름, 사람의 옮겨 가기 상태,
 ///   기억(칸 × 타일 수 + 타일). 버전 5 이하의 기억은 그 사람이 사는 지방의 타일로 읽는다.
 /// 버전 7(E4): 지방의 불 · 땅에 놓인 물건 · 캐낸 바위, 발견 목록 · 부분 성공 · 무리마다 처음 안 때, 말의 낱말 출처, 사람의 바람 · 아는 법 · 단서 · 계획 · 불씨 · 그릇의 물 · 별명.
+/// 버전 8(E5): 그림 · 무리마다 아는 법(끊김 · 되찾음) · 지식의 역사, 사람의 아는 정도 · 마지막으로 쓴 때 · 어떻게 알았나 · 배우는 중 · 가르치기/그림 시각 · 남기려는 법.
+///   버전 7 이하의 아는 법은 처음 알 때의 정도(스스로 80 · 보고 50)로 읽는다.
 /// 버전 1(E0) · 2(E1) · 3(E2) 파일도 읽는다(행성 설정은 기본값, 사람 없음).
 /// </summary>
 public static class SaveGame
 {
-    public const int Version = 7;
+    public const int Version = 8;
     private static readonly byte[] Magic = "WTWS"u8.ToArray();
 
     public static byte[] ToBytes(GameWorld w)
@@ -166,6 +168,23 @@ public static class SaveGame
         foreach (var (rule, pr) in ps.Partials) { bw.Write(rule); bw.Write(pr.Count); bw.Write(pr.Texts.Count); foreach (var t in pr.Texts) bw.Write(t); }
         bw.Write(ps.GroupFirst.Count);
         foreach (var (k, v) in ps.GroupFirst) { bw.Write(k); bw.Write(v); }
+        // (E5) 그림 · 무리마다 아는 법 · 지식의 역사
+        bw.Write(ps.NextPaintingId);
+        bw.Write(ps.Paintings.Count);
+        foreach (var (_, g) in ps.Paintings)
+        {
+            bw.Write(g.Id); bw.Write(g.Cell); bw.Write(g.Tile); bw.Write(g.Stand); bw.Write(g.Rule); bw.Write(g.Painter); bw.Write(g.Medium);
+            bw.Write(g.Tick); bw.Write(g.Until); bw.Write(g.Seen); bw.Write(g.Taught);
+        }
+        bw.Write(ps.GroupKnows.Count);
+        foreach (var (k, g) in ps.GroupKnows) { bw.Write(k); bw.Write(g.Known); bw.Write(g.Knowers); bw.Write(g.Since); bw.Write(g.LostTick); bw.Write(g.LostCount); bw.Write(g.RefoundCount); bw.Write(g.EmptySince); }
+        bw.Write(ps.PaintedAt.Count); foreach (var (k, v) in ps.PaintedAt) { bw.Write(k); bw.Write(v); }
+        bw.Write(ps.KnowHistory.Count);
+        foreach (var (rule, list) in ps.KnowHistory)
+        {
+            bw.Write(rule); bw.Write(list.Count);
+            foreach (var e in list) { bw.Write(e.Tick); bw.Write(e.Kind); bw.Write(e.Cell); bw.Write(e.Text); }
+        }
         var (queue, at) = ps.CrossQueueForSave();
         bw.Write(at); bw.Write(queue.Length); foreach (int id in queue) bw.Write(id);
         bw.Write(ps.LandNames.Count);
@@ -242,6 +261,10 @@ public static class SaveGame
         bw.Write(p.PlanAction); bw.Write(p.PlanInput); bw.Write(p.PlanWith); bw.Write(p.PlanTool); bw.Write(p.PlanWish); bw.Write(p.PlanRule); bw.Write(p.PlanHeat); bw.Write(p.PlanItem);
         bw.Write(p.LastExperiment); bw.Write(p.LastCraftFail); bw.Write(p.MissKey); bw.Write(p.MissTick); bw.Write(p.Experiments); bw.Write(p.EmberTick); bw.Write(p.PotWater); bw.Write(p.Mined);
         bw.Write(p.Nickname); bw.Write(p.NicknameConcepts.Length); foreach (int c in p.NicknameConcepts) bw.Write(c); bw.Write(p.NicknameReason);
+        // (E5)
+        foreach (var k in p.Known) { bw.Write(k.Level); bw.Write(k.LastUse); bw.Write((byte)k.Via); }
+        bw.Write(p.Learning.Count); foreach (var ln in p.Learning) { bw.Write(ln.Rule); bw.Write(ln.Progress); bw.Write(ln.From); bw.Write((byte)ln.Via); bw.Write(ln.Tick); }
+        bw.Write(p.LastTeach); bw.Write(p.LastPaint); bw.Write(p.LastStudy); bw.Write(p.RecordRule); bw.Write((byte)p.RecordWhy);
     }
 
     private static void ReadPeople(BinaryReader br, GameWorld w, int version)
@@ -294,6 +317,29 @@ public static class SaveGame
             }
             int ng = br.ReadInt32();
             for (int i = 0; i < ng; i++) ps.GroupFirst[br.ReadInt64()] = br.ReadInt64();
+        }
+        if (version >= 8)
+        {
+            ps.NextPaintingId = br.ReadInt32();
+            int npt = br.ReadInt32();
+            for (int i = 0; i < npt; i++)
+            {
+                var g = new Painting { Id = br.ReadInt32(), Cell = br.ReadInt32(), Tile = br.ReadInt32(), Stand = br.ReadInt32(), Rule = br.ReadInt32(), Painter = br.ReadInt32(), Medium = br.ReadByte(),
+                    Tick = br.ReadInt64(), Until = br.ReadInt64(), Seen = br.ReadInt32(), Taught = br.ReadInt32() };
+                ps.Paintings[g.Id] = g;
+            }
+            int ngk = br.ReadInt32();
+            for (int i = 0; i < ngk; i++)
+                ps.GroupKnows[br.ReadInt64()] = new GroupKnow { Known = br.ReadBoolean(), Knowers = br.ReadInt32(), Since = br.ReadInt64(), LostTick = br.ReadInt64(), LostCount = br.ReadInt32(), RefoundCount = br.ReadInt32(), EmptySince = br.ReadInt64() };
+            int npa2 = br.ReadInt32(); for (int i = 0; i < npa2; i++) ps.PaintedAt[br.ReadInt64()] = br.ReadInt64();
+            int nh = br.ReadInt32();
+            for (int i = 0; i < nh; i++)
+            {
+                int rule = br.ReadInt32(), cnt = br.ReadInt32();
+                var list = new List<KnowEvent>(cnt);
+                for (int k = 0; k < cnt; k++) list.Add(new KnowEvent(br.ReadInt64(), br.ReadByte(), br.ReadInt32(), br.ReadString()));
+                ps.KnowHistory[rule] = list;
+            }
         }
         if (version >= 6)
         {
@@ -417,6 +463,14 @@ public static class SaveGame
             p.LastExperiment = br.ReadInt64(); p.LastCraftFail = br.ReadInt64(); p.MissKey = br.ReadInt64(); p.MissTick = br.ReadInt64(); p.Experiments = br.ReadInt32(); p.EmberTick = br.ReadInt64(); p.PotWater = br.ReadInt32(); p.Mined = br.ReadInt32();
             p.Nickname = br.ReadString(); p.NicknameConcepts = new int[br.ReadInt32()]; for (int k = 0; k < p.NicknameConcepts.Length; k++) p.NicknameConcepts[k] = br.ReadInt32(); p.NicknameReason = br.ReadString();
         }
+        if (version >= 8)
+        {
+            for (int i = 0; i < p.Known.Count; i++) { var k = p.Known[i]; k.Level = br.ReadInt32(); k.LastUse = br.ReadInt64(); k.Via = (Via)br.ReadByte(); p.Known[i] = k; }
+            int nl = br.ReadInt32(); for (int k = 0; k < nl; k++) p.Learning.Add(new Learning { Rule = br.ReadInt32(), Progress = br.ReadInt32(), From = br.ReadInt32(), Via = (Via)br.ReadByte(), Tick = br.ReadInt64() });
+            p.LastTeach = br.ReadInt64(); p.LastPaint = br.ReadInt64(); p.LastStudy = br.ReadInt64(); p.RecordRule = br.ReadInt32(); p.RecordWhy = (Why)br.ReadByte();
+        }
+        else
+            for (int i = 0; i < p.Known.Count; i++) { var k = p.Known[i]; k.Via = k.LearnedFrom < 0 ? Via.Self : Via.Watch; k.Level = PeopleSim.StartLevel(k.Via); k.LastUse = k.Tick; p.Known[i] = k; }
         return p;
     }
 

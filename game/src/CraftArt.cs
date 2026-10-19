@@ -176,3 +176,107 @@ public static partial class Art
         }
     }
 }
+
+/// <summary>(E5) 벽 그림 — 바위 면 · 동굴 벽은 잿빛 돌판, 나무껍질은 갈색 띠 위에 숯으로 그린 무늬. 그린 것(불 · 그릇 · 날 · 끈 · 그 밖)에 따라 모양이 다르다.</summary>
+public static partial class Art
+{
+    private static readonly Dictionary<(byte, int), ImageTexture> PaintingTex = new();
+
+    /// <summary>glyph: 0 손자국(알아볼 수 없는 무늬) · 1 불 · 2 그릇 · 3 날 · 4 끈 · 5 먹을 것 · 6 그 밖.</summary>
+    public static Texture2D Painting(byte medium, int glyph)
+    {
+        if (PaintingTex.TryGetValue((medium, glyph), out var t)) return t;
+        t = Make(64, 64, s =>
+        {
+            var ink = C(28, 22, 20, 235);
+            var ochre = C(150, 64, 40, 220);
+            if (medium == 0)
+            {
+                s.Polygon(new[] { new Vector2(14, 4), new Vector2(50, 6), new Vector2(52, 60), new Vector2(12, 58) }, C(112, 82, 58), 0.15f);
+                for (int k = 0; k < 6; k++) s.Line(16 + k * 6, 8, 15 + k * 6, 56, 1.2f, C(80, 58, 40, 160));
+            }
+            else
+            {
+                s.Polygon(new[] { new Vector2(6, 10), new Vector2(56, 4), new Vector2(60, 54), new Vector2(4, 60) }, medium == 2 ? C(96, 92, 88) : C(132, 126, 118), 0.25f);
+                s.Line(10, 20, 22, 26, 1, C(70, 66, 62, 120)); s.Line(40, 50, 54, 46, 1, C(70, 66, 62, 120));
+            }
+            switch (glyph)
+            {
+                case 1: // 불: 장작 위의 불꽃
+                    s.Line(20, 50, 44, 42, 3, ink); s.Line(44, 50, 20, 42, 3, ink);
+                    s.Polygon(new[] { new Vector2(32, 14), new Vector2(42, 36), new Vector2(32, 44), new Vector2(22, 36) }, ochre);
+                    s.Polygon(new[] { new Vector2(32, 24), new Vector2(37, 37), new Vector2(32, 42), new Vector2(27, 37) }, ink);
+                    break;
+                case 2: // 그릇
+                    s.Ellipse(32, 38, 14, 12, ink); s.Ellipse(32, 36, 11, 9, ochre); s.Line(18, 26, 46, 26, 3, ink);
+                    break;
+                case 3: // 날 · 도끼
+                    s.Line(22, 52, 38, 18, 3, ink);
+                    s.Polygon(new[] { new Vector2(34, 14), new Vector2(48, 20), new Vector2(42, 32), new Vector2(32, 24) }, ochre);
+                    break;
+                case 4: // 끈 · 엮음
+                    for (int k = 0; k < 4; k++) s.Line(16 + k * 8, 20 + (k % 2) * 20, 24 + k * 8, 40 - (k % 2) * 20, 2.5f, ink);
+                    break;
+                case 5: // 먹을 것(열매)
+                    s.Circle(26, 34, 7, ochre); s.Circle(38, 30, 7, ochre); s.Circle(34, 42, 7, ink); s.Line(32, 22, 34, 14, 2, ink);
+                    break;
+                case 6: // 그 밖: 사람이 무언가를 하는 모습(막대 사람)
+                    s.Circle(26, 20, 4, ink); s.Line(26, 24, 26, 40, 2.5f, ink); s.Line(26, 40, 20, 52, 2.5f, ink); s.Line(26, 40, 32, 52, 2.5f, ink);
+                    s.Line(26, 30, 40, 28, 2.5f, ink); s.Circle(44, 30, 5, ochre);
+                    break;
+                default: // 손자국
+                    s.Ellipse(30, 36, 8, 10, ochre);
+                    for (int k = 0; k < 4; k++) s.Line(24 + k * 4, 28, 22 + k * 5, 16, 3, ochre);
+                    s.Line(38, 36, 46, 30, 3, ochre);
+                    break;
+            }
+        });
+        PaintingTex[(medium, glyph)] = t;
+        return t;
+    }
+
+    /// <summary>그린 법의 결과 아이템 → 그림 모양.</summary>
+    public static int PaintingGlyph(int rule)
+    {
+        var c = CraftData.Default;
+        if ((uint)rule >= (uint)c.Rules.Count) return 0;
+        string id = c.Catalog.Items[c.Rules[rule].Result].Id;
+        return id switch
+        {
+            "campfire" or "ember" or "hearth" or "charcoal" => 1,
+            "wet_pot" or "dry_pot" or "pot" or "leaf_cup" or "stew" => 2,
+            "flake" or "scraper" or "stone_knife" or "chopper" or "ground_axe" or "hafted_axe" or "spear" or "copper_blade" => 3,
+            "cord" or "basket" or "dry_grass" => 4,
+            "cooked_fruit" or "roasted_mushroom" or "roasted_acorn" or "dried_fruit" or "cracked_coconut" => 5,
+            _ => 6,
+        };
+    }
+}
+
+/// <summary>(E5) 머리 위 표시: 가르침(손짓과 빛) · 배움(물음표) · 그림 보기(눈) · 그리기(숯 막대).</summary>
+public static partial class Art
+{
+    private static ImageTexture? _teach, _learn, _look, _draw;
+    public static Texture2D TeachIcon => _teach ??= Make(48, 48, s =>
+    {
+        s.Circle(24, 22, 17, C(250, 236, 190, 235), 0.2f);
+        s.Line(16, 30, 24, 14, 3.5f, C(120, 84, 40)); s.Line(24, 14, 32, 30, 3.5f, C(120, 84, 40)); s.Line(19, 24, 29, 24, 3, C(120, 84, 40));
+        s.Circle(36, 10, 3, C(255, 210, 90));
+    });
+    public static Texture2D LearnIcon => _learn ??= Make(48, 48, s =>
+    {
+        s.Circle(24, 22, 17, C(220, 236, 250, 235), 0.2f);
+        s.Line(18, 16, 24, 11, 3.5f, C(50, 80, 140)); s.Line(24, 11, 30, 16, 3.5f, C(50, 80, 140)); s.Line(30, 16, 24, 24, 3.5f, C(50, 80, 140)); s.Line(24, 24, 24, 28, 3.5f, C(50, 80, 140));
+        s.Circle(24, 33, 2.4f, C(50, 80, 140));
+    });
+    public static Texture2D LookIcon => _look ??= Make(48, 48, s =>
+    {
+        s.Ellipse(24, 22, 18, 11, C(245, 240, 230, 235), 0.2f);
+        s.Circle(24, 22, 7, C(70, 50, 30)); s.Circle(24, 22, 3, C(10, 10, 10)); s.Circle(22, 20, 1.5f, C(255, 255, 255));
+    });
+    public static Texture2D DrawIcon => _draw ??= Make(48, 48, s =>
+    {
+        s.Circle(24, 22, 17, C(236, 226, 214, 235), 0.2f);
+        s.Line(14, 32, 32, 12, 5, C(30, 26, 24)); s.Line(12, 34, 20, 28, 2, C(150, 64, 40));
+    });
+}

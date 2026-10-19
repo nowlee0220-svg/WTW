@@ -7,6 +7,11 @@ namespace Wtw.Game;
 public partial class Legend : PanelContainer
 {
     public event Action<int>? ResourcePicked;
+    /// <summary>(E5) 지식 지도에서 볼 발견을 골랐다(규칙 번호).</summary>
+    public event Action<int>? KnowledgePicked;
+    /// <summary>(E5) 지식 지도의 고를 거리(규칙 번호, 이름)와 고른 것.</summary>
+    public List<(int Rule, string Name)> KnowledgeChoices = new();
+    public int KnowledgeRule = -1;
 
     private VBoxContainer _box = null!;
 
@@ -25,7 +30,8 @@ public partial class Legend : PanelContainer
     public void Show(MapMode mode, int resource)
     {
         foreach (var n in _box.GetChildren()) { _box.RemoveChild(n); n.QueueFree(); }
-        var title = new Label { Text = mode == MapMode.Resource ? $"지도: 자원 — {ResourceKinds.Names[resource]}" : $"지도: {MapModes.Name(mode)}" };
+        string kname = KnowledgeChoices.FirstOrDefault(k => k.Rule == KnowledgeRule).Name ?? "";
+        var title = new Label { Text = mode == MapMode.Resource ? $"지도: 자원 — {ResourceKinds.Names[resource]}" : mode == MapMode.Knowledge && kname.Length > 0 ? $"지도: 지식 — {kname}" : $"지도: {MapModes.Name(mode)}" };
         title.AddThemeFontOverride("font", UiTheme.Bold);
         title.AddThemeColorOverride("font_color", UiTheme.Accent);
         _box.AddChild(title);
@@ -42,6 +48,23 @@ public partial class Legend : PanelContainer
                 b.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeSmall);
                 b.SetPressedNoSignal(r == resource);
                 b.Pressed += () => ResourcePicked?.Invoke(id);
+                grid.AddChild(b);
+            }
+            _box.AddChild(grid);
+        }
+        if (mode == MapMode.Knowledge)
+        {
+            if (KnowledgeChoices.Count == 0) { var none = new Label { Text = "아직 아무것도 발견되지 않았습니다" }; none.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeSmall); _box.AddChild(none); }
+            var grid = new GridContainer { Columns = 3 };
+            grid.AddThemeConstantOverride("h_separation", 6);
+            grid.AddThemeConstantOverride("v_separation", 4);
+            foreach (var (rule, name) in KnowledgeChoices.Take(24))
+            {
+                int id = rule;
+                var b = new Button { Text = name, ToggleMode = true, FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(104, 30), ClipText = true };
+                b.AddThemeFontSizeOverride("font_size", UiTheme.FontSizeSmall - 1);
+                b.SetPressedNoSignal(rule == KnowledgeRule);
+                b.Pressed += () => KnowledgePicked?.Invoke(id);
                 grid.AddChild(b);
             }
             _box.AddChild(grid);

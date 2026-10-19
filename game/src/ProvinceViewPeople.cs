@@ -396,6 +396,10 @@ public partial class ProvinceView
             if (v.Breaking) it = Art.BreakCloud;
             else if (lying) it = Art.Zzz;
             else if (v.Talking && ((int)(t * 1.2f + v.Id) % 3) != 0) it = Art.TalkBubble;
+            else if (v.Teaching) it = ((int)(t * 1.2f + v.Id) % 3) != 0 ? Art.TeachIcon : null;
+            else if (v.Learning) it = Art.LearnIcon;
+            else if (v.Studying) it = Art.LookIcon;
+            else if (v.Painting) it = Art.DrawIcon;
         }
         icon.Visible = it is not null && v.Carrier < 0;
         if (icon.Visible)

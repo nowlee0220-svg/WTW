@@ -107,6 +107,8 @@
     { "id": "half_success", "name": "거의 될 듯했다",      "mood": 2,   "hours": 24,  "stack": 2 },
     { "id": "failed_try",   "name": "해 봐도 안 됨",       "mood": -2,  "hours": 12,  "stack": 2 },
     { "id": "fire_died",    "name": "불이 꺼져 버림",      "mood": -4,  "hours": 16,  "stack": 1 },
-    { "id": "made_thing",   "name": "쓸 것을 만듦",        "mood": 3,   "hours": 24,  "stack": 2 }
+    { "id": "made_thing",   "name": "쓸 것을 만듦",        "mood": 3,   "hours": 24,  "stack": 2 },
+    { "id": "taught",       "name": "아는 것을 가르쳐 줌",  "mood": 3,   "hours": 16,  "stack": 1 },
+    { "id": "learned",      "name": "새것을 배움",         "mood": 3,   "hours": 16,  "stack": 1 }
   ]
 }

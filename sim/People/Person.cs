@@ -30,6 +30,15 @@ public enum Act : byte
     EatCarried,
     /// <summary>그릇의 물을 마신다(제자리).</summary>
     DrinkCarried,
+    // (E5) 지식
+    /// <summary>아는 법을 가르친다(Target = 배우는 사람, TargetB = 규칙).</summary>
+    Teach,
+    /// <summary>배운다 — 가르치는 사람 곁에서(Target = 가르치는 사람, TargetB = 규칙).</summary>
+    Learn,
+    /// <summary>아는 법을 바위 면 · 동굴 벽 · 나무껍질에 그린다(Target = 그릴 자리, TargetB = 규칙, PlanItem = 물감).</summary>
+    Paint,
+    /// <summary>그림을 들여다본다(Target = 그림 타일).</summary>
+    Study,
 }
 
 public enum DeathCause : byte { None = 0, Starvation, Thirst, Cold, Heat, OldAge, Illness }
@@ -43,6 +52,8 @@ public enum Why : byte
     Scarce, SeekMate, Explore, GoBack, FollowFamily, FollowOther,
     // (E4) 바람(~가 있었으면) · 아는 법 · 단서 · 불 · 재료 · 캐기
     WantWarmth, WantSharp, WantHardTool, WantContainer, WantCooking, WantCarry, WantShiny, KnowHow, Clue, Fuel, TakeFire, Material, MineOre, MineStone, CookFood, Store, Carried2, FireNear, Rediscover,
+    // (E5) 가르치는 까닭 · 배움 · 그림
+    TeachChild, TeachFew, TeachAsked, TeachFaded, BeingTaught, WantRecord, RecordOld, RecordOnly, RecordFirst, StudyPainting,
 }
 
 /// <summary>생김새(코드로 그리는 몸 — 부모를 닮는다). 값은 0~255.</summary>
@@ -69,9 +80,17 @@ public enum BioKind : byte
     Born = 0, Spawned, Paired, ChildBorn, Died, FamilyDied, Break, CaveFound, Passion, Adult, Ill, PartnerDied, Starving, Argument, Named, LearnedSpeech, FoundWater, Moved, NamedLand,
     // (E4) Other = 규칙 번호(또는 사람), Param = 바람 번호 · 아이템 등
     Discovered, LearnedWatching, PartialSuccess, MadeThing, LitFire, FireDied, Mined, Nicknamed, NewWord, BorrowedWord, SawFire, BadStomach,
+    // (E5) Other = 사람(또는 −1), Param = 규칙
+    Taught, LearnedTeaching, Forgot, Painted, LearnedPainting, Refreshed,
 }
 
-/// <summary>(E4) 아는 법 하나: 어느 규칙을 · 언제 · 어떤 바람에서 · 어떻게(주 재료 · 둘째 재료) · 누구에게서(−1 = 스스로 알아냄).</summary>
+/// <summary>(E5) 어떻게 알게 되었나. 값은 저장 파일에 남는다.</summary>
+public enum Via : byte { Self = 0, Watch, Teach, Painting }
+
+/// <summary>
+/// (E4) 아는 법 하나: 어느 규칙을 · 언제 · 어떤 바람에서 · 어떻게(주 재료 · 둘째 재료) · 누구에게서(−1 = 스스로 알아냄).
+/// (E5) 아는 정도(Level 0~100 — 낮으면 실패가 잦고 아주 낮으면 잊는다) · 마지막으로 쓴 때 · 어떻게 알게 되었나.
+/// </summary>
 public struct Knowledge
 {
     public int Rule;
@@ -79,6 +98,19 @@ public struct Knowledge
     public int Wish;
     public int Input, With;
     public int LearnedFrom;
+    public int Level;
+    public long LastUse;
+    public Via Via;
+}
+
+/// <summary>(E5) 배우는 중인 법: 쌓인 정도(0~100, 100 이면 안다) · 마지막으로 가르친(본) 사람 · 어떻게 · 마지막으로 쌓인 때.</summary>
+public struct Learning
+{
+    public int Rule;
+    public int Progress;
+    public int From;
+    public Via Via;
+    public long Tick;
 }
 
 /// <summary>(E4) 부분 성공의 단서: 어느 규칙이 어느 조건(속성 이름 · heat · tool …)에서 모자랐나.</summary>
@@ -204,6 +236,13 @@ public sealed class Person
     public int[] NicknameConcepts = Array.Empty<int>();
     public string NicknameReason = "";
     public int Mined;
+    // (E5) 지식
+    public readonly List<Learning> Learning = new();
+    /// <summary>마지막으로 가르친 · 그린 · 그림을 본 때.</summary>
+    public long LastTeach = long.MinValue / 2, LastPaint = long.MinValue / 2, LastStudy = long.MinValue / 2;
+    /// <summary>그리려는 것(규칙, −1 = 없음)과 그 까닭.</summary>
+    public int RecordRule = -1;
+    public Why RecordWhy;
 
     public readonly List<ThoughtInst> Thoughts = new();
     public readonly List<Relation> Relations = new(); // Other 순으로 정렬
@@ -252,6 +291,11 @@ public sealed class Person
     public bool HasTrait(int t) => Traits.Contains(t);
 
     public bool Knows(int rule) { foreach (var k in Known) if (k.Rule == rule) return true; return false; }
+    /// <summary>(E5) 그 법의 아는 정도(모르면 0).</summary>
+    public int KnowLevel(int rule) { foreach (var k in Known) if (k.Rule == rule) return k.Level; return 0; }
+    public int KnownIndex(int rule) { for (int i = 0; i < Known.Count; i++) if (Known[i].Rule == rule) return i; return -1; }
+    /// <summary>(E5) 배우는 중인 정도(없으면 0).</summary>
+    public int LearnProgress(int rule) { foreach (var l in Learning) if (l.Rule == rule) return l.Progress; return 0; }
     public int CarryCount(int item) { foreach (var c in Carry) if (c.Item == item) return c.Count; return 0; }
     public void AddCarry(int item, int n)
     {

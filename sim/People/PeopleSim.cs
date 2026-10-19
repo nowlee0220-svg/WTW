@@ -10,7 +10,9 @@ namespace Wtw.Sim.People;
 public sealed record WorldEvent(long Seq, long Tick, WorldEventKind Kind, int Person, int Other, int Cell, string Text);
 
 /// <summary>세계의 일. 값은 저장 파일에 남으므로 뒤에만 더할 것. Discovery = 세계에서 처음, DiscoveryGroup = 그 무리에서 처음, Rediscovered = 잊혔다 다시.</summary>
-public enum WorldEventKind : byte { Spawn = 0, Birth, Death, Pair, Break, LandNamed, Moved, Language, Discovery, DiscoveryLost, Wildfire, DiscoveryGroup, Rediscovered }
+public enum WorldEventKind : byte { Spawn = 0, Birth, Death, Pair, Break, LandNamed, Moved, Language, Discovery, DiscoveryLost, Wildfire, DiscoveryGroup, Rediscovered,
+    /// <summary>(E5) 한 무리에서 끊김 · 되찾음.</summary>
+    GroupLost, GroupRefound }
 
 /// <summary>측정용 셈(저장하지 않는다 — 결과에 영향 없음).</summary>
 public sealed class PeopleStats
@@ -35,6 +37,14 @@ public sealed class PeopleStats
     /// <summary>(E4 측정) 규칙마다 성공한 횟수.</summary>
     public readonly long[] RuleDone = new long[64];
     public long Experiments, Discoveries, Partials, Crafts, FiresLit, FiresTaken, Mined, CookedMeals, BadStomachs, Watched, Lost, Refound, Wildfires, CraftFails, PartialRepeats;
+    /// <summary>(E5) 지식: 수업 · 수업으로 쌓인 양 합 · 알아듣기 합 · 수업으로 다 배움 · 보고 다 배움 · 단서 나눔 · 되살아남 · 잊음 · 그림 · 바랜 그림 · 그림 보기 · 그림으로 다 배움 · 아는 법의 흐려진 실패.</summary>
+    public long Lessons, LessonAmount, LessonUnderstand, TaughtFull, WatchedFull, CluesShared, Refreshed, Forgot, Paintings, PaintingsFaded, Studies, LearnedFromPainting, FadedFails, ClueAvoid, LostByForget;
+    /// <summary>(E5) 무리 단위: 끊김 · 되찾음 · 되찾기까지 걸린 틱 · 되찾은 길별(0 다시 발견 · 1 이웃 · 2 그림 · 3 옮겨 옴) · 아는 법 표본(날마다 무리 × 법) · 그중 한 사람만 앎.</summary>
+    public long GroupLost, GroupRefound, GroupKnownSamples, GroupSoleSamples;
+    public readonly List<long> RefoundDelays = new();
+    public readonly long[] RefoundHow = new long[4];
+    /// <summary>(E5 측정) 그림을 그린 까닭(0 그 밖 · 1 늙은 장인 · 2 혼자 앎 · 3 처음 알아냄 · 4 그리기를 처음 알아낸 실험)과 매체(0 나무껍질 · 1 바위 면 · 2 동굴 벽).</summary>
+    public readonly long[] PaintWhy = new long[5], PaintMedium = new long[3];
     /// <summary>물 · 먹을 것을 찾아간 방법별 횟수: [0 보임, 1 기억, 2 따라감, 3 찾아다님].</summary>
     public readonly long[] FindHow = new long[4];
 }
@@ -52,7 +62,7 @@ public sealed partial class PeopleSim
         "hungry", "starving", "thirsty", "cold", "freezing", "hot", "tired", "exhausted", "lonely", "bored", "sick", "ate_well", "slept_well", "slept_rough",
         "slept_cold", "dark_fear", "talked", "good_talk", "argument", "with_partner", "new_partner", "child_born", "family_died", "partner_died", "friend_died",
         "cave_found", "catharsis", "passion_work", "lazy_rest", "alone_long",
-        "by_fire", "firelight", "cooked_meal", "bad_stomach", "discovered", "half_success", "failed_try", "fire_died", "made_thing",
+        "by_fire", "firelight", "cooked_meal", "bad_stomach", "discovered", "half_success", "failed_try", "fire_died", "made_thing", "taught", "learned",
     };
     public static readonly string[] RequiredTraits =
     {
@@ -82,7 +92,7 @@ public sealed partial class PeopleSim
         T_bloodlust, T_kind, T_abrasive, T_optimist, T_pessimist, T_iron, T_nervous, T_fast, T_cannibal;
     internal readonly int H_hungry, H_starving, H_thirsty, H_cold, H_freezing, H_hot, H_tired, H_exhausted, H_lonely, H_bored, H_sick, H_ate, H_slept, H_rough,
         H_sleptCold, H_dark, H_talked, H_goodTalk, H_argument, H_withPartner, H_newPartner, H_childBorn, H_familyDied, H_partnerDied, H_friendDied, H_cave,
-        H_catharsis, H_passion, H_lazyRest, H_alone, H_byFire, H_firelight, H_cookedMeal, H_badStomach, H_discovered, H_halfSuccess, H_failedTry, H_fireDied, H_madeThing;
+        H_catharsis, H_passion, H_lazyRest, H_alone, H_byFire, H_firelight, H_cookedMeal, H_badStomach, H_discovered, H_halfSuccess, H_failedTry, H_fireDied, H_madeThing, H_taught, H_learned;
 
     public PeopleSim(GameWorld w, PeopleData data)
     {
@@ -100,8 +110,9 @@ public sealed partial class PeopleSim
         H_familyDied = H("family_died"); H_partnerDied = H("partner_died"); H_friendDied = H("friend_died"); H_cave = H("cave_found"); H_catharsis = H("catharsis");
         H_passion = H("passion_work"); H_lazyRest = H("lazy_rest"); H_alone = H("alone_long");
         H_byFire = H("by_fire"); H_firelight = H("firelight"); H_cookedMeal = H("cooked_meal"); H_badStomach = H("bad_stomach"); H_discovered = H("discovered");
-        H_halfSuccess = H("half_success"); H_failedTry = H("failed_try"); H_fireDied = H("fire_died"); H_madeThing = H("made_thing");
+        H_halfSuccess = H("half_success"); H_failedTry = H("failed_try"); H_fireDied = H("fire_died"); H_madeThing = H("made_thing"); H_taught = H("taught"); H_learned = H("learned");
         InitCraft();
+        InitKnowledge();
     }
 
     public IReadOnlyList<Person> All => _all;

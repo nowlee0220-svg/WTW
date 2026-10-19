@@ -25,7 +25,8 @@
     { "id": "soak",    "name": "담그기" },
     { "id": "boil",    "name": "끓이기" },
     { "id": "bury",    "name": "묻어 두기" },
-    { "id": "pile",    "name": "쌓기" }
+    { "id": "pile",    "name": "쌓기" },
+    { "id": "draw",    "name": "그리기" }
   ],
   "heat_names": [ "불 없음", "맨불(모닥불)", "가둔 불(돌 화덕)", "숯 + 가둔 불" ],
   "generic_hints": {
@@ -45,6 +46,7 @@
     "malleable": "두드려도 펴지지 않는다 — 녹여 만든 덩이를 두드린다",
     "waterproof": "물이 샌다 — 물을 막는 것을 찾는다",
     "holds":     "담을 수 없는 모양이다",
+    "stains":    "자국이 남지 않는다 — 진하게 묻어나는 것(숯 · 재 · 진흙)을 쓴다",
     "fires_hard": "구워도 굳지 않는다 — 진흙을 쓴다",
     "tool":      "손으로는 안 된다 — 더 단단한 돌로 두드린다",
     "with":      "둘째 재료가 맞지 않다",
@@ -58,7 +60,8 @@
     { "id": "container", "name": "그릇",     "props": ["holds", "moldable", "bends", "fibrous", "waterproof"], "actions": ["weave", "shape", "dry", "roast"] },
     { "id": "cooking",   "name": "익히기",   "props": ["edible"],                      "actions": ["roast", "dry", "boil", "pile"], "fire": true },
     { "id": "carry",     "name": "나르기",   "props": ["fibrous", "bends", "holds"],   "actions": ["weave", "twist"] },
-    { "id": "shiny",     "name": "반짝이는 돌", "props": ["melts", "reduces", "malleable"], "actions": ["melt", "strike"], "fire": true }
+    { "id": "shiny",     "name": "반짝이는 돌", "props": ["melts", "reduces", "malleable"], "actions": ["melt", "strike"], "fire": true },
+    { "id": "record",    "name": "남겨 두기", "props": ["stains"],                    "actions": ["draw"] }
   ],
   "rules": [
     { "id": "flake",        "name": "돌을 깨뜨려 날을 낸다",     "action": "strike", "input": { "splits": 3, "sharpens": 3 }, "tool": { "hardness": 3 }, "result": "flake", "count": 2, "uses": 1, "time_min": 40, "skill": "crafting",
@@ -125,6 +128,9 @@
       "partial": { "with": { "text": "물을 담아 불에 올릴 것이 없었다", "hint": "물을 막는 그릇(토기)이 있어야 끓일 수 있다" } } },
 
     { "id": "hearth",       "name": "모닥불을 돌로 둘러 불을 가둔다", "action": "pile", "input": { "hardness": 3, "weight": 3 }, "result": "hearth", "count": 1, "uses": 4, "time_min": 60, "skill": "building",
-      "partial": { "rain": { "text": "비에 불이 꺼져 버렸다", "hint": "돌로 둘러싸 가두면 비에도 꺼지지 않을 것 같다" }, "fuel": { "text": "땔감이 금방 다 타 버린다", "hint": "돌로 둘러싸 가두면 더 오래 탈 것 같다" }, "heat": { "text": "불이 없는 자리에 돌만 쌓였다" }, "hardness": { "text": "돌이 불에 바스러졌다" } } }
+      "partial": { "rain": { "text": "비에 불이 꺼져 버렸다", "hint": "돌로 둘러싸 가두면 비에도 꺼지지 않을 것 같다" }, "fuel": { "text": "땔감이 금방 다 타 버린다", "hint": "돌로 둘러싸 가두면 더 오래 탈 것 같다" }, "heat": { "text": "불이 없는 자리에 돌만 쌓였다" }, "hardness": { "text": "돌이 불에 바스러졌다" } } },
+
+    { "id": "paint",        "name": "숯 · 재 · 진흙을 바위 면에 문질러 그림을 남긴다", "action": "draw", "input": { "stains": 3 }, "chance": 60, "result": "painting", "count": 1, "uses": 1, "time_min": 120, "skill": "crafting",
+      "partial": { "stains": { "text": "자국이 희미하게 남았다가 지워졌다", "hint": "더 진하게 묻어나는 것(숯 · 재 · 진흙)을 쓰면 남을 것 같다" }, "chance": { "text": "줄을 그었지만 무엇인지 알아볼 수 없었다", "hint": "더 해 보면 알아볼 수 있게 그릴 것 같다" } } }
   ]
 }

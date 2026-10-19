@@ -96,7 +96,7 @@ public sealed class AutoPilot
                 case "--land": Land = int.Parse(v); break;
                 case "--climate": Climate = v switch { "cold" => ClimateBias.Cold, "warm" => ClimateBias.Warm, _ => ClimateBias.Normal }; break;
                 case "--mode":
-                    Mode = v switch { "elev" => MapMode.Elevation, "biome" => MapMode.Biome, "temp" => MapMode.Temperature, "rain" => MapMode.Rain, "res" => MapMode.Resource, "lang" => MapMode.Language, _ => MapMode.Natural };
+                    Mode = v switch { "elev" => MapMode.Elevation, "biome" => MapMode.Biome, "temp" => MapMode.Temperature, "rain" => MapMode.Rain, "res" => MapMode.Resource, "lang" => MapMode.Language, "know" => MapMode.Knowledge, _ => MapMode.Natural };
                     break;
                 case "--res": Resource = Array.IndexOf(ResourceKinds.Ids, v) is int r && r >= 0 ? r : null; break;
                 case "--newworld": StayOnNewWorld = true; break;
@@ -139,7 +139,7 @@ public sealed class AutoPilot
                 case "--skippanel": _skipPanelShot = true; break;
                 case "--skipmid": _skipMidShot = true; break;
                 case "--loadpanel": _loadPanelShot = true; break;
-                case "--discoveries": _showDiscoveries = true; break;
+                case "--discoveries": _showDiscoveries = true; _expandDiscovery = v == "expand"; break;
                 case "--pausemeasure": _pauseMeasure = double.Parse(v, inv); break;
             }
         }
@@ -239,7 +239,7 @@ public sealed class AutoPilot
             ArrangeProvince();
         }
         if (_provinceReady) _sinceProvince += delta;
-        if (_provinceReady && _showDiscoveries && _people is null && !_discShown) { _discShown = true; _main.ShowDiscoveriesForTest(); }
+        if (_provinceReady && _showDiscoveries && _people is null && !_discShown) { _discShown = true; _main.ShowDiscoveriesForTest(); if (_expandDiscovery && _main.Snap is { } es) _main.Discoveries.ExpandBest(es); }
         if (_enterExit > 0) { if (_ready) EnterExit(delta); return; }
         if (_elapsed > 1.0 && (_ready || StayOnNewWorld)) // 시작 직후는 빼고 잰다
         {
@@ -253,7 +253,7 @@ public sealed class AutoPilot
         else if (_look is not null && _provinceReady && snap is not null && !_lookDone)
         {
             _lookWait += delta;
-            if (Look(snap) || _lookWait > 300) { _lookDone = true; _sinceProvince = 0; }
+            if (Look(snap) || _lookWait > (_look == "painting" ? 1200 : 300)) { _lookDone = true; _sinceProvince = 0; }
             return;
         }
         else if (_existingCard is int ec && _provinceReady && snap is not null && !_existingDone)
@@ -274,7 +274,7 @@ public sealed class AutoPilot
         else if (_skip is not null && !_skipStarted && (_provinceReady || (_enter is null && _ready)) && _main.Host is { } sh)
         {
             _skipStarted = true;
-            var goal = _skip switch { "discovery" => Wtw.Sim.Runtime.SkipGoals.Discovery(null), "pot" => Wtw.Sim.Runtime.SkipGoals.Discovery("pot"), "land" => Wtw.Sim.Runtime.SkipGoals.NewLand(), _ => Wtw.Sim.Runtime.SkipGoals.Years(int.Parse(_skip)) };
+            var goal = _skip switch { "discovery" => Wtw.Sim.Runtime.SkipGoals.Discovery(null), "pot" => Wtw.Sim.Runtime.SkipGoals.Discovery("pot"), "land" => Wtw.Sim.Runtime.SkipGoals.NewLand(), "lost" => Wtw.Sim.Runtime.SkipGoals.KnowledgeLost(), "grouplost" => Wtw.Sim.Runtime.SkipGoals.KnowledgeGroupLost(), "refound" => Wtw.Sim.Runtime.SkipGoals.KnowledgeRefound(), _ => Wtw.Sim.Runtime.SkipGoals.Years(int.Parse(_skip)) };
             _main.StartSkipForTest(goal);
             GD.Print($"SKIP start {goal.Name}");
         }
@@ -308,9 +308,26 @@ public sealed class AutoPilot
             // 멈춘 뒤의 새 스냅샷으로 다시 본다 — 그새 일이 바뀌었으면 다시 찾는다
             if (++_lookFrames < 3) return false;
             var lv = snap.People.Take(snap.PeopleCount).FirstOrDefault(q => q.Id == _lookPerson);
-            if (lv.Act is Wtw.Sim.People.Act.Experiment or Wtw.Sim.People.Act.Craft) return true;
+            if (_look == "experiment" ? lv.Act is Wtw.Sim.People.Act.Experiment or Wtw.Sim.People.Act.Craft : CardLookOk(lv)) return true;
             _lookPerson = -1; _main.CloseCardForTest(); host.SetPaused(false);
         }
+        // (E5) 벽 그림: 가운데 지방의 그림을 화면 가운데로 · 눌러 정보 창
+        if (_look == "painting")
+        {
+            if (snap.Paintings.TryGetValue(center, out var pics) && pics.Length > 0)
+            {
+                var g = pics.OrderByDescending(q => q.Rule >= 0 ? 1 : 0).ThenByDescending(q => q.Medium).First();
+                var lp = pv.LayoutOf(center, g.Tile % HexFrame.Size, g.Tile / HexFrame.Size)!.Value;
+                pv.LookAt(lp.X - (CellPanel.Width / 2.0) / (_pzoom ?? 2f) / ProvinceView.TilePx, lp.Y, _pzoom ?? 2f);
+                _main.ClickForTest(center, g.Tile % HexFrame.Size, g.Tile / HexFrame.Size);
+                host.SetPaused(true);
+                GD.Print($"LOOK painting {g.What} medium={g.Medium} tile={g.Tile}");
+                return true;
+            }
+            if (host.SpeedLevel != 5) host.SetSpeed(5);
+            return false;
+        }
+        bool cardLook = _look is "experiment" or "teach" or "study" or "paintact";
         for (int i = 0; i < snap.PeopleCount; i++)
         {
             var v = snap.People[i];
@@ -321,22 +338,32 @@ public sealed class AutoPilot
                 "tool" => v.Tool >= 0 && !v.Asleep,
                 "pot" => v.Vessel >= 0 && Wtw.Sim.Data.CraftData.Default.Catalog.Items[v.Vessel].Id.EndsWith("pot") && !v.Asleep,
                 "experiment" => v.Act is Wtw.Sim.People.Act.Experiment or Wtw.Sim.People.Act.Craft && !v.Walking,
+                "teach" or "study" or "paintact" => CardLookOk(v),
                 _ => false,
             };
             if (!ok || pv.PersonWorld(v.Id) is not { } wp) continue;
             float z = _pzoom ?? 1.6f;
-            double shift = _look == "experiment" || _cardTab is not null ? (PersonCardPanel.Width / 2.0) / z / ProvinceView.TilePx : 0;
+            double shift = cardLook || _cardTab is not null ? (PersonCardPanel.Width / 2.0) / z / ProvinceView.TilePx : 0;
             pv.LookAt(wp.X / ProvinceView.TilePx + shift, wp.Y / ProvinceView.TilePx - 0.6, z);
-            if (_look == "experiment" || _cardTab is not null) { _main.OpenCardForTest(v.Id); _main.CardPanel.SetTab(_cardTab ?? 0); }
+            if (cardLook || _cardTab is not null) { _main.OpenCardForTest(v.Id); _main.CardPanel.SetTab(_cardTab ?? 0); }
             if (_follow) pv.Follow(v.Id);
             host.SetSpeed(1);
             GD.Print($"LOOK {_look} person={v.Id} {v.Name}");
-            if (_look == "experiment") { host.SetPaused(true); _lookPerson = v.Id; _lookFrames = 0; return false; }
+            if (cardLook) { host.SetPaused(true); _lookPerson = v.Id; _lookFrames = 0; return false; }
             return true;
         }
         if (host.SpeedLevel != 4) host.SetSpeed(4);
         return false;
     }
+
+    /// <summary>(E5) 가르치는 사람(배우는 사람이 곁에 있음) · 그림을 보는 사람 · 그림을 그리는 사람.</summary>
+    private bool CardLookOk(PersonView v) => _look switch
+    {
+        "teach" => v.Teaching,
+        "study" => v.Studying,
+        "paintact" => v.Painting,
+        _ => false,
+    };
 
     private void SelfTest(double delta, WorldSnapshot snap)
     {
@@ -703,7 +730,7 @@ public sealed class AutoPilot
     }
 
     private int _hoverTarget = -1;
-    private bool _showDiscoveries;
+    private bool _showDiscoveries, _expandDiscovery;
     private string? _look;
     public bool Popups;
     public string? Scene;
@@ -766,6 +793,15 @@ public sealed class AutoPilot
         _frameTimes.Sort();
         double p99 = _frameTimes.Count > 0 ? _frameTimes[(int)(_frameTimes.Count * 0.99)] : 0;
         double avg = _frameTimes.Count > 0 ? _frameTimes.Average() : 0;
+        // (E5) 지구본 사람 표시 확인: 표시판이 붙은 칸 = 지금 사람이 사는 칸(사람이 다 떠난 칸에는 표시가 없어야 한다) · 넘기기 뒤 켜진 화면
+        if (_main.Snap is { } ms)
+        {
+            var marked = _main.Globe.MarkerCells().OrderBy(c => c).ToList();
+            var alive = ms.CellPeople.Select(c => c.Cell).OrderBy(c => c).ToList();
+            var extra = marked.Except(alive).ToList(); var missing = alive.Except(marked).ToList();
+            GD.Print($"MARKERCHECK {(extra.Count == 0 && missing.Count == 0 ? "ok" : "FAIL")} marked={marked.Count} alive_cells={alive.Count} extra=[{string.Join(",", extra)}] missing=[{string.Join(",", missing)}]");
+            GD.Print($"VIEW globe={_main.Globe.Visible} province={_main.Province.Visible} province_open={_main.Province.IsOpen}");
+        }
         if (ProvinceView.PeopleFrames > 0) GD.Print($"PEOPLE draw_ms_avg={ProvinceView.PeopleMsTotal / ProvinceView.PeopleFrames:F2} frames={ProvinceView.PeopleFrames}");
         GD.Print($"FRAMES n={_frames} avg_fps={(avg > 0 ? 1 / avg : 0):F1} p99_ms={p99 * 1000:F1} max_ms={_maxFrame * 1000:F1} stalled_frames={_main.Host?.StalledFrames ?? 0}");
         var p = _main.Globe.Planet;

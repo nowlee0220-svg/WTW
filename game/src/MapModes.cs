@@ -3,14 +3,14 @@ using Wtw.Sim.Planet;
 
 namespace Wtw.Game;
 
-public enum MapMode { Natural, Elevation, Biome, Temperature, Rain, Resource, Language }
+public enum MapMode { Natural, Elevation, Biome, Temperature, Rain, Resource, Language, Knowledge }
 
 /// <summary>
 /// 지도 모드마다 칸 색과 범례. 화면 쪽 그림 공급(Art)과 같은 역할 — 색은 여기 한 곳에서만 정한다.
 /// </summary>
 public static class MapModes
 {
-    public static readonly MapMode[] All = { MapMode.Natural, MapMode.Elevation, MapMode.Biome, MapMode.Temperature, MapMode.Rain, MapMode.Resource, MapMode.Language };
+    public static readonly MapMode[] All = { MapMode.Natural, MapMode.Elevation, MapMode.Biome, MapMode.Temperature, MapMode.Rain, MapMode.Resource, MapMode.Language, MapMode.Knowledge };
 
     public static string Name(MapMode m) => m switch
     {
@@ -20,6 +20,7 @@ public static class MapModes
         MapMode.Temperature => "기온",
         MapMode.Rain => "강수",
         MapMode.Language => "언어",
+        MapMode.Knowledge => "지식",
         _ => "자원",
     };
 
@@ -31,6 +32,7 @@ public static class MapModes
         MapMode.Temperature => Key.R,
         MapMode.Rain => Key.T,
         MapMode.Language => Key.U,
+        MapMode.Knowledge => Key.I,
         _ => Key.Y,
     };
 
@@ -40,7 +42,6 @@ public static class MapModes
         ("세력", "세력 지도는 아직 없습니다 — 사람들이 무리·나라를 이루면(E7~) 채워집니다."),
         ("인구", "인구 지도는 아직 없습니다 — 사람이 사는 단계(E3~)부터 채워집니다."),
         ("교역", "교역 지도는 아직 없습니다 — 교역이 생기면(E7~) 채워집니다."),
-        ("기술", "기술 지도는 아직 없습니다 — 발견은 아래 [발견] 창에서 볼 수 있습니다(지도는 지식이 퍼지는 단계(E5~)에서)."),
     };
 
     // 물
@@ -165,8 +166,8 @@ public static class MapModes
                 col = Ramp(RainStops, p.PrecipMm[c]);
                 if (ocean || lake) col = col.Darkened(0.55f);
                 break;
-            case MapMode.Language:
-                // 사람이 사는 칸은 GlobeView 가 말의 색으로 덮는다. 나머지 땅은 흐린 회색.
+            case MapMode.Language or MapMode.Knowledge:
+                // 사람이 사는 칸은 GlobeView 가 말의 색(지식: 아는 사람 수)으로 덮는다. 나머지 땅은 흐린 회색.
                 if (ocean || lake) { col = Water(p, c).Darkened(0.35f); break; }
                 {
                     // (E4) 아무도 안 사는 땅: 옅은 지형(자연 지도를 흐리고 어둡게) — 땅 모양이 보이게
@@ -234,6 +235,13 @@ public static class MapModes
                 l.Add((Colors.Transparent, "사람 사는 칸을 누르면: 그 말이 어디까지 통하나(밝을수록 잘 통함)"));
                 l.Add((C(70, 72, 68), "아무도 살지 않는 땅(옅은 지형)"));
                 break;
+            case MapMode.Knowledge:
+                l.Add((Colors.Transparent, "고른 발견을 아는 사람이 사는 칸을 밝게"));
+                l.Add((KnowColor(1, 0, false), "아는 사람 1명")); l.Add((KnowColor(4, 0, false), "아는 사람 4명")); l.Add((KnowColor(12, 0, false), "아는 사람 12명 이상"));
+                l.Add((KnowColor(0, 1, false), "그 발견을 그린 그림만 남은 칸"));
+                l.Add((KnowColor(0, 0, true), "사람은 살지만 아무도 모르는 칸"));
+                l.Add((C(70, 72, 68), "아무도 살지 않는 땅(옅은 지형)"));
+                break;
             default:
                 l.Add((C(255, 220, 95), "많음")); l.Add((C(200, 160, 70), "있음")); l.Add((C(62, 64, 60), "없음"));
                 break;
@@ -244,6 +252,14 @@ public static class MapModes
     /// <summary>
     /// 말의 색: 뿌리(가장 먼 조상 말)마다 다른 빛깔(황금각으로 흩음), 갈라져 나온 말은 같은 빛깔에서 밝기 · 짙기만 조금씩 다르게.
     /// </summary>
+    /// <summary>(E5) 지식 지도의 칸 색: 아는 사람이 많을수록 밝은 금빛 · 그림만 남은 칸은 보랏빛 · 사람은 살지만 아무도 모르면 어두운 회색.</summary>
+    public static Color KnowColor(int knowers, int paintings, bool people)
+    {
+        if (knowers > 0) return C(90, 70, 30).Lerp(C(255, 226, 120), Math.Min(1f, (knowers - 1) / 11f * 0.8f + 0.2f));
+        if (paintings > 0) return C(150, 110, 200);
+        return people ? C(48, 48, 54) : C(70, 72, 68);
+    }
+
     public static Color LanguageColor(int root, int id, int depth)
     {
         float hue = (root * 0.618034f) % 1f;
