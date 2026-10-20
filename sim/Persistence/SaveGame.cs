@@ -26,11 +26,12 @@ namespace Wtw.Sim.Persistence;
 ///   세계 예약표에는 시험용 점만 남는다. 버전 8 이하의 사람 예약은 그 사람의 지방 예약표로 옮겨 읽는다.
 /// 버전 10(E5b): 지방마다 짐승 무리 · 다음 무리 번호 · 물고기 몫 · 잠든 시각, 세계에서 처음 잡은 짐승 · 무리마다 처음, 사람의 옷 · 다침 · 사냥 시각 · 바람 12칸.
 ///   버전 9 이하 파일은 지방이 깨어날 때 짐승을 처음처럼 만든다(바람은 앞 8칸만).
+/// 버전 11(E5b 고침): 사람마다 놓친 무리 기억(번호 · 지방 · 언제까지). 버전 10 파일은 기억 없이 읽는다.
 /// 버전 1(E0) · 2(E1) · 3(E2) 파일도 읽는다(행성 설정은 기본값, 사람 없음).
 /// </summary>
 public static class SaveGame
 {
-    public const int Version = 10;
+    public const int Version = 11;
     private static readonly byte[] Magic = "WTWS"u8.ToArray();
 
     public static byte[] ToBytes(GameWorld w)
@@ -337,6 +338,7 @@ public static class SaveGame
         // (E5b)
         bw.Write(p.Worn); bw.Write(p.WornFeet); bw.Write(p.WornWear); bw.Write(p.FeetWear); bw.Write(p.Injury); bw.Write((byte)p.InjuryCause);
         bw.Write(p.LastHunt); bw.Write(p.LastFish); bw.Write(p.Kills);
+        bw.Write(p.FailHerd); bw.Write(p.FailHerdCell); bw.Write(p.FailHerdUntil);
     }
 
     private static void ReadPeople(BinaryReader br, GameWorld w, int version)
@@ -587,6 +589,7 @@ public static class SaveGame
         {
             p.Worn = br.ReadInt32(); p.WornFeet = br.ReadInt32(); p.WornWear = br.ReadInt32(); p.FeetWear = br.ReadInt32(); p.Injury = br.ReadInt32(); p.InjuryCause = (DeathCause)br.ReadByte();
             p.LastHunt = br.ReadInt64(); p.LastFish = br.ReadInt64(); p.Kills = br.ReadInt32();
+            if (version >= 11) { p.FailHerd = br.ReadInt32(); p.FailHerdCell = br.ReadInt32(); p.FailHerdUntil = br.ReadInt64(); }
         }
         else
             for (int i = 0; i < p.Known.Count; i++) { var k = p.Known[i]; k.Via = k.LearnedFrom < 0 ? Via.Self : Via.Watch; k.Level = PeopleSim.StartLevel(k.Via); k.LastUse = k.Tick; p.Known[i] = k; }

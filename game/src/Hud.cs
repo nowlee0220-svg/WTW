@@ -165,6 +165,8 @@ public partial class Hud : Control
         if (_notice.Visible) yield return _notice.GetGlobalRect();
     }
 
+    public string ProvinceName => _provName.Text;
+
     public void SetProvinceMode(bool on, string name, bool neighbors)
     {
         _provBar.Visible = on;

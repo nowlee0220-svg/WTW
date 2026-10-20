@@ -55,6 +55,8 @@ public sealed class PeopleStats
     public long ShortDiscoveries;
     public long HuntsStarted, HuntHelpers, HuntsTried, HuntSuccess, HuntsLost, HuntInjuries, HuntDeaths, Butchered, Injuries, Fishings, FishCaught, Tamed, ClothesWornOut, Rotted, LeftForGame;
     public readonly long[] HuntBySpecies = new long[16], KillsBySpecies = new long[16];
+    /// <summary>(E5b 고침 측정) 썩어 버린 것: 들고 있던 날고기 · 날생선 / 날가죽 / 그 밖(열매 등) · 땅에 둔 짐승 아이템 · 손질로 얻은 고기 · 들 수 없어 그 자리에 둔 것.</summary>
+    public long RotMeat, RotHide, RotOther, RotGround, MeatGot, ButcherDropped, MeatShared, MeatDried, StashEaten;
 }
 
 /// <summary>
@@ -146,6 +148,9 @@ public sealed partial class PeopleSim
     /// <summary>(S1) 같은 지방에 있는 그 사람(다른 지방이면 null) — 지방 계산 중에는 다른 지방 사람을 보지 않는다.</summary>
     private Person? Here(int id, Person p) => _byId.TryGetValue(id, out var q) && q.Cell == p.Cell ? q : null;
     public int AliveCount { get; private set; }
+    /// <summary>측정 도구용: 지금 시각(지방 계산 중이면 그 지방의 시각).</summary>
+    public long NowTick => Now;
+    public Wtw.Sim.Planet.Planet PlanetForBench => _w.Planet;
     private long Now
     {
         get
@@ -168,7 +173,7 @@ public sealed partial class PeopleSim
         }
         if (!Provinces.TryGetValue(cell, out var life))
         {
-            life = new ProvinceLife(_w.Planet, _w.Province(cell), Data);
+            life = new ProvinceLife(_w.Planet, _w.Province(cell), Data) { Perish = PerishItems };
             Provinces.Add(cell, life);
             _livesDirty = true;
             if (Dormant.Remove(cell, out var d))
@@ -293,9 +298,14 @@ public sealed partial class PeopleSim
         StateThoughts(p, tmp);
         foreach (int t in tmp) m += Data.Thoughts[t].Mood;
         int sad = 0;
-        foreach (var (def, count) in ActiveThoughtCounts(p))
+        // (E5b 고침) ActiveThoughtCounts 와 같은 셈을 목록 없이(기분은 판단마다 셈한다)
+        Span<int> counts = stackalloc int[Data.Thoughts.Count];
+        long now = Now;
+        foreach (var t in p.Thoughts) if (t.Until > now) counts[t.Def]++;
+        for (int d = 0; d < counts.Length; d++)
         {
-            int v = Data.Thoughts[def].Mood * count;
+            if (counts[d] == 0) continue;
+            int v = Data.Thoughts[d].Mood * Math.Min(counts[d], Data.Thoughts[d].Stack);
             if (v < 0) sad += v; else m += v;
         }
         m += Math.Max(sad, -SadCap); // (E4) 슬픈 일이 겹쳐도 한꺼번에 끌어내리는 데는 한도가 있다
@@ -324,7 +334,13 @@ public sealed partial class PeopleSim
         p.Thoughts.Add(new ThoughtInst { Def = def, Until = until, Other = other });
     }
 
-    private void PurgeThoughts(Person p) => p.Thoughts.RemoveAll(t => t.Until <= Now);
+    private void PurgeThoughts(Person p)
+    {
+        // (E5b 고침) RemoveAll(람다)처럼 차례를 지키되 판단마다 메모리를 잡지 않게
+        long now = Now; var l = p.Thoughts; int j = 0;
+        for (int i = 0; i < l.Count; i++) if (l[i].Until > now) { if (i != j) l[j] = l[i]; j++; }
+        if (j < l.Count) l.RemoveRange(j, l.Count - j);
+    }
 
     // ───────── 기록 · 알림 ─────────
 

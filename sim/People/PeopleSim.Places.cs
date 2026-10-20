@@ -57,14 +57,27 @@ public sealed partial class PeopleSim
                 if (!namers.TryGetValue(q.LangId, out var cur) || q.ArrivedTick < cur.ArrivedTick) namers[q.LangId] = q;
             }
             if (namers is null) continue;
+            bool hadName = LandNames.ContainsKey(cell);
+            List<(Person Namer, LandName Name)>? made = null;
             foreach (var (langId, namer) in namers)
             {
                 if (LandNames.TryGetValue(cell, out var have) && have.Exists(n => n.LangId == langId)) continue;
                 long stay = Now - namer.ArrivedTick;
                 var feature = Feature(cell, life);
                 if (stay < NameStayTicks && (feature.Reason.Length == 0 || stay < NameFeatureTicks)) continue;
-                NameLand(cell, life, namer, feature);
+                if (NameLand(cell, life, namer, feature) is { } n) (made ??= new()).Add((namer, n));
             }
+            if (made is null) continue;
+            // (E5b 고침) 같은 날 여러 무리가 한 땅에 이름을 붙이면 알림은 하나로
+            if (made.Count == 1)
+            {
+                var (namer, n) = made[0];
+                Notify(WorldEventKind.LandNamed, namer, -1,
+                    $"{Hangul.I(DisplayName(namer))} 이 땅을 {Hangul.Rago($"'{n.Word}'")} 부르기 시작했습니다 — 뜻: {LandMeaning(n)} ({n.Reason})" + (!hadName && LandNames[cell].Count == 1 ? "" : $" · 다른 무리는 {Hangul.Rago($"'{LandNames[cell][0].Word}'")} 부른다"));
+            }
+            else
+                Notify(WorldEventKind.LandNamed, made[0].Namer, -1,
+                    $"이 땅에 이름이 붙었습니다 — " + string.Join(" · ", made.Select(m => $"{DisplayName(m.Namer)}의 무리는 '{m.Name.Word}'(뜻: {LandMeaning(m.Name)})")) + $" ({made[0].Name.Reason} · 말이 달라 무리마다 다르게 부른다)");
         }
     }
 
@@ -81,9 +94,9 @@ public sealed partial class PeopleSim
         return (Array.Empty<string>(), "", "");
     }
 
-    private void NameLand(int cell, ProvinceLife life, Person namer, (string[] Adjs, string Noun, string Reason) feature)
+    private LandName? NameLand(int cell, ProvinceLife life, Person namer, (string[] Adjs, string Noun, string Reason) feature)
     {
-        if (!Languages.TryGetValue(namer.LangId, out var lang)) return;
+        if (!Languages.TryGetValue(namer.LangId, out var lang)) return null;
         var rng = Rng(cell);
         string reason = feature.Reason;
         int[] Pick()
@@ -124,9 +137,7 @@ public sealed partial class PeopleSim
         var n = new LandName(namer.LangId, word, concepts, Now, namer.Id, reason);
         AddLoadedLandName(cell, n);
         AddBio(namer, BioKind.NamedLand, -1, cell);
-        bool first = LandNames[cell].Count == 1;
-        Notify(WorldEventKind.LandNamed, namer, -1,
-            $"{Hangul.I(DisplayName(namer))} 이 땅을 {Hangul.Rago($"'{word}'")} 부르기 시작했습니다 — 뜻: {LandMeaning(n)} ({reason})" + (first ? "" : $" · 다른 무리는 {Hangul.Rago($"'{LandNames[cell][0].Word}'")} 부른다"));
+        return n;
     }
 
     private bool LandWordTaken(string word, int langId)

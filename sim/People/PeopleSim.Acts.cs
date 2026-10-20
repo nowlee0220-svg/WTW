@@ -12,7 +12,11 @@ public sealed partial class PeopleSim
 
     // ───────── 시작 도우미 ─────────
 
-    private void SetWhy(Person p, Act act, Why why, int arg = 0) { p.Act = act; p.Why = why; p.WhyArg = arg; }
+    private void SetWhy(Person p, Act act, Why why, int arg = 0) { p.Act = act; p.Why = why; p.WhyArg = arg; ActHook?.Invoke(this, p); }
+
+    /// <summary>측정 도구용(시뮬은 쓰지 않음): 할 일이 정해질 때 · 죽기 직전에 부른다. 여러 CPU 에서 동시에 불릴 수 있다.</summary>
+    public static Action<PeopleSim, Person>? ActHook;
+    public static Action<PeopleSim, Person, DeathCause>? DeathHook;
 
     /// <summary>제자리에서 duration 동안 한다(급한 일이 닥치면 그때 다시 판단).</summary>
     private void DoStill(Person p, long duration)
@@ -163,7 +167,9 @@ public sealed partial class PeopleSim
         Painting? study = null;
         int ss = StudyScore(p, life, out study); if (ss > int.MinValue) Opt(15, ss);
         // (E5b) 사냥 · 물고기
-        int hs = HuntScore(p, life, out var huntHerd); if (hs > int.MinValue) Opt(16, hs);
+        int bar = int.MinValue;
+        if (opts.Count >= 3) { int a1 = int.MinValue, a2 = int.MinValue, a3 = int.MinValue; foreach (var (sc, _) in opts) { if (sc > a1) { a3 = a2; a2 = a1; a1 = sc; } else if (sc > a2) { a3 = a2; a2 = sc; } else if (sc > a3) a3 = sc; } bar = a3; }
+        int hs = HuntScore(p, life, out var huntHerd, bar); if (hs > int.MinValue) Opt(16, hs);
         int fsc = FishScore(p, life, out int fishSpot); if (fsc > int.MinValue) Opt(17, fsc);
         opts.Sort((a, b) => b.Score != a.Score ? b.Score.CompareTo(a.Score) : a.Code.CompareTo(b.Code));
         for (int k = 0; k < Math.Min(3, opts.Count); k++)
@@ -536,7 +542,8 @@ public sealed partial class PeopleSim
                     if (poison > 0 && Rng(p.Cell).NextInt(100) < poison * 6) BadStomach(p, h.ItemIndex);
                     if (Craft.Prop(h.ItemIndex, Craft.P_hardness) >= 4) { if (!HasHardTool(p)) AddWish(p, W_hardTool, 20); if (HasHardTool(p) && p.CarryCount(h.ItemIndex) == 0) p.AddCarry(h.ItemIndex, 1); }
                     // (E4) 그릇이 있으면 남는 몫을 담아 둔다
-                    if (p.PlanItem == 2 && life.StockAt(p.Target, Now) > 0) { int extra = life.Take(p.Target, Math.Min(3, life.StockAt(p.Target, Now)), Now); p.AddCarry(h.ItemIndex, extra); p.PlanItem = -1; }
+                    // (E5b 고침) 들고 있는 먹을 것이 넉넉하면(4개) 더 담지 않는다 — 담아 둔 열매가 먹기 전에 썩었다
+                    if (p.PlanItem == 2 && life.StockAt(p.Target, Now) > 0 && FoodCarried(p) < 4) { int extra = life.Take(p.Target, Math.Min(Math.Min(3, 4 - FoodCarried(p)), life.StockAt(p.Target, Now)), Now); p.AddCarry(h.ItemIndex, extra); p.PlanItem = -1; }
                 }
                 break;
             }

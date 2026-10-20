@@ -47,6 +47,34 @@ public sealed class FireTable : IEnumerable<KeyValuePair<int, Fire>>
     System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 }
 
+/// <summary>
+/// (E5b 고침) 지방의 짐승 무리(번호 순). SortedDictionary 를 그대로 돌면 돌 때마다 메모리를 잡아서(사냥 판단 · 기분 셈이 사람마다 자주 돈다),
+/// 바뀌기 전까지 같은 배열을 돈다 — 같은 순서라 결과는 같다.
+/// </summary>
+public sealed class HerdTable
+{
+    private readonly SortedDictionary<int, Herd> _d = new();
+    private KeyValuePair<int, Herd>[]? _arr;
+    private Herd[]? _vals;
+    public int Count => _d.Count;
+    public Herd this[int id] { get => _d[id]; set { _d[id] = value; _arr = null; _vals = null; } }
+    public bool TryGetValue(int id, out Herd h) => _d.TryGetValue(id, out h!);
+    public bool ContainsKey(int id) => _d.ContainsKey(id);
+    public bool Remove(int id) { _arr = null; _vals = null; return _d.Remove(id); }
+    /// <summary>번호 순 배열(바뀌기 전까지 같은 것).</summary>
+    public KeyValuePair<int, Herd>[] Items => _arr ??= _d.ToArray();
+    public Herd[] Values => _vals ??= _d.Values.ToArray();
+    public Enumerator GetEnumerator() => new(Items);
+
+    public struct Enumerator
+    {
+        private readonly KeyValuePair<int, Herd>[] _a; private int _i;
+        internal Enumerator(KeyValuePair<int, Herd>[] a) { _a = a; _i = -1; }
+        public KeyValuePair<int, Herd> Current => _a[_i];
+        public bool MoveNext() => ++_i < _a.Length;
+    }
+}
+
 /// <summary>손댄 타일의 남은 몫(타일 번호 순으로 돈다 — 저장 순서가 정해져 있다).</summary>
 public sealed class StockTable : IEnumerable<KeyValuePair<int, TileStock>>
 {
@@ -136,7 +164,7 @@ public sealed class ProvinceLife
     internal Core.Pcg32? PeopleRng, AnimalRng;
 
     /// <summary>(E5b) 짐승 무리(번호 순) · 다음 무리 번호 · 민물의 물고기 몫 · 종마다 살 수 있는 마릿수 · 물고기 몫의 한도. 무리 · 번호 · 물고기는 저장한다.</summary>
-    public readonly SortedDictionary<int, Herd> Herds = new();
+    public readonly HerdTable Herds = new();
     public int NextHerdId = 1;
     public int FishStock;
     public int[] AnimalCap = Array.Empty<int>();
@@ -213,16 +241,21 @@ public sealed class ProvinceLife
         Paths = new PathFinder(this);
         // 이어진 땅마다 마실 물 · 먹을 것이 있나(측정: "지방 안에 없어서 죽은 사람")
         int regions = 0; foreach (int r in Region) regions = Math.Max(regions, r + 1);
-        RegionHasDrink = new bool[regions]; RegionHasFood = new bool[regions];
+        RegionHasDrink = new bool[regions]; RegionHasFood = new bool[regions]; RegionTiles = new int[regions];
         for (int i = 0; i < HexFrame.TileCount; i++)
         {
             if (Region[i] < 0) continue;
+            RegionTiles[Region[i]]++;
             if (Drink[i]) RegionHasDrink[Region[i]] = true;
             if (_harvest[i] is { Food: true }) RegionHasFood[Region[i]] = true;
         }
     }
 
     public bool[] RegionHasDrink = Array.Empty<bool>(), RegionHasFood = Array.Empty<bool>();
+    /// <summary>(E5b 고침) 이어진 땅마다 타일 수 — 경계를 넘어 설 자리가 갇힌 작은 땅인지 가린다.</summary>
+    public int[] RegionTiles = Array.Empty<int>();
+    /// <summary>tile 이 사람이 살 만한 이어진 땅인가(마실 물이 있거나, 아주 넓어 찾아다닐 수 있다 — 물 없는 작은 땅은 갇히는 곳).</summary>
+    public bool OpenLand(int tile) => (uint)tile < HexFrame.TileCount && Region[tile] >= 0 && (RegionHasDrink[Region[tile]] || RegionTiles[Region[tile]] >= 1000);
     public bool HasDrinkFrom(int tile) => (uint)tile < HexFrame.TileCount && Region[tile] >= 0 && RegionHasDrink[Region[tile]];
     public bool HasFoodFrom(int tile) => (uint)tile < HexFrame.TileCount && Region[tile] >= 0 && RegionHasFood[Region[tile]];
 
@@ -364,9 +397,17 @@ public sealed class ProvinceLife
     public void RemoveItems(int tile) { Items.Remove(tile); _hasItems[tile] = false; }
 
     /// <summary>(E4) 땅에 물건을 놓는다.</summary>
+    /// <summary>
+    /// (E5b 고침) 썩거나 먹힐 수 있는 것이 놓였을 수 있는 타일(번호 순) — 하루 경계에 땅 전체 대신 이것만 훑는다(같은 차례라 결과는 같다).
+    /// Perish = 아이템마다 썩거나 먹힐 수 있나(사람 계산이 넣어 준다; 없으면 모두 그렇다고 본다).
+    /// </summary>
+    public readonly SortedSet<int> PerishTiles = new();
+    public bool[]? Perish;
+
     public void Drop(int tile, int item, int count)
     {
         if (count <= 0) return;
+        if (Perish is null || (uint)item >= (uint)Perish.Length || Perish[item]) PerishTiles.Add(tile);
         if (!Items.TryGetValue(tile, out var list)) { Items[tile] = list = new List<(int, int)>(); _hasItems[tile] = true; }
         int k = list.FindIndex(c => c.Item == item);
         if (k >= 0) list[k] = (item, list[k].Count + count);
@@ -390,12 +431,13 @@ public sealed class ProvinceLife
             if (r < 0) continue;
             if (reg < 0) reg = r; else if (r != reg && !merge.Contains(r)) merge.Add(r);
         }
-        if (reg < 0) { reg = RegionHasDrink.Length; Array.Resize(ref RegionHasDrink, reg + 1); Array.Resize(ref RegionHasFood, reg + 1); }
+        if (reg < 0) { reg = RegionHasDrink.Length; Array.Resize(ref RegionHasDrink, reg + 1); Array.Resize(ref RegionHasFood, reg + 1); Array.Resize(ref RegionTiles, reg + 1); }
         Region[tile] = reg;
+        RegionTiles[reg]++;
         if (merge.Count > 0)
             for (int i = 0; i < HexFrame.TileCount; i++)
                 if (merge.Contains(Region[i])) { Region[i] = reg; }
-        foreach (int m in merge) { RegionHasDrink[reg] |= RegionHasDrink[m]; RegionHasFood[reg] |= RegionHasFood[m]; }
+        foreach (int m in merge) { RegionHasDrink[reg] |= RegionHasDrink[m]; RegionHasFood[reg] |= RegionHasFood[m]; RegionTiles[reg] += RegionTiles[m]; RegionTiles[m] = 0; }
         Shelter[tile] = 2;
         Paths.SetWalkable(tile, 1);
         _sightDrink = null;

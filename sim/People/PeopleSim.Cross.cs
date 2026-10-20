@@ -269,6 +269,7 @@ public sealed partial class PeopleSim
         bool fresh = !Provinces.ContainsKey(b.Nb) && !Dormant.ContainsKey(b.Nb); // 아무도 들어가 본 적 없는 땅
         var to = Life(b.Nb);
         from = Life(p.Cell); // (to 를 깨우며 마지막 지방 기억이 바뀌었을 수 있다)
+        entry = OpenEntry(to, entry);
         var babies = new List<Person>();
         foreach (var q in from.People) if (!q.Dead && q.Carrier == p.Id) babies.Add(q);
         foreach (var q in babies.Prepend(p))
@@ -291,6 +292,27 @@ public sealed partial class PeopleSim
         if (Crossings.Count > CrossingsKept) Crossings.RemoveRange(0, Crossings.Count - CrossingsKept);
         ForgetLastLife();
         Decide(p);
+    }
+
+    /// <summary>
+    /// (E5b 고침) 넘어가 설 자리가 바위 · 물에 갇힌 작은 땅이면(변은 지도의 땅만 보고 만들어 이어짐을 모른다) 가까운(10타일 안) 넓은 땅으로.
+    /// 갇힌 땅에 서면 물도 출구도 없어 목말라 죽거나, 두 지방 사이를 끝없이 오갔다.
+    /// </summary>
+    private static int OpenEntry(ProvinceLife to, int entry)
+    {
+        if (to.OpenLand(entry)) return entry;
+        int ex = entry % S, ey = entry / S;
+        for (int r = 1; r <= 10; r++)
+            for (int dy = -r; dy <= r; dy++)
+                for (int dx = -r; dx <= r; dx++)
+                {
+                    if (Math.Max(Math.Abs(dx), Math.Abs(dy)) != r) continue;
+                    int x = ex + dx, y = ey + dy;
+                    if ((uint)x >= S || (uint)y >= S) continue;
+                    int t = y * S + x;
+                    if (to.Walk[t] && to.OpenLand(t)) return t;
+                }
+        return entry;
     }
 
     private bool VisitedBefore(Person p, int cell)

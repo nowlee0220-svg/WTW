@@ -19,7 +19,7 @@ public readonly record struct HuntFirst(long Tick, int Person, int Cell, int Hel
 public sealed partial class PeopleSim
 {
     private int W_food = -1, W_hunting = -1, W_clothing = -1;
-    private int I_rawMeat = -1, I_rawFish = -1, I_rawHide = -1, I_bone = -1, I_sinew = -1;
+    private int I_rawMeat = -1, I_rawFish = -1, I_rawHide = -1, I_bone = -1, I_sinew = -1, I_driedMeat = -1, R_driedMeat = -1;
     private int A_scrape = -1, A_smoke = -1, A_sew = -1;
     internal int H_injured = -1, H_hunted = -1, H_huntFailed = -1, H_attacked = -1, H_warmClothes = -1, H_petNear = -1;
 
@@ -27,13 +27,17 @@ public sealed partial class PeopleSim
     public readonly SortedDictionary<int, HuntFirst> HuntFirsts = new();
     public readonly SortedDictionary<long, long> GroupHunts = new();
 
-    public const long HuntCooldown = 4 * GameTime.TicksPerHour;
+    public const long HuntCooldown = 6 * GameTime.TicksPerHour; // (E5b 고침) 4 → 6시간(사냥 나섬이 너무 잦았다)
+    /// <summary>(E5b 고침) 사냥하러 찾아가는 가장 먼 거리(타일) — 처음 판은 70 이라 사냥 길이 길었다(보이는 거리 14의 두 배 반).</summary>
+    public const int HuntRange = 35;
 
     private void InitHunt()
     {
         int W(string id) { foreach (var w in Craft.Wishes) if (w.Id == id) return w.Index; throw new InvalidOperationException($"crafting.json 에 바람 '{id}' 가 없습니다."); }
         W_food = W("food"); W_hunting = W("hunting"); W_clothing = W("clothing");
         I_rawMeat = Craft.ItemIndex("raw_meat"); I_rawFish = Craft.ItemIndex("raw_fish"); I_rawHide = Craft.ItemIndex("raw_hide"); I_bone = Craft.ItemIndex("bone"); I_sinew = Craft.ItemIndex("sinew");
+        I_driedMeat = Craft.ItemIndex("dried_meat");
+        foreach (var r in Craft.Rules) if (r.Result == I_driedMeat) { R_driedMeat = r.Index; break; }
         A_scrape = Craft.ActionIndex("scrape"); A_smoke = Craft.ActionIndex("smoke"); A_sew = Craft.ActionIndex("sew");
         int H(string id) { int i = Data.ThoughtIndex(id); if (i < 0) throw new InvalidOperationException($"people.json 에 생각 '{id}' 가 없습니다."); return i; }
         H_injured = H("injured"); H_hunted = H("hunted"); H_huntFailed = H("hunt_failed"); H_attacked = H("attacked"); H_warmClothes = H("warm_clothes"); H_petNear = H("pet_near");
@@ -84,7 +88,13 @@ public sealed partial class PeopleSim
             if (q.GetRelation(p.Id).Opinion < -10) continue;
             into.Add(q);
         }
-        into.Sort((a, b) => Cheb(a.Tile(Now), here) != Cheb(b.Tile(Now), here) ? Cheb(a.Tile(Now), here).CompareTo(Cheb(b.Tile(Now), here)) : a.Id.CompareTo(b.Id));
+        // 가까운 순(같으면 번호 순) — 몇 안 되니 끼워 넣기 정렬로(람다 없이)
+        for (int i = 1; i < into.Count; i++)
+        {
+            var q = into[i]; int dq = Cheb(q.Tile(Now), here), j = i - 1;
+            while (j >= 0 && (Cheb(into[j].Tile(Now), here) > dq || (Cheb(into[j].Tile(Now), here) == dq && into[j].Id > q.Id))) { into[j + 1] = into[j]; j--; }
+            into[j + 1] = q;
+        }
         if (into.Count > max) into.RemoveRange(max, into.Count - max);
     }
 
@@ -94,29 +104,32 @@ public sealed partial class PeopleSim
     /// 사냥하고 싶은 마음(점수)과 노릴 무리. 배고픔 · 먹을 것 바람 · 입을 것 바람(가죽) · 사냥 솜씨 · 성격에서, 보이는(30타일) 무리 가운데
     /// 잡을 만한 것(어림 확률이 겁나지 않을 만큼)을 고른다. 없으면 int.MinValue.
     /// </summary>
-    private int HuntScore(Person p, ProvinceLife life, out Herd? target)
+    private int HuntScore(Person p, ProvinceLife life, out Herd? target, int bar = int.MinValue)
     {
         target = null;
         if (life.Herds.Count == 0 || p.Stage(Now) < LifeStage.Child || p.AgeYears(Now) < 12 || p.AgeYears(Now) > 68 || p.Injury > 30_000 || life.IsNight(Now)) return int.MinValue;
         if (Now - p.LastHunt < HuntCooldown) return int.MinValue;
         // 까닭이 있어야 나선다: 배가 고프거나(들고 있는 먹을 것이 넉넉하면 아니다) · 먹을 것 · 입을 것 바람 · 날카로운 것(뼈) 바람
-        int food = 0; foreach (var (it, n) in p.Carry) if (Prop(it, Craft.P_edible) >= 3) food += n;
+        int food = FoodCarried(p);
         bool hungry = p.Food < 70_000 && food < 3;
-        if (!hungry && p.Wish[W_food] < 20 && p.Wish[W_clothing] < 20 && p.Wish[W_sharp] < 30) return int.MinValue;
-        int desire = (hungry ? (75_000 - p.Food) / 900 : 0) + p.Wish[W_food] / 2 + p.Wish[W_clothing] / 3 + p.Wish[W_sharp] / 8
+        bool wantFood = p.Wish[W_food] >= 20 && food < 4; // (E5b 고침) 먹을 것을 넉넉히 들고 있으면 먹을 것 바람으로는 나서지 않는다(배부르면 덜 잡는다)
+        if (!hungry && !wantFood && p.Wish[W_clothing] < 20 && p.Wish[W_sharp] < 30) return int.MinValue;
+        int desire = (hungry ? (75_000 - p.Food) / 900 : 0) + (wantFood ? p.Wish[W_food] / 2 : 0) + p.Wish[W_clothing] / 3 + p.Wish[W_sharp] / 8
             + p.SkillLevel(PeopleData.Hunting) * 2 + (p.HasTrait(T_bloodlust) ? 6 : 0) + (p.HasTrait(T_brave) ? 3 : 0) - (p.HasTrait(T_coward) ? 6 : 0);
         if (desire < 10) return int.MinValue;
+        if (desire + 85 / 4 + 11 < bar) return int.MinValue; // (E5b 고침) 가장 잘 돼도 다른 할 일 셋을 못 이긴다 — 무리를 훑을 것도 없다
         int here = p.Tile(Now);
         int weapon = WeaponPower(p);
         int avail = -1;
         int bestValue = 0, bestChance = 0;
         int min = p.HasTrait(T_brave) || p.HasTrait(T_bloodlust) ? 10 : p.HasTrait(T_coward) ? 25 : 15;
+        bool skipFail = p.FailHerdCell == p.Cell && Now < p.FailHerdUntil;
         foreach (var (_, h) in life.Herds)
         {
-            if (h.Tame || h.State == HerdState.Stalk) continue;
+            if (h.Tame || h.State == HerdState.Stalk || (skipFail && h.Id == p.FailHerd)) continue;
             int ht = h.Tile(Now);
             int d = Cheb(ht, here);
-            if (d > 70 || !life.Paths.Reachable(here, ht)) continue; // 보이는 곳(30타일) 너머도 발자국 · 똥을 따라 찾아간다
+            if (d > HuntRange || !life.Paths.Reachable(here, ht)) continue; // 보이는 곳(14타일) 너머도 발자국 · 똥을 따라 찾아간다
             var a = Fauna.Animals[h.Species];
             if (a.Size >= 2 && avail < 0)
             {
@@ -126,10 +139,16 @@ public sealed partial class PeopleSim
             int chance = HuntChance(p, a, a.Size >= 2 ? Math.Max(0, avail) : 0, weapon);
             if (chance < min) continue;
             int hide = 0; foreach (var (it, n) in a.Yields) if (it != I_rawMeat) hide += n;
-            int value = chance * (a.MeatYield * 3 + (p.Wish[W_clothing] > 0 ? hide * 2 : hide / 2)) / (10 + d);
+            // (E5b 고침) 고기는 함께 들고 갈 수 있는 만큼만 값으로 친다(혼자면 작은 짐승을, 여럿이면 큰 짐승을) — 남는 고기는 버려진다
+            int usable = Math.Min(a.MeatYield, (1 + (a.Size >= 2 ? Math.Max(0, avail) : 0)) * 4 + 2);
+            int value = chance * (usable * 3 + (p.Wish[W_clothing] > 0 ? hide * 2 : hide / 2)) / (10 + d);
             if (value > bestValue || (value == bestValue && target is not null && h.Id < target.Id)) { bestValue = value; bestChance = chance; target = h; }
         }
-        if (target is null) return int.MinValue;
+        if (target is null)
+        {
+            p.LastHunt = Now - HuntCooldown + GameTime.TicksPerHour; // (E5b 고침) 잡을 만한 무리가 없다 — 한 시간은 다시 둘러보지 않는다
+            return int.MinValue;
+        }
         return desire + bestChance / 4;
     }
 
@@ -160,6 +179,10 @@ public sealed partial class PeopleSim
         {
             var helpers = L.Hunters;
             HuntHelpers(p, helpers, 4);
+            // (E5b 고침) 넉넉히(잡을 어림 50%) 될 만큼만 부른다 — 늘 넷을 불러 모두 먼 길을 걸었다
+            int weapon = WeaponPower(p), need = 0;
+            while (need < helpers.Count && HuntChance(p, a, need, weapon) < 50) need++;
+            if (helpers.Count > need) helpers.RemoveRange(need, helpers.Count - need);
             var rng = Rng(p.Cell);
             foreach (var q in helpers.ToList())
             {
@@ -200,9 +223,10 @@ public sealed partial class PeopleSim
             {
                 p.TargetB++;
                 p.Why = Why.HuntChase;
-                // 함께하는 사람도 따라 쫓는다
-                foreach (var q in life.People)
-                    if (!q.Dead && q.Act == Act.Hunt && q.WhyArg == p.Id && q.Id != p.Id && !q.Walking) { Integrate(q, Now); if (WalkTo(q, Beside(q, ht, 3))) { } else Schedule(q, Now + 1); }
+                // (E5b 고침) 함께하는 사람은 첫 번째 쫓을 때만 따라간다(그 뒤에는 이끄는 사람이 몰아 오기를 기다린다 — 길 찾기를 덜)
+                if (p.TargetB == 1)
+                    foreach (var q in life.People)
+                        if (!q.Dead && q.Act == Act.Hunt && q.WhyArg == p.Id && q.Id != p.Id && !q.Walking) { Integrate(q, Now); if (WalkTo(q, Beside(q, ht, 3))) { } else Schedule(q, Now + 1); }
                 return;
             }
             HuntGiveUp(p, h);
@@ -217,9 +241,13 @@ public sealed partial class PeopleSim
         DoStill(p, dur);
     }
 
+    /// <summary>(E5b 고침) 놓친 무리를 하루 동안 기억한다(다시 쫓지 않는다).</summary>
+    private void RememberFail(Person p, Herd? h) { if (h is null) return; p.FailHerd = h.Id; p.FailHerdCell = p.Cell; p.FailHerdUntil = Now + GameTime.TicksPerDay; }
+
     private void HuntGiveUp(Person p, Herd? h)
     {
         St.HuntsLost++;
+        RememberFail(p, h);
         p.LastHunt = Now + 6 * GameTime.TicksPerHour; // 놓쳤다 — 한동안은 다시 나서지 않는다(지쳐서)
         AddThought(p, H_huntFailed);
         if (h is not null && Fauna.Animals[h.Species].Size >= 2) AddWish(p, W_hunting, 10);
@@ -273,6 +301,7 @@ public sealed partial class PeopleSim
         {
             St.HuntsLost++;
             p.LastHunt = Now + 6 * GameTime.TicksPerHour;
+            RememberFail(p, h);
             AddThought(p, H_huntFailed);
             if (a.Size >= 2) { AddWish(p, W_hunting, 25); if (a.Size >= 2) AddBio(p, BioKind.HuntFailed, h.Species, helpers.Count); }
             else AddWish(p, W_hunting, 8);
@@ -339,20 +368,48 @@ public sealed partial class PeopleSim
             if (k > 0) yields.Add((item, k));
         }
         St.Butchered++;
+        foreach (var (item, n) in yields) if (item == I_rawMeat) St.MeatGot += n;
         if (sharp) WearTool(p, BestTool(p, Craft.P_sharp, 2), Rng(p.Cell));
-        int turn = 0;
+        // (E5b 고침) 들고 갈 만큼만 든다 — 전에는 다 들고 다니다 썩혔다(잡은 고기의 몇 배가 썩음)
+        //   고기: 손질한 사람마다 먹을 것이 넉넉할 때(4개)까지 → 둘레(20타일)의 배고픈 사람에게 2개씩 나눠 줌 → 남는 것은 말리는 법을 알면 그 자리에 말려 두고(말린 고기 — 썩지 않는다), 모르면 그냥 둔다.
+        //   가죽: 추운 땅이거나 입을 것이 아쉽거나 가죽 일을 알 때만(따뜻한 땅에서는 짐이다).
+        bool cold = ColdLand(life);
+        bool wantHide = cold || crew.Exists(q => q.Wish[W_clothing] >= 10 || KnowsHideWork(q));
+        bool canDry = R_driedMeat >= 0 && crew.Exists(q => q.Knows(R_driedMeat));
+        int turn = 0, meatLeft = 0;
+        bool Give(Person q, int item) { if (CarryWeight(q) + Math.Max(1, Prop(item, Craft.P_weight)) > CarryCapOf(q) + 4) return false; q.AddCarry(item, 1); return true; }
         foreach (var (item, n) in yields)
+        {
+            if (item == I_rawMeat) { meatLeft = n; continue; }
+            if (Prop(item, Craft.P_covers) > 0 && !wantHide) { St.ButcherDropped += n; continue; } // 짐승 몸에 그대로 남긴다(땅에 쌓아 두지 않는다)
+            bool spare = Prop(item, Craft.P_covers) == 0; // 뼈 · 힘줄 · 기름: 이미 둘 넘게 든 사람은 더 들지 않는다(짐이 되고 바닥에 쌓였다)
             for (int u = 0; u < n; u++)
             {
                 bool given = false;
                 for (int t = 0; t < crew.Count && !given; t++)
                 {
                     var q = crew[(turn + t) % crew.Count];
-                    if (CarryWeight(q) + Math.Max(1, Prop(item, Craft.P_weight)) > CarryCapOf(q) + 4) continue;
-                    q.AddCarry(item, 1); given = true; turn = (turn + t + 1) % crew.Count;
+                    if (spare && q.CarryCount(item) >= 2) continue;
+                    if (!Give(q, item)) continue;
+                    given = true; turn = (turn + t + 1) % crew.Count;
                 }
-                if (!given && life.Walk[here]) life.Drop(here, item, 1);
+                if (!given) St.ButcherDropped++; // 들 수 없는 것은 짐승 몸에 남긴다
             }
+        }
+        foreach (var q in crew)
+            for (int need = Math.Max(0, 4 - FoodCarried(q)); need > 0 && meatLeft > 0 && Give(q, I_rawMeat); need--) meatLeft--;
+        if (meatLeft > 0)
+            foreach (var q in life.People)
+            {
+                if (meatLeft <= 0) break;
+                if (q.Dead || q.Carrier >= 0 || crew.Contains(q) || q.Stage(Now) < LifeStage.Child || q.Food >= 70_000 || FoodCarried(q) >= 2 || Cheb(q.Tile(Now), here) > 20) continue;
+                for (int k = 0; k < 2 && meatLeft > 0 && Give(q, I_rawMeat); k++) { meatLeft--; St.MeatShared++; }
+            }
+        if (meatLeft > 0 && life.Walk[here])
+        {
+            if (canDry && I_driedMeat >= 0) { life.Drop(here, I_driedMeat, (meatLeft + 1) / 2); St.MeatDried += meatLeft; } // 얇게 저며 말린다(둘이 하나로)
+            else St.ButcherDropped += meatLeft; // 말리는 법을 모르면 남는 고기는 짐승 몸에 남긴다(곧 다른 짐승이 먹는다)
+        }
         GainSkill(p, PeopleData.Hunting, 6);
         foreach (var q in crew) WearBest(q);
         ReleaseHunters(p);
@@ -400,10 +457,10 @@ public sealed partial class PeopleSim
     private int FishScore(Person p, ProvinceLife life, out int spot)
     {
         spot = -1;
-        if (life.FishStock <= 0 || p.Stage(Now) < LifeStage.Child || p.AgeYears(Now) < 8 || life.IsNight(Now) || Now - p.LastFish < 3 * GameTime.TicksPerHour) return int.MinValue;
+        if (life.FishStock <= 0 || Now - p.LastFish < 6 * GameTime.TicksPerHour || life.IsNight(Now) || p.Stage(Now) < LifeStage.Child || p.AgeYears(Now) < 8) return int.MinValue; // (E5b 고침) 물고기는 6시간에 한 번까지(3시간이던 것)
         if (p.Food >= 60_000 && p.Wish[W_food] < 20) return int.MinValue;
         p.Position(Now, out int px, out int py);
-        spot = life.NearestDrink(px / 1000, py / 1000, 25);
+        spot = life.NearestDrink(px / 1000, py / 1000, SightTiles); // (E5b 고침) 보이는 물가(둘러보기와 같은 — 타일마다 한 번만 셈한다)
         if (spot < 0) return int.MinValue;
         return (60_000 - Math.Min(60_000, p.Food)) / 1000 + p.Wish[W_food] / 3 + 6 + p.SkillLevel(PeopleData.Hunting);
     }
@@ -492,6 +549,7 @@ public sealed partial class PeopleSim
             if (slot == 1) { p.WornWear -= wear; if (p.WornWear <= 0) { p.Worn = -1; St.ClothesWornOut++; } }
             else { p.FeetWear -= wear; if (p.FeetWear <= 0) { p.WornFeet = -1; St.ClothesWornOut++; } }
         }
+        ShareMeat(p);
         // 들고 있는 것이 썩는다(썩는다 3 이상: 하루에 (썩는다 − 2) / 8 — 날고기 · 날가죽은 이틀이면 반, 익힌 고기는 여드레)
         for (int k = p.Carry.Count - 1; k >= 0; k--)
         {
@@ -499,13 +557,20 @@ public sealed partial class PeopleSim
             int r = Prop(item, Craft.P_rots);
             if (r < 3) continue;
             int lose = (n * (r - 2) + rng.NextInt(8)) / 8;
-            if (lose > 0) { p.RemoveCarry(item, Math.Min(n, lose)); St.Rotted += Math.Min(n, lose); }
+            if (lose > 0)
+            {
+                lose = Math.Min(n, lose);
+                p.RemoveCarry(item, lose); St.Rotted += lose;
+                if (Prop(item, Craft.P_meat) > 0 && Craft.IsAnimal(item)) St.RotMeat += lose; else if (Prop(item, Craft.P_covers) > 0) St.RotHide += lose; else St.RotOther += lose;
+            }
         }
-        if (p.Worn < 0 || p.WornFeet < 0) GiveSpareClothes(p);
-        PoolHides(p);
-        WearBest(p);
+        // (E5b 고침) 옷 일은 추운 땅이거나 입을 것을 든 사람만(따뜻한 땅의 대부분은 볼 것이 없다 — 날마다 사람마다 도는 셈이라)
+        bool cold = ColdLand(Life(p.Cell));
+        if (cold && (p.Worn < 0 || p.WornFeet < 0)) GiveSpareClothes(p);
+        if (p.Wish[W_clothing] >= 20) PoolHides(p);
+        if (cold || HasWearable(p)) WearBest(p);
         // 추운 땅: 옷이 없거나 닳아 가거나 가족이 입을 것이 없으면 입을 것이 아쉽다(미리 짓는다)
-        if (ColdLand(Life(p.Cell)) && p.Stage(Now) >= LifeStage.Child && (p.Worn < 0 || p.WornWear < 600 || FamilyNeedsClothes(p))) AddWish(p, W_clothing, 25);
+        if (cold && p.Stage(Now) >= LifeStage.Child && (p.Worn < 0 || p.WornWear < 600 || FamilyNeedsClothes(p))) AddWish(p, W_clothing, 25);
     }
 
     /// <summary>옷이 없는 사람: 같은 지방 가족이 들고 있는 남는 입을 것을 받는다.</summary>
@@ -556,23 +621,44 @@ public sealed partial class PeopleSim
     }
 
     /// <summary>땅에 놓인 것도 썩는다(하루 경계, 지방마다).</summary>
+    /// <summary>(E5b 고침) 아이템마다 땅에서 썩거나(썩는다 3 이상) 먹히나(먹을 만한 것 3 이상).</summary>
+    private bool[]? _perish;
+    private bool[] PerishItems
+    {
+        get
+        {
+            if (_perish is not null) return _perish;
+            var a = new bool[Craft.Catalog.Items.Count];
+            for (int i = 0; i < a.Length; i++) a[i] = Prop(i, Craft.P_rots) >= 3 || Prop(i, Craft.P_edible) >= 3;
+            return _perish = a;
+        }
+    }
+
+    /// <summary>땅에 놓인 것도 썩는다(하루 경계, 지방마다). 썩거나 먹힐 것이 놓였던 타일만 번호 순으로 본다.</summary>
     private void RotGround(ProvinceLife life, Pcg32 rng)
     {
-        List<int>? empty = null;
-        foreach (var (t, list) in life.Items)
+        if (life.PerishTiles.Count == 0) return;
+        var tiles = L.RotTiles; tiles.Clear(); tiles.AddRange(life.PerishTiles);
+        foreach (int t in tiles)
         {
+            if (!life.Items.TryGetValue(t, out var list)) { life.PerishTiles.Remove(t); continue; }
+            bool any = false;
             for (int k = list.Count - 1; k >= 0; k--)
             {
                 var (item, n) = list[k];
                 int r = Prop(item, Craft.P_rots);
-                if (r < 3) continue;
-                int lose = Math.Min(n, (n * (r - 2) + rng.NextInt(8)) / 8);
+                // (E5b 고침) 땅에 둔 먹을 것은 썩지 않아도 짐승 · 벌레가 조금씩 먹는다(하루 1/10) — 말려 둔 고기가 끝없이 쌓이지 않게
+                bool food = Prop(item, Craft.P_edible) >= 3;
+                if (r < 3 && !food) continue;
+                int lose = r >= 3 ? Math.Min(n, (n * (r - 2) + rng.NextInt(8)) / 8) : Math.Min(n, (n + rng.NextInt(10)) / 10);
+                if (lose < n) any = true;
                 if (lose <= 0) continue;
                 if (lose == n) list.RemoveAt(k); else list[k] = (item, n - lose);
+                if (Craft.IsAnimal(item)) St.RotGround += lose;
             }
-            if (list.Count == 0) (empty ??= new()).Add(t);
+            if (list.Count == 0) life.RemoveItems(t);
+            if (!any) life.PerishTiles.Remove(t);
         }
-        if (empty is not null) foreach (int t in empty) life.RemoveItems(t);
     }
 
     // ───────── 다침 ─────────
@@ -621,6 +707,32 @@ public sealed partial class PeopleSim
             h.Home = entry;
             to.Herds[h.Id] = h;
             ScheduleHerd(to, h, Now + 300);
+        }
+    }
+
+    private bool HasWearable(Person p) { foreach (var (it, _) in p.Carry) if (Craft.WearSlot(it) != 0) return true; return false; }
+
+    /// <summary>들고 있는 먹을 것(먹을 만한 것 3 이상) 수.</summary>
+    private int FoodCarried(Person p) { int n = 0; foreach (var (it, c) in p.Carry) if (Prop(it, Craft.P_edible) >= 3) n += c; return n; }
+
+    /// <summary>가죽 일(긁기 · 꿰매기 · 무두질)을 아나.</summary>
+    private bool KnowsHideWork(Person p) { foreach (var k in p.Known) { var r = Craft.Rules[k.Rule]; if (r.Action == A_scrape || r.Action == A_sew || (r.Input.ContainsKey(Craft.P_covers))) return true; } return false; }
+
+    /// <summary>
+    /// (E5b 고침) 썩을 날고기를 넉넉히 든 사람은 같은 지방의 먹을 것이 없는 가족에게 나눠 준다(하루 경계).
+    /// </summary>
+    private void ShareMeat(Person p)
+    {
+        int raw = p.CarryCount(I_rawMeat) + p.CarryCount(I_rawFish);
+        if (raw < 4) return;
+        var life = Life(p.Cell);
+        foreach (var q in life.People)
+        {
+            if (raw < 4) break;
+            if (q.Dead || q.Id == p.Id || q.Carrier >= 0 || q.Stage(Now) < LifeStage.Child || !IsFamily(p, q) || FoodCarried(q) >= 2) continue;
+            int it = p.CarryCount(I_rawMeat) > 0 ? I_rawMeat : I_rawFish;
+            int give = Math.Min(2, p.CarryCount(it));
+            p.RemoveCarry(it, give); q.AddCarry(it, give); raw -= give; St.MeatShared += give;
         }
     }
 

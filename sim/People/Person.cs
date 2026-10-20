@@ -265,6 +265,9 @@ public sealed class Person
     public int Injury;
     public DeathCause InjuryCause;
     public long LastHunt = long.MinValue / 2, LastFish = long.MinValue / 2;
+    /// <summary>(E5b 고침) 놓친 무리(지방 · 번호)를 이때까지는 노리지 않는다 — 같은 무리를 거듭 쫓아 먼 길을 걷지 않게.</summary>
+    public int FailHerd = -1, FailHerdCell = -1;
+    public long FailHerdUntil;
     public int Kills;
 
     public readonly List<ThoughtInst> Thoughts = new();

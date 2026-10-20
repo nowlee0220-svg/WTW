@@ -13,12 +13,40 @@ public sealed record PartialDef(string Key, string Text, string Hint, int Result
 /// <summary>
 /// 다루는 규칙 하나(crafting.json). 조건은 속성 번호 → 최소값(Input · With · Tool) · 최대값(InputMax). Heat 0~3, Tinder = 불쏘시개의 burns 최소값(0 = 없어도 됨).
 /// </summary>
+/// <summary>
+/// (E5b 고침) 규칙의 조건(속성 번호 → 값, 번호 순). 읽어 들인 뒤에는 바뀌지 않고 판단마다 수없이 돌아서,
+/// SortedDictionary 처럼 돌 때마다 메모리를 잡지 않게 번호 순 배열을 돈다(같은 순서 — 결과는 같다).
+/// </summary>
+public sealed class Conds : IEnumerable<KeyValuePair<int, int>>
+{
+    private readonly SortedDictionary<int, int> _d = new();
+    private KeyValuePair<int, int>[]? _arr;
+    private int[]? _keys;
+    public int Count => _d.Count;
+    public int this[int prop] { get => _d[prop]; set { _d[prop] = value; _arr = null; _keys = null; } }
+    public bool ContainsKey(int prop) => _d.ContainsKey(prop);
+    public bool TryGetValue(int prop, out int v) => _d.TryGetValue(prop, out v);
+    public KeyValuePair<int, int>[] Items => _arr ??= _d.ToArray();
+    public int[] Keys => _keys ??= _d.Keys.ToArray();
+    public Enumerator GetEnumerator() => new(Items);
+    IEnumerator<KeyValuePair<int, int>> IEnumerable<KeyValuePair<int, int>>.GetEnumerator() => ((IEnumerable<KeyValuePair<int, int>>)Items).GetEnumerator();
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => Items.GetEnumerator();
+
+    public struct Enumerator
+    {
+        private readonly KeyValuePair<int, int>[] _a; private int _i;
+        internal Enumerator(KeyValuePair<int, int>[] a) { _a = a; _i = -1; }
+        public KeyValuePair<int, int> Current => _a[_i];
+        public bool MoveNext() => ++_i < _a.Length;
+    }
+}
+
 public sealed class CraftRule
 {
     public int Index;
     public string Id = "", Name = "";
     public int Action;
-    public readonly SortedDictionary<int, int> Input = new(), InputMax = new(), With = new(), WithMax = new(), Tool = new();
+    public readonly Conds Input = new(), InputMax = new(), With = new(), WithMax = new(), Tool = new();
     public int Heat, Tinder, Chance = 100, Result = -1, Count = 1, Uses = 1, WithUses, ToolUses, TimeMin = 60, Skill = -1;
     public readonly Dictionary<string, PartialDef> Partial = new();
     public bool HasWith => With.Count > 0;
@@ -132,7 +160,7 @@ public sealed class CraftData
                 if (!seen.Add(r.Id)) problems.Add($"{where}: 아이디가 겹칩니다.");
                 r.Action = AI(e.GetProperty("action").GetString() ?? "");
                 if (r.Action < 0) problems.Add($"{where}: 모르는 행동입니다.");
-                void Conds(string key, SortedDictionary<int, int> into)
+                void ReadConds(string key, Conds into)
                 {
                     if (!e.TryGetProperty(key, out var o)) return;
                     foreach (var p in o.EnumerateObject())
@@ -141,7 +169,7 @@ public sealed class CraftData
                         if (pi < 0) problems.Add($"{where}: {key} 의 속성 '{p.Name}' 을(를) 모릅니다."); else into[pi] = p.Value.GetInt32();
                     }
                 }
-                Conds("input", r.Input); Conds("input_max", r.InputMax); Conds("with", r.With); Conds("with_max", r.WithMax); Conds("tool", r.Tool);
+                ReadConds("input", r.Input); ReadConds("input_max", r.InputMax); ReadConds("with", r.With); ReadConds("with_max", r.WithMax); ReadConds("tool", r.Tool);
                 if (r.Input.Count == 0) problems.Add($"{where}: 주 재료 조건(input)이 없습니다.");
                 r.Heat = e.TryGetProperty("heat", out var he) ? he.GetInt32() : 0;
                 r.Tinder = e.TryGetProperty("tinder", out var ti) ? ti.GetInt32() : 0;

@@ -207,6 +207,8 @@ public sealed partial class PeopleSim
         return r;
     }
 
+    private bool IsPileAction(int action) => action == A_pile;
+
     private bool PlanInner(Person p, int wish, bool known, Pcg32 rng, CraftRule? force = null)
     {
         var life = Life(p.Cell);
@@ -322,6 +324,13 @@ public sealed partial class PeopleSim
         var inPref = InputPrefs(action, wish, p);
         int input = PickCarried(p, inPref, -1, -1, rule?.Input);
         if (rule is not null && input >= 0 && !MeetsInput(input, rule)) input = -1;
+        // (E5b 고침) 실험인데 이 재료 · 행동이 이미 아는 법(이 바람에 맞지 않는)과 같다 — 해 보나 마나다(뼈를 갈아 아는 뼈바늘을 거듭 만들던 것)
+        if (rule is null && !known && input >= 0)
+            foreach (var k in p.Known)
+            {
+                var kr = Craft.Rules[k.Rule];
+                if (kr.Action == action && MeetsInput(input, kr) && !ServesWish(kr, wd)) { St.PlanWhy[12]++; return false; }
+            }
         if (follow is { } fc && input >= 0 && Craft.PropIndex(fc.Key) is int pk && pk >= 0 && Prop(input, pk) <= Prop(fc.Input, pk))
         {
             // 단서: 그 속성이 더 높은 다른 재료로
@@ -329,6 +338,14 @@ public sealed partial class PeopleSim
             if (alt >= 0) input = alt;
             else if (StartMaterialFor(p, pk, Prop(fc.Input, pk) + 1, Why.Clue)) return true;
             else if (pk is var k2 && (k2 == Craft.P_hardness || k2 == Craft.P_toughness) && HasHardTool(p) && TryMine(p)) return true; // 바위를 캐면 더 단단한 돌이 나온다
+        }
+        // (E5b 고침) 아는 법인데 재료가 모자라다(바구니 — 풀 셋): 같은 것을 더 모으러 간다. 전에는 하나로 엮기 시작해 끝에 "모자람"으로 실패하고 곧바로 다시 했다
+        if (rule is not null && input >= 0 && !IsPileAction(action) && rule.Uses > 1 && p.CarryCount(input) < rule.Uses)
+        {
+            int it0 = input;
+            if (StartMaterialFor(p, it => it == it0, rule.Input.Keys[0], Why.KnowHow)) return true;
+            St.PlanWhy[3]++;
+            return false;
         }
         if (input < 0)
         {
@@ -365,7 +382,10 @@ public sealed partial class PeopleSim
         // 같은 돌이 둘 있으면 하나로 다른 하나를 친다
         if (tool < 0 && (action == A_strike || action == A_break) && p.CarryCount(input) >= 2 && Prop(input, Craft.P_hardness) >= 3 && Prop(input, Craft.P_edible) == 0) tool = input;
         if (rule is { HasTool: true } && (tool < 0 || !MeetsAll(tool, rule.Tool)))
-            tool = p.Carry.Where(c => c.Item != input && c.Item != with && MeetsAll(c.Item, rule.Tool)).Select(c => c.Item).DefaultIfEmpty(-1).First();
+        {
+            tool = -1;
+            foreach (var c in p.Carry) if (c.Item != input && c.Item != with && MeetsAll(c.Item, rule.Tool)) { tool = c.Item; break; }
+        }
         if (rule is { HasTool: true } && tool < 0) { St.PlanWhy[6]++; return StartMaterialFor(p, rule.Tool, Why.KnowHow) || (force is null && MakeFirst(p, rule.Tool, wish, rng)); }
         // 아는 법에 불쏘시개가 들면(부싯돌 불씨): 아주 잘 타는 마른 것부터 — 없으면 풀을 말려 본다, 그것도 안 되면 하지 않는다
         if (rule is { Tinder: > 0 } && BestCarried(p, Craft.P_burns, rule.Tinder, input, with) < 0)
@@ -453,7 +473,8 @@ public sealed partial class PeopleSim
             foreach (var c in p.Carry)
             {
                 if (c.Item == I_ember) continue;
-                int sc = (IsMade(c.Item) ? 40 : Craft.IsAnimal(c.Item) ? 25 : 0) + Prop(c.Item, wantProp) * 10 + Prop(c.Item, Craft.P_edible) * 6 - Prop(c.Item, Craft.P_weight) * 3 - (c.Count > 2 ? 15 : 0);
+                // (E5b 고침) 그릇 · 바구니(담는 것)는 마지막까지 든다 — 뼈 · 힘줄 · 기름에 밀려 바구니를 내려놓고 다시 엮기를 끝없이 되풀이했다
+                int sc = (IsMade(c.Item) ? 40 : Craft.IsAnimal(c.Item) ? 10 : 0) + (Prop(c.Item, Craft.P_holds) > 0 ? 60 : 0) + Prop(c.Item, wantProp) * 10 + Prop(c.Item, Craft.P_edible) * 6 - Prop(c.Item, Craft.P_weight) * 3 - (c.Count > 2 ? 15 : 0);
                 if (sc < ws) { ws = sc; worst = c.Item; }
             }
             if (worst < 0) break;
@@ -533,7 +554,7 @@ public sealed partial class PeopleSim
     }
 
     /// <summary>(E5b) 아는 법에 쓸 도구 · 둘째 재료(만든 것 — 바늘 · 막대 · 끈)가 없다: 그것을 만드는 법을 알고 재료를 들고 있으면 그것부터 만든다.</summary>
-    private bool MakeFirst(Person p, SortedDictionary<int, int> conds, int wish, Pcg32 rng)
+    private bool MakeFirst(Person p, Conds conds, int wish, Pcg32 rng)
     {
         foreach (var k in p.Known)
         {
@@ -618,7 +639,7 @@ public sealed partial class PeopleSim
         return true;
     }
 
-    private bool MeetsAll(int item, SortedDictionary<int, int> conds)
+    private bool MeetsAll(int item, Conds conds)
     {
         foreach (var (pr, mn) in conds) if (Prop(item, pr) < mn) return false;
         return true;
@@ -637,7 +658,7 @@ public sealed partial class PeopleSim
         return best;
     }
 
-    private int PickCarried(Person p, int[] prefs, int except1, int except2, SortedDictionary<int, int>? must)
+    private int PickCarried(Person p, int[] prefs, int except1, int except2, Conds? must)
     {
         int best = -1, bs = 0;
         foreach (var c in p.Carry)
@@ -687,7 +708,7 @@ public sealed partial class PeopleSim
     private const long MissMemory = 12 * GameTime.TicksPerHour;
 
     /// <summary>조건(속성 → 최소값)을 모두 맞는 재료를 얻으러 간다.</summary>
-    private bool StartMaterialFor(Person p, SortedDictionary<int, int> conds, Why why)
+    private bool StartMaterialFor(Person p, Conds conds, Why why)
     {
         if (conds.Count == 0) return false;
         long key = 1000;

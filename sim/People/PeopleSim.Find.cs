@@ -90,10 +90,10 @@ public sealed partial class PeopleSim
         int tile = life.NearestDrink(hx, hy, SightTiles);
         // (E4) 그릇에 담아 온 물이 있고 물가가 보이지 않으면 그것을 마신다 · 물이 멀면 그릇이 아쉽다
         if (tile < 0 && p.PotWater > 0) { SetWhy(p, Act.DrinkCarried, why, arg); p.Target = here; StandStill(p); DoStill(p, 100); return true; }
-        if (tile < 0) AddWish(p, W_container, 8);
+        if (tile < 0 && !HasContainer(p)) AddWish(p, W_container, 8); // (E5b 고침) 그릇을 이미 들었으면 더 아쉽지 않다(빈 그릇을 들고도 그릇을 거듭 만들던 것)
         byte how = 0; int howArg = -1;
         // 1-1) 경계 너머 보임 → 넘어간다
-        if (tile < 0 && SeenAcross(p, life, px, py) is { } far)
+        if (tile < 0 && SeenAcross(p, life, px, py) is { } far && !(far.B.Nb == p.FromCell && Now - p.ArrivedTick < 2 * GameTime.TicksPerHour)) // (E5b 고침) 막 떠나온 쪽의 물로 곧바로 되돌아가지 않는다(그쪽 물은 넘어선 자리에서 닿지 않았다)
         {
             int gi = NearestGate(far.B, life, here, far.B.SightX[far.K], far.B.SightY[far.K]);
             if (gi >= 0 && StartCross(p, far.B, gi, why, arg))
@@ -127,7 +127,12 @@ public sealed partial class PeopleSim
         // (E4) 들고 있는 먹을 것이 있으면 그것부터(익힌 것 · 말린 것 · 바구니에 담아 둔 것) — 날것은 익히는 법을 알고 불이 가까우면 익혀서
         if (TryCook(p, why)) return true;
         int carried = BestCarriedFood(p, desperate: p.Food < UrgentFood);
-        if (carried >= 0 && (p.Food < UrgentFood || life.NearestFood(hx, hy, Now, SightTiles) < 0 || Craft.IsCookedOrKept(carried)))
+        // (E5b 고침) 익힐 수 없으면 날고기 · 날생선을 썩기 전에 먹는다(배탈이 날 수 있다 — 그래서 익히고 싶어진다)
+        int rawMeat = p.CarryCount(I_rawMeat) > 0 ? I_rawMeat : p.CarryCount(I_rawFish) > 0 ? I_rawFish : -1;
+        bool eatRaw = rawMeat >= 0 && (p.Food < 50_000 || p.CarryCount(rawMeat) >= 3) && !(carried >= 0 && Craft.IsCookedOrKept(carried)); // 꽤 배고프거나 셋 넘게 들었을 때 — 익힌 · 말린 것이 있으면 그것부터
+        if (eatRaw) carried = rawMeat; else rawMeat = -1;
+        // (E5b 고침) 곧 썩을 것(날것이 아니고 썩는다 4 이상 — 열매 등)은 새로 따기 전에 먼저 먹는다
+        if (carried >= 0 && (p.Food < UrgentFood || life.NearestFood(hx, hy, Now, SightTiles) < 0 || Craft.IsCookedOrKept(carried) || carried == rawMeat || (Prop(carried, Craft.P_rots) >= 4 && Prop(carried, Craft.P_poison) == 0)))
         {
             SetWhy(p, Act.EatCarried, why, p.Food / 1000); p.PlanItem = carried; p.Target = here; StandStill(p); DoStill(p, 250);
             return true;
@@ -178,10 +183,38 @@ public sealed partial class PeopleSim
             else if (hd is not null && HasContainer(p) && p.Scarcity == 0) p.PlanItem = 2;
             return true;
         }
+        // (E5b 고침) 둘레에 말려 둔 고기 같은 먹을 것이 놓여 있으면 가져온다
+        if (p.Food < 40_000 && TryFetchStash(p, life, hx, hy, why)) return true;
         // (E5b) 딸 것이 없다 → 보이는 짐승을 잡거나 물고기를 잡는다
         if (TryHuntForFood(p)) return true;
         // 4) 찾아다님(초록이 짙은 쪽으로 — 이웃 지방도)
         return Search(p, Act.Eat, why, arg, water: false);
+    }
+
+    /// <summary>(E5b 고침) 땅에 놓인 오래가는 먹을 것(말린 고기 · 그을린 고기 · 말린 열매 …, 25타일 안 · 같은 이어진 땅)을 주우러 간다.</summary>
+    private bool TryFetchStash(Person p, ProvinceLife life, int hx, int hy, Why why)
+    {
+        if (life.Items.Count == 0) return false;
+        int here = hy * S + hx, reg = life.Region[here], best = -1, bestItem = -1; long bd = 25L * 25 + 1;
+        void Check(int t, List<(int Item, int Count)> list)
+        {
+            long d = ProvinceLife.D2(t, hx, hy);
+            if (d >= bd || (life.Region[t] != reg && !life.BesideRegion(t, reg))) return;
+            foreach (var (item, n) in list)
+                if (n > 0 && Craft.IsCookedOrKept(item) && Prop(item, Craft.P_edible) >= 3 && Prop(item, Craft.P_rots) <= 2) { bd = d; best = t; bestItem = item; return; }
+        }
+        if (life.Items.Count <= 64) { foreach (var (t, list) in life.Items) Check(t, list); }
+        else
+            for (int y = Math.Max(0, hy - 25); y <= Math.Min(S - 1, hy + 25); y++)
+                for (int x = Math.Max(0, hx - 25); x <= Math.Min(S - 1, hx + 25); x++)
+                {
+                    int t = y * S + x;
+                    if (life.HasItems(t)) Check(t, life.Items[t]);
+                }
+        if (best < 0 || !WalkTo(p, best)) return false;
+        SetWhy(p, Act.Material, why); p.Target = best; p.TargetB = -2; p.PlanItem = bestItem;
+        St.StashEaten++;
+        return true;
     }
 
     /// <summary>기억 중 이 지방(cell)의 자리에서 가장 가까운 것(타일). 없으면 −1.</summary>
@@ -207,6 +240,8 @@ public sealed partial class PeopleSim
         {
             int cell = Person.PlaceCell(place);
             if (cell == p.Cell) continue;
+            // (E5b 고침) 막 떠나온 지방의 자리로 곧바로 되돌아가지 않는다 — 거기서 닿지 못해 넘어왔다(두 지방 사이를 끝없이 오가던 것)
+            if (cell == p.FromCell && Now - p.ArrivedTick < 2 * GameTime.TicksPerHour) continue;
             int slot = life.Map.SlotOf(cell);
             if (slot < 0 || BorderOf(p.Cell, slot) is not { } b || b.Gates.Length == 0) continue;
             int t = Person.PlaceTile(place);
@@ -244,6 +279,8 @@ public sealed partial class PeopleSim
             if (q.Id == p.Id || q.Dead || !q.Walking || q.How == 3 || q.Target < 0) continue;
             bool across = q.Act == Act.Cross && (act == Act.Drink ? q.Why is Why.Thirsty or Why.VeryThirsty : q.Why is Why.Hungry or Why.VeryHungry or Why.Starving);
             if (q.Act != act && !across) continue;
+            // (E5b 고침) 막 떠나온 지방으로 넘어가는 사람은 따라가지 않는다 — 서로 따라 두 지방 사이를 끝없이 오가던 것
+            if (across && Now - p.ArrivedTick < 2 * GameTime.TicksPerHour && BorderOf(q.Cell, q.TargetB) is { } qb && qb.Nb == p.FromCell) continue;
             int d = Cheb(q.Tile(Now), here);
             if (d > 40 || d >= bd || !life.Paths.Reachable(here, q.Target)) continue;
             if (act == Act.Eat && !across && life.StockAt(q.Target, Now) <= Math.Max(1, q.TargetB)) continue; // 그 사람이 다 딸 만큼만 남았으면 따라가도 소용없다
@@ -290,13 +327,14 @@ public sealed partial class PeopleSim
             var planet = _w.Planet;
             foreach (var b in OpenBorders(life, here))
             {
+                if (b.Nb == p.FromCell && Now - p.ArrivedTick < 2 * GameTime.TicksPerHour) continue; // (E5b 고침) 막 넘어온 곳으로 곧바로는 되돌아가지 않는다(먼저 이 지방 안을 찾는다)
                 int gi = NearestGate(b, life, here, px, py);
                 if (gi < 0) continue;
                 int g = b.Gates[gi];
                 int score = water
                     ? Math.Clamp((planet.Elevation[p.Cell] - planet.Elevation[b.Nb]) / 4, -30, 30) + (int)(ProvinceGenerator.Moisture(planet, b.Nb) / 80)
                     : (int)(ProvinceGenerator.Moisture(planet, b.Nb) / 40) + Math.Clamp((planet.Elevation[p.Cell] - planet.Elevation[b.Nb]) / 10, -10, 10);
-                score += p.SearchMiss * 8 - Cheb(g, here) / 2 + rng.NextInt(12);
+                score += Math.Min(p.SearchMiss, 6) * 8 - Cheb(g, here) / 2 + rng.NextInt(12); // (E5b 고침) 못 찾은 수에 한도 — 없으면 몇백 번 못 찾은 사람은 지방 안을 찾지 않고 경계만 오갔다
                 if (b.Nb == p.FromCell && Now - p.ArrivedTick < 3 * GameTime.TicksPerDay) score -= 30;
                 int gd = Dir8(g % S - hx, g / S - hy);
                 if (p.SearchDir >= 0 && gd == p.SearchDir) score += 18;

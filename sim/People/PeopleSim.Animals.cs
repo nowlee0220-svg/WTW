@@ -109,15 +109,12 @@ public sealed partial class PeopleSim
         h.Motion.SetStill(Now, x, y);
     }
 
-    private bool HerdWalk(ProvinceLife life, Herd h, int goal, int ticksPerTile, bool find = false)
+    /// <summary>(E5b 고침) 무리는 곧은 길로만 걷는다(길 찾기 없이 — 막히면 그쪽으로 가지 않는다).</summary>
+    private bool HerdWalk(ProvinceLife life, Herd h, int goal, int ticksPerTile)
     {
         h.Position(Now, out int x, out int y);
         var path = L.Path;
-        if (!life.Paths.TryStraight(x, y, goal, path))
-        {
-            if (!find) return false;
-            if (!life.Paths.Find(x, y, goal, path)) return false;
-        }
+        if (!life.Paths.TryStraight(x, y, goal, path)) return false;
         h.NewMotion();
         h.Motion.SetPath(Now, path, ticksPerTile);
         return true;
@@ -139,7 +136,7 @@ public sealed partial class PeopleSim
         int here = h.Tile(Now);
         h.Position(Now, out int hx, out int hy);
         // 사람이 다가오면 달아난다(포식자는 여럿이거나 불이 있을 때만)
-        var q = NearestPerson(life, hx, hy, a.Fear, out int near);
+        var q = NearestPerson(life, hx, hy, a.Fear, out int near, out int nearest);
         if (q is not null && (!a.Predator || near >= 2 || life.NearestFire(hx / 1000, hy / 1000, Now, 5) >= 0))
         {
             q.Position(Now, out int qx, out int qy);
@@ -147,6 +144,13 @@ public sealed partial class PeopleSim
         }
         bool night = life.IsNight(Now);
         if (a.Predator && Now - h.LastMeal > a.HuntDays * GameTime.TicksPerDay && (night || rng.NextInt(100) < 40) && TryStalk(life, h, a, rng)) return;
+        // (E5b 고침) 둘레 20타일 안에 아무도 없는 풀 뜯는 무리는 그 자리에서 풀을 뜯으며 오래 머문다(걷기 · 길 보기 없이 — 계산을 덜)
+        if (!a.Predator && nearest > 20 && !night)
+        {
+            h.State = HerdState.Graze;
+            ScheduleHerd(life, h, Now + 12 * GameTime.TicksPerHour + rng.NextInt((int)(8 * GameTime.TicksPerHour)));
+            return;
+        }
         // 쉬기 · 자기: 풀 뜯는 짐승은 밤에, 포식자는 낮에 많이
         if (!a.Predator && night)
         {
@@ -159,13 +163,13 @@ public sealed partial class PeopleSim
         if (rng.NextInt(100) < (a.Predator && !night ? 65 : 30))
         {
             h.State = HerdState.Rest;
-            ScheduleHerd(life, h, Now + 2 * GameTime.TicksPerHour + rng.NextInt((int)(3 * GameTime.TicksPerHour)));
+            ScheduleHerd(life, h, Now + 4 * GameTime.TicksPerHour + rng.NextInt((int)(4 * GameTime.TicksPerHour))); // (E5b 고침) 더 길게 쉰다(판단을 덜 자주 — 계산)
             return;
         }
         // 풀 뜯으며 옮겨 간다(사는 곳에서 멀면 그쪽으로)
         int hxT = here % S, hyT = here / S, homeX = h.Home % S, homeY = h.Home / S;
         bool far = Math.Max(Math.Abs(hxT - homeX), Math.Abs(hyT - homeY)) > 22;
-        for (int tries = 0; tries < 6; tries++)
+        for (int tries = 0; tries < 2; tries++)
         {
             int tx = far ? hxT + Math.Sign(homeX - hxT) * rng.NextInt(4, 11) + rng.NextInt(-3, 4) : hxT + rng.NextInt(-9, 10);
             int ty = far ? hyT + Math.Sign(homeY - hyT) * rng.NextInt(4, 11) + rng.NextInt(-3, 4) : hyT + rng.NextInt(-9, 10);
@@ -174,7 +178,7 @@ public sealed partial class PeopleSim
             if (t == here || !life.Walk[t] || HexFrame.BorderDistance(t) < 3 || GroundInfo.IsWater(life.Map.Ground[t])) continue;
             if (!HerdWalk(life, h, t, a.Walk)) continue;
             h.State = HerdState.Graze;
-            ScheduleHerd(life, h, h.Motion.Arrive + 2 * GameTime.TicksPerHour + rng.NextInt((int)(2 * GameTime.TicksPerHour)));
+            ScheduleHerd(life, h, h.Motion.Arrive + 4 * GameTime.TicksPerHour + rng.NextInt((int)(4 * GameTime.TicksPerHour))); // (E5b 고침) 닿은 곳에서 더 오래 풀을 뜯는다
             return;
         }
         h.State = HerdState.Rest;
@@ -182,15 +186,19 @@ public sealed partial class PeopleSim
     }
 
     /// <summary>r 타일 안의 가장 가까운 사람(깨어 있으면 r, 자면 r/2 — 아기 빼고)과 그 안의 사람 수.</summary>
-    private Person? NearestPerson(ProvinceLife life, int mx, int my, int r, out int count)
+    private Person? NearestPerson(ProvinceLife life, int mx, int my, int r, out int count) => NearestPerson(life, mx, my, r, out count, out _);
+
+    /// <summary>위와 같고, 가장 가까운 사람까지의 거리(타일, 아무도 없으면 int.MaxValue)도.</summary>
+    private Person? NearestPerson(ProvinceLife life, int mx, int my, int r, out int count, out int nearest)
     {
-        Person? best = null; long bd = long.MaxValue; count = 0;
+        Person? best = null; long bd = long.MaxValue; count = 0; nearest = int.MaxValue;
         int tx = mx / 1000, ty = my / 1000;
         foreach (var q in life.People)
         {
             if (q.Dead || q.Carrier >= 0) continue;
             q.Position(Now, out int qx, out int qy);
             int d = Math.Max(Math.Abs(qx / 1000 - tx), Math.Abs(qy / 1000 - ty));
+            if (d < nearest) nearest = d;
             if (d > (q.Asleep ? r / 2 : r)) continue;
             count++;
             long dd = (long)(qx - mx) * (qx - mx) + (long)(qy - my) * (qy - my);
@@ -211,7 +219,7 @@ public sealed partial class PeopleSim
         for (int d = 0; d < 8; d++) { order[d] = d; dot[d] = (DX8[d] * ax + DY8[d] * ay) * (DX8[d] != 0 && DY8[d] != 0 ? 7 : 10); }
         for (int i = 1; i < 8; i++) for (int j = i; j > 0 && (dot[order[j]] > dot[order[j - 1]] || (dot[order[j]] == dot[order[j - 1]] && order[j] < order[j - 1])); j--) (order[j], order[j - 1]) = (order[j - 1], order[j]);
         int dist = 12 + rng.NextInt(9);
-        for (int k = 0; k < 5; k++)
+        for (int k = 0; k < 3; k++)
         {
             int d = order[k];
             int len = DX8[d] != 0 && DY8[d] != 0 ? dist * 7 / 10 : dist;
@@ -241,7 +249,7 @@ public sealed partial class PeopleSim
         {
             int qt = q.Tile(Now);
             int goal = HerdBeside(life, qt, h.Id);
-            if (HerdWalk(life, h, goal, a.Walk, find: true))
+            if (HerdWalk(life, h, goal, a.Walk))
             {
                 h.State = HerdState.Stalk; h.Target = q.Id; h.TargetKind = 1;
                 St.Stalks++;
@@ -261,7 +269,7 @@ public sealed partial class PeopleSim
         }
         if (prey is null) return false;
         int pt = prey.Tile(Now);
-        if (!HerdWalk(life, h, HerdBeside(life, pt, h.Id), a.Walk, find: true)) return false;
+        if (!HerdWalk(life, h, HerdBeside(life, pt, h.Id), a.Walk)) return false; // (E5b 고침) 곧게 갈 수 있는 먹잇감만(길 찾기 없이)
         h.State = HerdState.Stalk; h.Target = prey.Id; h.TargetKind = 2;
         ScheduleHerd(life, h, h.Motion.Arrive);
         return true;
@@ -464,9 +472,16 @@ public sealed partial class PeopleSim
         if (Cheb(here, ot) > 3)
         {
             int goal = HerdBeside(life, ot, h.Id);
-            if (goal != here && HerdWalk(life, h, goal, Math.Max(8, a.Walk - 6), find: Cheb(here, ot) < 60))
+            if (goal != here && HerdWalk(life, h, goal, Math.Max(8, a.Walk - 6)))
             {
                 ScheduleHerd(life, h, h.Motion.Arrive + 600 + rng.NextInt(1_200));
+                return;
+            }
+            // (E5b 고침) 곧게 못 가면(길 찾기 없이) 멀리 처졌을 때 따라잡는다 — 보이지 않는 사이 사람 곁으로
+            if (Cheb(here, ot) > SightTiles && goal >= 0 && life.Walk[goal])
+            {
+                h.NewMotion(); h.Motion.SetStill(Now, goal % S * 1000 + 500, goal / S * 1000 + 500);
+                ScheduleHerd(life, h, Now + 600 + rng.NextInt(1_200));
                 return;
             }
         }

@@ -350,6 +350,9 @@ public partial class Main : Node
         _infoTimer = 0.5;
         var m = _province.MapOf(_province.Center);
         if (m is null) return;
+        // (E5b 고침) 땅에 이름이 붙으면 위 막대 제목도 따라 바뀐다(전에는 들어갈 때 한 번만 정해 왼쪽 지방 정보와 달랐다)
+        string title = ProvinceTitle(_province.Center);
+        if (title != _hud.ProvinceName) _hud.SetProvinceMode(true, title, _neighborsPref);
         var facts = ProvinceReport.Describe(p, m, _host.RenderTick + ShowTickOffset);
         if (_snap is not null && _snap.LandNames.TryGetValue(m.Cell, out var names) && names.Length > 0)
         {

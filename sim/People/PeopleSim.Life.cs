@@ -310,6 +310,7 @@ public sealed partial class PeopleSim
     {
         if (p.Dead) return;
         Integrate(p, Now);
+        DeathHook?.Invoke(this, p, cause);
         Unschedule(p);
         p.Position(Now, out int x, out int y);
         if (p.Carrier >= 0 && Get(p.Carrier) is { } c) c.Position(Now, out x, out y);

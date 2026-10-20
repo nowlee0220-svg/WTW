@@ -107,6 +107,7 @@ public class SpeedTests
     //   S1 시작(main): families 0x491270119F364ED4 · village 0xA403FD1B3D62CD60 — (가) 정비 뒤에도 같았다
     //   S1 지방마다 CPU(맞추는 시각 · 지방마다 예약표 · 미룬 세계의 일 · 저장 버전 9): 순서가 바뀌어 새 값
     //   E5b 짐승 · 사냥(지방마다 짐승 무리 · 새 예약 종류 · 바람 12칸 · 저장 버전 10): 짐승과 사냥이 세계를 바꿔 새 값
-    private const ulong PinFamilies = 0x3DACAEC29443E053UL;
-    private const ulong PinVillage = 0x6BA4F835EB4F448DUL;
+    //   E5b 고침(목마름 · 썩음 · 속도 — 경계 넘어 설 자리 · 사냥 길 · 무리 판단 · 손질 몫 · 바구니 되풀이): 결과가 바뀌어 새 값
+    private const ulong PinFamilies = 0xFACD890671DE9C42UL;
+    private const ulong PinVillage = 0x8B32E97A8D9A9E81UL;
 }

@@ -27,6 +27,7 @@ internal sealed class SimLane
 
     public readonly List<(int X, int Y)> Path = new();
     public readonly List<int> TmpThoughts = new();
+    public readonly List<int> RotTiles = new();
     public readonly List<Person> Hunters = new();
     public readonly List<(int Score, int Code)> Opts = new();
     public readonly Dictionary<int, int> Claims = new();

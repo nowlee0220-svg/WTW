@@ -18,7 +18,7 @@ public static class HuntBench
     {
         public ulong Seed; public int Cell; public string Biome = ""; public double Temp;
         public int Alive, Ever, Peak; public long[] Deaths = new long[12];
-        public long HuntsStarted, HuntsTried, HuntSuccess, HuntInjuries, HuntDeaths, BeastAttacks, BeastDeaths, FireRepelled, FishCaught, Tamed, Butchered, Injuries, Rotted, WornOut, LeftForGame, Born, Immigrant, PreyKilled;
+        public long HuntsStarted, HuntsTried, HuntSuccess, HuntInjuries, HuntDeaths, BeastAttacks, BeastDeaths, FireRepelled, FishCaught, Tamed, Butchered, Injuries, Rotted, WornOut, LeftForGame, Born, Immigrant, PreyKilled, RotMeat, RotHide, RotOther, RotGround, MeatGot, Dropped, Shared, Dried, Stash;
         public long[] Kills = new long[16];
         public int[] AnimalsStart = Array.Empty<int>(), AnimalsEnd = Array.Empty<int>(), Caps = Array.Empty<int>();
         public readonly SortedDictionary<string, int> FirstYear = new();
@@ -37,6 +37,7 @@ public static class HuntBench
     public static string HuntDetail(GameWorld w)
     {
         var st = w.People.Stats; var sb = new StringBuilder();
+        sb.AppendLine($"(E5b) 썩음: 날고기 {st.RotMeat} · 날가죽 {st.RotHide} · 그 밖 {st.RotOther} · 땅의 짐승 것 {st.RotGround} · 손질로 얻은 고기 {st.MeatGot} · 못 들어 둔 것 {st.ButcherDropped}");
         sb.AppendLine($"(E5b) 배탈 {st.BadStomachs} · 익힌 끼니 {st.CookedMeals} · 썩음 {st.Rotted} · 다침 {st.Injuries} · 무리 판단 {st.HerdEvents} · 달아남 {st.HerdFlees} · 쫓음 {st.Stalks}");
         var acts = new SortedDictionary<string, int>();
         foreach (var q in w.People.All) if (!q.Dead) foreach (var (it, n) in q.Carry) acts[w.People.Craft.ItemName(it)] = acts.GetValueOrDefault(w.People.Craft.ItemName(it)) + n;
@@ -113,7 +114,7 @@ public static class HuntBench
         Array.Copy(st.Deaths, row.Deaths, 12);
         row.HuntsStarted = st.HuntsStarted; row.HuntsTried = st.HuntsTried; row.HuntSuccess = st.HuntSuccess; row.HuntInjuries = st.HuntInjuries; row.HuntDeaths = st.Deaths[(int)DeathCause.HuntAccident];
         row.BeastAttacks = st.BeastAttacks; row.BeastDeaths = st.Deaths[(int)DeathCause.Beast]; row.FireRepelled = st.FireRepelled; row.FishCaught = st.FishCaught; row.Tamed = st.Tamed; row.Butchered = st.Butchered;
-        row.Injuries = st.Injuries; row.Rotted = st.Rotted; row.WornOut = st.ClothesWornOut; row.LeftForGame = st.LeftForGame; row.Born = st.AnimalsBorn; row.Immigrant = st.ImmigrantHerds; row.PreyKilled = st.PreyKilled;
+        row.Injuries = st.Injuries; row.Rotted = st.Rotted; row.WornOut = st.ClothesWornOut; row.LeftForGame = st.LeftForGame; row.Born = st.AnimalsBorn; row.Immigrant = st.ImmigrantHerds; row.PreyKilled = st.PreyKilled; row.RotMeat = st.RotMeat; row.RotHide = st.RotHide; row.RotOther = st.RotOther; row.RotGround = st.RotGround; row.MeatGot = st.MeatGot; row.Dropped = st.ButcherDropped; row.Shared = st.MeatShared; row.Dried = st.MeatDried; row.Stash = st.StashEaten;
         Array.Copy(st.KillsBySpecies, row.Kills, 16);
         row.HerdEvents = st.HerdEvents; row.PersonEvents = st.Events;
         if (ps.Provinces.TryGetValue(cell, out var life)) row.AnimalsEnd = ps.AnimalCounts(life);
@@ -166,7 +167,9 @@ public static class HuntBench
         long tried = rows.Sum(r => r.HuntsTried), succ = rows.Sum(r => r.HuntSuccess);
         sb.AppendLine($"- 사냥: 나섬 {Med(rows.Select(r => (double)r.HuntsStarted))} · 몰아 봄 {Med(rows.Select(r => (double)r.HuntsTried))} · 잡음 {Med(rows.Select(r => (double)r.HuntSuccess))} (모두 합 성공률 {succ * 100.0 / Math.Max(1, tried):0}%) · 사냥 다침 {Med(rows.Select(r => (double)r.HuntInjuries))} · 사냥 사고 죽음 {Med(rows.Select(r => (double)r.HuntDeaths))}");
         sb.AppendLine($"- 포식자: 사람을 덮침 {Med(rows.Select(r => (double)r.BeastAttacks))} · 짐승에게 죽음 {Med(rows.Select(r => (double)r.BeastDeaths))} · 불을 보고 물러남 {Med(rows.Select(r => (double)r.FireRepelled))} · 포식자가 잡은 짐승 {Med(rows.Select(r => (double)r.PreyKilled))}");
-        sb.AppendLine($"- 물고기 {Med(rows.Select(r => (double)r.FishCaught))} · 길들임 {Med(rows.Select(r => (double)r.Tamed))} · 손질 {Med(rows.Select(r => (double)r.Butchered))} · 썩어 버린 것 {Med(rows.Select(r => (double)r.Rotted))} · 해진 옷 {Med(rows.Select(r => (double)r.WornOut))} · 짐승이 줄어 떠남 {Med(rows.Select(r => (double)r.LeftForGame))}");
+        sb.AppendLine($"- 물고기 {Med(rows.Select(r => (double)r.FishCaught))} · 길들임 {Med(rows.Select(r => (double)r.Tamed))} · 손질 {Med(rows.Select(r => (double)r.Butchered))} · 썩어 버린 것 {Med(rows.Select(r => (double)r.Rotted))} · 해진 옷 {Med(rows.Select(r => (double)r.WornOut))}");
+        sb.AppendLine($"- 썩음(중앙값): 들고 있던 날고기 · 날생선 {Med(rows.Select(r => (double)r.RotMeat))} · 날가죽 {Med(rows.Select(r => (double)r.RotHide))} · 그 밖(열매 등) {Med(rows.Select(r => (double)r.RotOther))} · 땅에 둔 짐승 것 {Med(rows.Select(r => (double)r.RotGround))} · 손질로 얻은 고기 {Med(rows.Select(r => (double)r.MeatGot))} · 그 자리에 둔 것 {Med(rows.Select(r => (double)r.Dropped))} · 나눠 준 고기 {Med(rows.Select(r => (double)r.Shared))} · 말려 둔 고기 {Med(rows.Select(r => (double)r.Dried))} · 둔 먹을 것 가지러 {Med(rows.Select(r => (double)r.Stash))}");
+        sb.AppendLine($"- (이어서) 짐승이 줄어 떠남 {Med(rows.Select(r => (double)r.LeftForGame))}");
         sb.AppendLine($"- 끝에 털옷 입은 사람 {Med(rows.Select(r => (double)r.WearingCoat))} · 무엇이든 입은 사람 {Med(rows.Select(r => (double)r.WearingAny))} · 사람 사는 칸 {Med(rows.Select(r => (double)r.Inhabited))} · 연평균 0°C 아래 칸에 사는 사람 {Med(rows.Select(r => (double)r.ColdPeople))}(그중 털옷 {Med(rows.Select(r => (double)r.CoatColdPeople))}) · 추운 칸에 사람이 사는 시드 {rows.Count(r => r.ColdPeople > 0)}/{seeds} · 가장 추운 산 칸 연평균 {Med(rows.Where(r => !double.IsNaN(r.ColdestTemp)).Select(r => r.ColdestTemp)):0.0}°C");
         long deaths = rows.Sum(r => r.Deaths.Sum());
         var names = new[] { "-", "굶주림", "목마름", "추위", "더위", "늙음", "병", "짐승", "사냥 사고" };
