@@ -196,14 +196,20 @@ public sealed class ProvinceLife
         FarmVersion++;
     }
 
-    public void AddPlot(Plot p) { Plots[p.Tile] = p; if (p.Due > 0) PlotDue.Add((p.Due, p.Tile)); FarmVersion++; }
+    public void AddPlot(Plot p) { Plots[p.Tile] = p; PlotAt[p.Tile] = p; _plotArr = null; if (p.Due > 0) PlotDue.Add((p.Due, p.Tile)); FarmVersion++; }
 
     public void RemovePlot(int tile)
     {
         if (!Plots.Remove(tile, out var p)) return;
+        PlotAt[tile] = null; _plotArr = null;
         if (p.Due > 0) PlotDue.Remove((p.Due, p.Tile));
         FarmVersion++;
     }
+
+    /// <summary>(E5c) 타일 → 밭(없으면 null) — Plots 와 같은 것을 빨리 찾으려고. 밭들(타일 순 배열, 바뀌기 전까지 같은 것 — 돌 때 메모리를 잡지 않게).</summary>
+    public readonly Plot?[] PlotAt = new Plot?[HexFrame.TileCount];
+    private Plot[]? _plotArr;
+    public Plot[] PlotList => _plotArr ??= Plots.Values.ToArray();
 
     private static List<int>[] NewBuckets() { var a = new List<int>[Buckets * Buckets]; for (int i = 0; i < a.Length; i++) a[i] = new List<int>(); return a; }
 

@@ -37,8 +37,12 @@ public sealed partial class PeopleSim
         I_grain = Craft.ItemIndex("grain"); I_beans = Craft.ItemIndex("beans"); I_tuber = Craft.ItemIndex("tuber");
         I_sownPatch = Craft.ItemIndex("sown_patch"); I_field = Craft.ItemIndex("field");
         R_sow = Craft.Rule("sow"); R_field = Craft.Rule("field");
+        _seedOk = h => IsSeed(h.ItemIndex);
         T_ambitiousF = Data.TraitIndex("ambitious");
     }
+
+    /// <summary>밭일 바람: 아쉬움을 겪을 때마다 오르지만 40 까지만(같은 아쉬움이 쌓여 한없이 커지지 않게 — 실험 · 재료 찾기가 늘어 계산이 무거워졌다).</summary>
+    private void FarmWish(Person p, int amount) { if (W_farming >= 0 && p.Wish[W_farming] < 40) AddWish(p, W_farming, Math.Min(amount, 40 - p.Wish[W_farming])); }
 
     /// <summary>씨(심으면 나는 것)인가.</summary>
     public bool IsSeed(int item) => P_sprouts >= 0 && Prop(item, P_sprouts) >= 2 && Craft.Catalog.Items[item].Kind != "place";
@@ -188,9 +192,7 @@ public sealed partial class PeopleSim
     {
         if (!IsSeed(item) || rng.NextInt(100) >= 5) return;
         var life = Life(p.Cell);
-        int wild = 0;
-        foreach (var (_, q) in life.Plots) if (q.Wild) wild++;
-        if (wild >= WildPlotCap) return;
+        if (ViewOf(life).Wild >= WildPlotCap) return;
         int here = p.Tile(Now);
         for (int tries = 0; tries < 6; tries++)
         {
@@ -207,7 +209,7 @@ public sealed partial class PeopleSim
     }
 
     private bool FreeForPlot(ProvinceLife life, int t) =>
-        (uint)t < HexFrame.TileCount && life.Walk[t] && !GroundInfo.IsWater(life.Map.Ground[t]) && GrowAt(life, t) > 0 && !life.Plots.ContainsKey(t)
+        (uint)t < HexFrame.TileCount && life.Walk[t] && !GroundInfo.IsWater(life.Map.Ground[t]) && GrowAt(life, t) > 0 && life.PlotAt[t] is null
         && !life.Fires.ContainsKey(t) && t != life.Stash && !life.HasItems(t) && HexFrame.BorderDistance(t) >= 3;
 
     /// <summary>
@@ -234,37 +236,40 @@ public sealed partial class PeopleSim
         if (!outcome.Success || outcome.Rule is null) return;
         St.SproutLearned++;
         Learn(p, outcome.Rule, W_farming, seen.Crop, -1, -1);
-        AddWish(p, W_farming, 30);
+        FarmWish(p, 30);
     }
 
     // ───────── 밭일 고르기 ─────────
 
-    /// <summary>지방의 밭 모습(밭이 바뀌거나 한 시간이 지나면 다시 셈한다 — 결과에 영향 없는 기억).</summary>
+    /// <summary>
+    /// 지방의 밭 모습: 밭 상태로만 정해지는 목록(밭이 바뀔 때만 — FarmVersion — 다시 셈한다). 시각 · 사람 · 짐승에 따라 바뀌는 것은 넣지 않는다
+    /// (저장하지 않는 기억이라, 불러온 뒤 다시 셈해도 같아야 한다 — 결정론).
+    /// </summary>
     private sealed class FarmView
     {
-        public int Version = -1; public long Hour = -1;
-        public readonly List<int> Ripe = new(), Weedy = new(), EmptyTilled = new(), Crops = new();
-        public int Tilled, Plots, Wild, People;
-        /// <summary>새로 심을 땅(가운데 · 판) · 노려지는 밭(한 시간마다).</summary>
-        public int NewTile = -2, NewCenter = -1, NewVersion = -1, Threat = -2;
+        public int Version = -1;
+        public readonly List<int> Ripe = new(), EmptyTilled = new(), Crops = new();
+        public readonly List<Plot> TilledGrowing = new();
+        /// <summary>일군 자라는 밭 가운데 잡풀이 가장 먼저 50 에 닿는 때(그 전에는 김맬 밭이 없다).</summary>
+        public long WeedyFrom = long.MaxValue;
+        public int Tilled, Plots, Wild;
     }
     private FarmView ViewOf(ProvinceLife life)
     {
         var v = life.FarmCache as FarmView ?? (FarmView)(life.FarmCache = new FarmView());
-        long hour = Now / GameTime.TicksPerHour;
-        if (v.Version == life.FarmVersion && v.Hour == hour) return v;
-        v.Version = life.FarmVersion; v.Hour = hour;
-        v.Ripe.Clear(); v.Weedy.Clear(); v.EmptyTilled.Clear(); v.Crops.Clear(); v.Tilled = 0; v.Plots = 0; v.Wild = 0; v.Threat = -2; v.People = 0;
-        foreach (var q in life.People) if (!q.Dead && q.Stage(Now) != LifeStage.Baby) v.People++;
-        foreach (var (t, q) in life.Plots)
+        if (v.Version == life.FarmVersion) return v;
+        v.Version = life.FarmVersion;
+        v.Ripe.Clear(); v.TilledGrowing.Clear(); v.EmptyTilled.Clear(); v.Crops.Clear(); v.Tilled = 0; v.Plots = 0; v.Wild = 0; v.WeedyFrom = long.MaxValue;
+        foreach (var q in life.PlotList)
         {
+            int t = q.Tile;
             v.Plots++;
             if (q.Wild) v.Wild++;
             if (q.Tilled) v.Tilled++;
             if (q.Stage == PlotStage.Ripe && q.Crop >= 0) v.Ripe.Add(t);
             if (q.Stage == PlotStage.Empty) v.EmptyTilled.Add(t);
             if (q.Stage is PlotStage.Sprout or PlotStage.Growing or PlotStage.Ripe && q.Crop >= 0) v.Crops.Add(t);
-            if (q.Stage is PlotStage.Sprout or PlotStage.Growing && q.Tilled && WeedsOf(q, Now) >= 50) v.Weedy.Add(t); // 김은 일군 밭만(그냥 묻은 자리는 매도 금세 덮인다)
+            if (q.Stage is PlotStage.Sprout or PlotStage.Growing && q.Tilled) { v.TilledGrowing.Add(q); v.WeedyFrom = Math.Min(v.WeedyFrom, q.LastTend + 25 * GameTime.TicksPerDay); } // 김은 일군 밭만(그냥 묻은 자리는 매도 금세 덮인다) · 하루 2씩이라 25일에 50
         }
         return v;
     }
@@ -283,7 +288,8 @@ public sealed partial class PeopleSim
     private int StorableCarried(Person p) { int n = 0, seeds = 0; foreach (var (it, c) in p.Carry) if (Storable(it)) { if (IsSeed(it)) seeds += c; else n += c; } return n + Math.Max(0, seeds - SeedKeep); }
     /// <summary>심으려고 들고 다니는 씨(모아 둔 자리에 두지 않는다).</summary>
     public const int SeedKeep = 6;
-    private const long SeedMissKey = -77;
+    private const long SeedMissKey = -77, NoLandKey = -78;
+    private Func<HarvestDef, bool>? _seedOk;
     private bool Storable(int it) => Prop(it, Craft.P_edible) >= 1 && Prop(it, Craft.P_rots) <= 2 && Prop(it, Craft.P_poison) <= 1 && Craft.Catalog.Items[it].Kind != "place";
 
     /// <summary>
@@ -305,48 +311,67 @@ public sealed partial class PeopleSim
         int here = p.Tile(Now);
         int skill = p.SkillLevel(PeopleData.Farming);
         var v = ViewOf(life);
+        // (가장 높은 점수의 일 하나 — 이길 수 없는 일은 셈하지 않는다. 지역 함수 · 람다를 쓰지 않는다: 판단마다 메모리를 잡지 않게)
         int best = int.MinValue; FarmJob job = FarmJob.None; int tile = -1;
-        void Take(FarmJob j, int t, int s) { if (s > best) { best = s; job = j; tile = t; } }
         bool room = CarryWeight(p) + 3 <= CarryCapOf(p);
         // 1) 익은 것
-        if (room && v.Ripe.Count > 0 && NearestOf(v.Ripe, here, 60, life) is int rt && rt >= 0) Take(FarmJob.Harvest, rt, 30 + skill * 2);
-        // 2) 밭을 노리는 짐승
-        if (v.Crops.Count > 0)
+        if (room && v.Ripe.Count > 0) { int rt = NearestOf(v.Ripe, here, 40, life); if (rt >= 0 && 30 + skill * 2 > best) { best = 30 + skill * 2; job = FarmJob.Harvest; tile = rt; } }
+        // 2) 밭으로 오는 짐승(밭을 노리고 걸어오는 무리)
+        if (v.Crops.Count > 0 && 24 > best)
         {
-            if (v.Threat == -2) v.Threat = ThreatenedPlot(life, v);
-            if (v.Threat >= 0 && Cheb(v.Threat, here) <= 50 && life.Region[v.Threat] == life.Region[here]) Take(FarmJob.Guard, v.Threat, 24);
+            int threat = ThreatenedPlot(life);
+            if (threat >= 0 && Cheb(threat, here) <= 30 && life.Region[threat] == life.Region[here]) { best = 24; job = FarmJob.Guard; tile = threat; }
         }
         // 3) 거둔 것 · 말린 고기를 모아 두기
-        int store = StorableCarried(p);
         bool stashOk = life.Stash < 0 || life.Paths.Reachable(here, life.Stash);
-        if (store >= 5 && stashOk && (life.Stash < 0 || Cheb(life.Stash, here) > 2)) Take(FarmJob.Store, life.Stash, 20);
+        if (20 > best && stashOk && (life.Stash < 0 || Cheb(life.Stash, here) > 2) && StorableCarried(p) >= 5) { best = 20; job = FarmJob.Store; tile = life.Stash; }
         // 4) 심기: 씨가 있으면 빈 밭에, 없으면 새 땅에(무리 사람 수만큼 넓힌다)
         int seeds = CarriedSeeds(p);
-        bool expand = v.Plots - v.Wild < FarmTarget(v.People);
+        int expand = -1; // 넓힐까(사람 수를 세는 것은 필요할 때 한 번만): −1 아직 · 0 아니 · 1 넓힘
         if (seeds > 0)
         {
-            int st = v.EmptyTilled.Count > 0 ? NearestOf(v.EmptyTilled, here, 60, life) : -1;
-            if (st < 0 && expand)
+            if (18 + skill > best)
             {
-                int center = life.Stash >= 0 ? life.Stash : here;
-                if (v.NewVersion != life.FarmVersion || v.NewCenter != center) { v.NewVersion = life.FarmVersion; v.NewCenter = center; v.NewTile = NewPlotTile(life, here); }
-                st = v.NewTile >= 0 && life.Region[v.NewTile] == life.Region[here] ? v.NewTile : -1;
+                int st = v.EmptyTilled.Count > 0 ? NearestOf(v.EmptyTilled, here, 40, life) : -1;
+                if (st < 0 && Expand(p, life, v, ref expand))
+                {
+                    st = NewPlotTile(life, here);
+                    if (st >= 0 && life.Region[st] != life.Region[here]) st = -1;
+                    if (st < 0) { p.MissKey = NoLandKey; p.MissTick = Now; expand = 0; } // 둘레에 심을 땅이 없다 — 여섯 시간은 다시 찾지 않는다
+                }
+                if (st >= 0) { best = 18 + skill; job = FarmJob.Sow; tile = st; }
             }
-            if (st >= 0) Take(FarmJob.Sow, st, 18 + skill);
         }
-        else if ((v.EmptyTilled.Count > 0 || expand && v.NewTile >= 0) && life.Stash >= 0 && stashOk && StashSeeds(life) > 0 && Cheb(life.Stash, here) <= 60 && room) Take(FarmJob.FetchSeed, life.Stash, 15);
-        else if ((v.EmptyTilled.Count > 0 || expand) && room && !(p.MissKey == SeedMissKey && Now - p.MissTick < GameTime.TicksPerHour))
+        else if (room && life.Stash >= 0 && stashOk && Cheb(life.Stash, here) <= 40 && StashSeeds(life) > 0 && (v.EmptyTilled.Count > 0 || Expand(p, life, v, ref expand)))
+        { if (15 > best) { best = 15; job = FarmJob.FetchSeed; tile = life.Stash; } }
+        else if (14 + skill > best && room && !SeedMissed(p) && (v.EmptyTilled.Count > 0 || Expand(p, life, v, ref expand)))
         {
             // 심을 씨가 하나도 없다 → 들의 낟알 · 콩 · 덩이뿌리를 모은다
-            p.Position(Now, out int px, out int py);
-            int gt2 = life.NearestCarryWhere(px / 1000, py / 1000, Now, 30, h => IsSeed(h.ItemIndex));
-            if (gt2 >= 0) Take(FarmJob.GatherSeed, gt2, 14 + skill);
-            else { p.MissKey = SeedMissKey; p.MissTick = Now; } // 둘레에 없다 — 한 시간은 다시 찾지 않는다(재료 못 찾음 기억과 같은 칸)
+            int gt2 = NearestSeedPlant(p, life, 30);
+            if (gt2 >= 0) { best = 14 + skill; job = FarmJob.GatherSeed; tile = gt2; }
         }
         // 5) 김매기
-        if (v.Weedy.Count > 0 && NearestOf(v.Weedy, here, 40, life) is int wt && wt >= 0) Take(FarmJob.Weed, wt, 10 + skill);
+        if (10 + skill > best && v.TilledGrowing.Count > 0 && Now >= v.WeedyFrom) { int wt = NearestWeedy(life, v, here); if (wt >= 0) { best = 10 + skill; job = FarmJob.Weed; tile = wt; } }
         jobOut = job; tileOut = tile;
         return best;
+    }
+
+    private bool Expand(Person p, ProvinceLife life, FarmView v, ref int memo)
+    {
+        if (memo < 0) memo = v.EmptyTilled.Count == 0 && !(p.MissKey == NoLandKey && Now - p.MissTick < 6 * GameTime.TicksPerHour) && v.Plots - v.Wild < FarmTarget(FarmPeople(life)) ? 1 : 0;
+        return memo == 1;
+    }
+
+    /// <summary>둘레에 씨를 맺는 들풀이 없었던 지 한 시간이 안 됐다(재료 못 찾음 기억과 같은 칸).</summary>
+    private bool SeedMissed(Person p) => p.MissKey == SeedMissKey && Now - p.MissTick < GameTime.TicksPerHour;
+
+    /// <summary>r 타일 안의 몫이 남은 씨 맺는 들풀(낟알 풀 · 들콩 · 덩이뿌리). 없으면 한 시간 동안 기억한다.</summary>
+    private int NearestSeedPlant(Person p, ProvinceLife life, int r)
+    {
+        p.Position(Now, out int px, out int py);
+        int t = life.NearestCarryWhere(px / 1000, py / 1000, Now, r, _seedOk!);
+        if (t < 0) { p.MissKey = SeedMissKey; p.MissTick = Now; }
+        return t;
     }
 
     /// <summary>무리가 일구려는 밭 크기: 사람(아기 빼고) 하나에 네 칸, 120칸까지.</summary>
@@ -360,21 +385,30 @@ public sealed partial class PeopleSim
         return best;
     }
 
-    /// <summary>풀 먹는 들짐승 무리가 15타일 안에 있고 곁(5타일)에 아무도 없는 자라는 밭(없으면 −1).</summary>
-    private int ThreatenedPlot(ProvinceLife life, FarmView v)
+    /// <summary>밭을 노리고 오는 풀 먹는 들짐승 무리의 겨눈 밭(번호가 가장 작은 무리 — 없으면 −1).</summary>
+    private int ThreatenedPlot(ProvinceLife life)
     {
         if (life.Herds.Count == 0) return -1;
-        foreach (var h in life.Herds.Values)
-        {
-            if (h.Tame || Fauna.Animals[h.Species].Predator) continue;
-            int ht = h.Tile(Now);
-            int pt = NearestOf(v.Crops, ht, 15);
-            if (pt < 0) continue;
-            if (NearestPerson(life, pt % S * 1000 + 500, pt / S * 1000 + 500, 5, out int n) is not null && n > 0) continue;
-            return pt;
-        }
+        foreach (var h in life.Herds.Values) if (h.TargetKind == 3 && !h.Tame && h.Target >= 0) return h.Target;
         return -1;
     }
+
+    /// <summary>40타일 안에서 잡풀이 많은(50 이상) 일군 밭 가운데 가장 가까운 것.</summary>
+    private int NearestWeedy(ProvinceLife life, FarmView v, int here)
+    {
+        int best = -1, bd = 41, reg = life.Region[here];
+        foreach (var q in v.TilledGrowing)
+        {
+            int t = q.Tile, d = Cheb(t, here);
+            if (d >= bd || life.Region[t] != reg) continue;
+            if (WeedsOf(q, Now) < 50) continue;
+            bd = d; best = t;
+        }
+        return best;
+    }
+
+    /// <summary>밭을 일굴 사람 수(아기 빼고).</summary>
+    private int FarmPeople(ProvinceLife life) { int n = 0; foreach (var q in life.People) if (!q.Dead && q.Stage(Now) != LifeStage.Baby) n++; return n; }
 
     /// <summary>새로 심을 땅: 모아 둔 자리(없으면 지금 자리) 둘레 14타일을 안에서부터 — 이미 있는 밭에 붙여서, 자라기 좋은 곳(25 이상).</summary>
     private int NewPlotTile(ProvinceLife life, int here)
@@ -466,7 +500,7 @@ public sealed partial class PeopleSim
             {
                 int x = tile % S + dx, y = tile / S + dy;
                 if ((uint)x >= S || (uint)y >= S) continue;
-                if (life.Plots.TryGetValue(y * S + x, out var q) && ok(q)) list.Add(q);
+                if (life.PlotAt[y * S + x] is { } q && ok(q)) list.Add(q);
             }
         list.Sort((a, b) => a.Tile.CompareTo(b.Tile));
         if (list.Count > max) list.RemoveRange(max, list.Count - max);
@@ -524,8 +558,8 @@ public sealed partial class PeopleSim
             else HarvestFirstWorld(p, got);
         }
         // 그냥 묻은 자리는 잡풀에 덮여 덜 거둔다 → 땅을 제대로 일구고 싶다(밭일 도구 · 일구는 법)
-        if (poor) AddWish(p, W_farming, 20);
-        if (got * 2 < potential) AddWish(p, W_farming, 10);
+        if (poor) FarmWish(p, 20);
+        if (got * 2 < potential) FarmWish(p, 10);
     }
 
     /// <summary>(S1) 무리에서 처음 거둠(세계 쪽 — 맞추는 시각에): 알림 하나.</summary>
@@ -539,13 +573,13 @@ public sealed partial class PeopleSim
         bool field = KnowsField(p);
         int tool = BestTool(p, P_digs, 1);
         bool canTill = field && tool >= 0 && Prop(tool, P_digs) >= 2;
-        if (field && !canTill) AddWish(p, W_farming, 12); // 일구는 법은 아는데 땅을 팔 것이 없다
+        if (field && !canTill) FarmWish(p, 12); // 일구는 법은 아는데 땅을 팔 것이 없다
         if (life.Stash < 0) life.Stash = ChooseStash(life, p.Tile(Now));
         if (life.FarmSince < 0) life.FarmSince = Now;
         // 심을 타일: 겨눈 타일과 둘레의 빈 밭 · 빈 땅(셋까지)
         var tiles = new List<int> { p.Target };
         var view = ViewOf(life);
-        int room = FarmTarget(view.People) - (life.Plots.Count - view.Wild);
+        int room = FarmTarget(FarmPeople(life)) - (life.Plots.Count - view.Wild);
         for (int k = 0; k < 8 && tiles.Count < 3; k++)
         {
             int x = p.Target % S + DX8[k], y = p.Target / S + DY8[k];
@@ -738,8 +772,10 @@ public sealed partial class PeopleSim
     /// <summary>딸 열매가 없으면 둘레(25타일)의 낟알 · 콩 · 덩이뿌리를 줍는다(익히는 법을 알거나 아주 배고플 때).</summary>
     private bool TryGatherSeedFood(Person p, ProvinceLife life, int hx, int hy, Why why)
     {
-        if (!KnowsAnyRoast(p) && p.Food > UrgentFood) return false;
-        int t = life.NearestCarryWhere(hx, hy, Now, 25, h => IsSeed(h.ItemIndex) && Prop(h.ItemIndex, Craft.P_edible) > 0);
+        // 날것으로는 배가 거의 안 찬다 — 익힐 수 있을 때(익히는 법 + 45타일 안의 불) 아니면 아주 배고플 때만
+        if (p.Food > UrgentFood && (!KnowsAnyRoast(p) || life.NearestFire(hx, hy, Now, 45) < 0)) return false;
+        if (SeedMissed(p)) return false; // 한 시간 안에 둘레에 없었다
+        int t = NearestSeedPlant(p, life, 25);
         if (t < 0 || !WalkTo(p, t)) return false;
         SetWhy(p, Act.Gather, Why.SeedFood); p.Target = t;
         St.SeedGathered++;
@@ -773,7 +809,7 @@ public sealed partial class PeopleSim
                     if (q.Planter >= 0 && Get(q.Planter) is { Dead: false } owner && owner.Cell == life.Cell && Cheb(owner.Tile(Now), t0) <= SightTiles)
                     {
                         AddBio(owner, BioKind.FieldEaten, h.Species, q.Tile);
-                        AddWish(owner, W_farming, 8);
+                        FarmWish(owner, 8);
                     }
                 }
                 h.State = HerdState.Graze;
@@ -801,7 +837,7 @@ public sealed partial class PeopleSim
             {
                 int x = tile % S + dx, y = tile / S + dy;
                 if ((uint)x >= S || (uint)y >= S) continue;
-                if (life.Plots.TryGetValue(y * S + x, out var q) && q.Stage >= PlotStage.Sprout && q.Crop >= 0) list.Add(q);
+                if (life.PlotAt[y * S + x] is { } q && q.Stage >= PlotStage.Sprout && q.Crop >= 0) list.Add(q);
             }
         list.Sort((a, b) => a.Tile.CompareTo(b.Tile));
         return list;

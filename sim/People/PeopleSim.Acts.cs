@@ -551,7 +551,8 @@ public sealed partial class PeopleSim
                     if (Craft.Prop(h.ItemIndex, Craft.P_hardness) >= 4) { if (!HasHardTool(p)) AddWish(p, W_hardTool, 20); if (HasHardTool(p) && p.CarryCount(h.ItemIndex) == 0) p.AddCarry(h.ItemIndex, 1); }
                     // (E4) 그릇이 있으면 남는 몫을 담아 둔다
                     // (E5b 고침) 들고 있는 먹을 것이 넉넉하면(4개) 더 담지 않는다 — 담아 둔 열매가 먹기 전에 썩었다
-                    if (p.PlanItem == 2 && life.StockAt(p.Target, Now) > 0 && FoodCarried(p) < 4) { int extra = life.Take(p.Target, Math.Min(Math.Min(3, 4 - FoodCarried(p)), life.StockAt(p.Target, Now)), Now); p.AddCarry(h.ItemIndex, extra); p.PlanItem = -1; }
+                    // (E5c 고침) 금방 썩는 열매(썩는다 4 이상 — 산딸기 · 바나나)는 담아 두지 않고 먹을 만큼만 딴다(E5b: 썩은 것의 80% 가 따 둔 열매)
+                    if (p.PlanItem == 2 && Craft.Prop(h.ItemIndex, Craft.P_rots) <= 3 && life.StockAt(p.Target, Now) > 0 && FoodCarried(p) < 4) { int extra = life.Take(p.Target, Math.Min(Math.Min(3, 4 - FoodCarried(p)), life.StockAt(p.Target, Now)), Now); p.AddCarry(h.ItemIndex, extra); p.PlanItem = -1; }
                 }
                 break;
             }
@@ -563,7 +564,7 @@ public sealed partial class PeopleSim
             case Act.Gather when done:
             {
                 var h = life.HarvestAt(p.Target);
-                int took = h is null ? 0 : life.Take(p.Target, p.Why is Why.SeedFood or Why.FarmSeed ? 3 : 1, Now); // (E5c) 먹을 거리 · 심을 것으로 줍는 씨는 한 번에 셋까지
+                int took = h is null ? 0 : life.Take(p.Target, p.Why is Why.SeedFood or Why.FarmSeed ? 5 : 1, Now); // (E5c) 먹을 거리 · 심을 것으로 줍는 씨는 한 번에 다섯까지
                 if (took > 0)
                 {
                     int item = h!.ItemIndex;
