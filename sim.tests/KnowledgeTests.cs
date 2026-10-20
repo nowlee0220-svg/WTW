@@ -221,6 +221,8 @@ public class KnowledgeTests
         Assert.True(gk.Known);
         Assert.Equal(1, gk.Knowers);
         ps.Kill(a, DeathCause.Illness);
+        // (E5b 고침) 이 20일 동안 b · c 는 실험하지 않는다(스스로 다시 알아내면 끊김이 안 생긴다 — 이 시험은 끊김 · 되찾음 기록을 본다)
+        b.LastCraftFail = c.LastCraftFail = PeopleSim.LoseAfter + GameTime.TicksPerDay;
         // 잠깐 없는 것은 끊김이 아니다 — 20일 동안 아무도 모르면 끊김
         ps.GroupKnowledgeDaily();
         Assert.True(gk.Known);

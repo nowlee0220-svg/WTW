@@ -1,5 +1,6 @@
 using System.Text;
 using Wtw.Sim.Core;
+using Wtw.Sim.Data;
 using Wtw.Sim.Movers;
 using Wtw.Sim.People;
 using Wtw.Sim.Planet;
@@ -23,11 +24,14 @@ namespace Wtw.Sim.Persistence;
 ///   버전 7 이하의 아는 법은 처음 알 때의 정도(스스로 80 · 보고 50)로 읽는다.
 /// 버전 9(S1): 지방마다 CPU — 사람의 예약은 지방마다의 예약표에(지방마다 다음 예약 번호, 잠든 지방도), 맞추는 시각까지 미뤄 둔 세계의 일, 상한 셈 기준.
 ///   세계 예약표에는 시험용 점만 남는다. 버전 8 이하의 사람 예약은 그 사람의 지방 예약표로 옮겨 읽는다.
+/// 버전 10(E5b): 지방마다 짐승 무리 · 다음 무리 번호 · 물고기 몫 · 잠든 시각, 세계에서 처음 잡은 짐승 · 무리마다 처음, 사람의 옷 · 다침 · 사냥 시각 · 바람 12칸.
+///   버전 9 이하 파일은 지방이 깨어날 때 짐승을 처음처럼 만든다(바람은 앞 8칸만).
+/// 버전 11(E5b 고침): 사람마다 놓친 무리 기억(번호 · 지방 · 언제까지). 버전 10 파일은 기억 없이 읽는다.
 /// 버전 1(E0) · 2(E1) · 3(E2) 파일도 읽는다(행성 설정은 기본값, 사람 없음).
 /// </summary>
 public static class SaveGame
 {
-    public const int Version = 9;
+    public const int Version = 11;
     private static readonly byte[] Magic = "WTWS"u8.ToArray();
 
     public static byte[] ToBytes(GameWorld w)
@@ -146,6 +150,7 @@ public static class SaveGame
                 bw.Write(life.Sched.NextHandle); bw.Write(life.Sched.NextOrder); bw.Write(evs.Length);
                 foreach (var e in evs) { bw.Write(e.Handle); bw.Write(e.Order); bw.Write(e.Tick); bw.Write(e.Target); bw.Write(e.Kind); }
                 bw.Write(true); bw.Write(life.EmptySince); // (S1) 깨어 있었나 — 사람이 다 죽은 뒤 잠들기 전(불은 계속 탄다)도 그대로
+                WriteAnimals(bw, life.NextHerdId, life.FishStock, true, -1, life.Herds.Values);
             }
             else
             {
@@ -163,6 +168,7 @@ public static class SaveGame
                 bw.Write(d.SchedHandle); bw.Write(d.SchedOrder); bw.Write(d.Events.Length);
                 foreach (var e in d.Events) { bw.Write(e.Handle); bw.Write(e.Order); bw.Write(e.Tick); bw.Write(e.Target); bw.Write(e.Kind); }
                 bw.Write(false);
+                WriteAnimals(bw, d.NextHerdId, d.FishStock, d.AnimalsReady, d.SleptAt, d.Herds);
             }
         }
         // (E4) 발견 목록 · 부분 성공 · 무리마다 처음
@@ -177,6 +183,11 @@ public static class SaveGame
         foreach (var (rule, pr) in ps.Partials) { bw.Write(rule); bw.Write(pr.Count); bw.Write(pr.Texts.Count); foreach (var t in pr.Texts) bw.Write(t); }
         bw.Write(ps.GroupFirst.Count);
         foreach (var (k, v) in ps.GroupFirst) { bw.Write(k); bw.Write(v); }
+        // (E5b) 세계에서 처음 잡은 짐승 · 무리마다 처음
+        bw.Write(ps.HuntFirsts.Count);
+        foreach (var (s, f) in ps.HuntFirsts) { bw.Write(s); bw.Write(f.Tick); bw.Write(f.Person); bw.Write(f.Cell); bw.Write(f.Helpers); }
+        bw.Write(ps.GroupHunts.Count);
+        foreach (var (k, v) in ps.GroupHunts) { bw.Write(k); bw.Write(v); }
         // (E5) 그림 · 무리마다 아는 법 · 지식의 역사
         bw.Write(ps.NextPaintingId);
         bw.Write(ps.Paintings.Count);
@@ -231,6 +242,47 @@ public static class SaveGame
         bw.Write(ps.CapBase);
     }
 
+    private static void WriteAnimals(BinaryWriter bw, int nextId, int fish, bool ready, long sleptAt, IEnumerable<Herd> herds)
+    {
+        bw.Write(nextId); bw.Write(fish); bw.Write(ready); bw.Write(sleptAt);
+        var list = herds.ToList();
+        bw.Write(list.Count);
+        foreach (var h in list)
+        {
+            bw.Write(h.Id); bw.Write(h.Species); bw.Write(h.Count); bw.Write(h.Home); bw.Write((byte)h.State); bw.Write(h.Target); bw.Write(h.TargetKind);
+            bw.Write(h.LastMeal); bw.Write(h.Owner); bw.Write(h.Bond); bw.Write(h.Since); bw.Write(h.Wary); bw.Write(h.PendingHandle);
+            foreach (var m in new[] { h.Prev, h.Motion })
+            {
+                bw.Write(m.Depart); bw.Write(m.Arrive); bw.Write(m.Count);
+                for (int i = 0; i < m.Count; i++) { bw.Write(m.X[i]); bw.Write(m.Y[i]); }
+            }
+        }
+    }
+
+    private static (int NextId, int Fish, bool Ready, long SleptAt, List<Herd> Herds) ReadAnimals(BinaryReader br)
+    {
+        int nextId = br.ReadInt32(), fish = br.ReadInt32(); bool ready = br.ReadBoolean(); long slept = br.ReadInt64();
+        int n = br.ReadInt32();
+        var list = new List<Herd>(n);
+        for (int i = 0; i < n; i++)
+        {
+            var h = new Herd { Id = br.ReadInt32(), Species = br.ReadInt32(), Count = br.ReadInt32(), Home = br.ReadInt32(), State = (HerdState)br.ReadByte(), Target = br.ReadInt32(), TargetKind = br.ReadByte(),
+                LastMeal = br.ReadInt64(), Owner = br.ReadInt32(), Bond = br.ReadInt32(), Since = br.ReadInt64(), Wary = br.ReadInt64(), PendingHandle = br.ReadInt64() };
+            if ((uint)h.Species >= (uint)AnimalData.Default.Animals.Count) throw new InvalidDataException("저장 파일의 짐승 종류가 지금 데이터와 다릅니다.");
+            foreach (var m in new[] { h.Prev, h.Motion })
+            {
+                long dep = br.ReadInt64(), arr = br.ReadInt64();
+                int c = br.ReadInt32();
+                if (c < 1 || c > 100_000) throw new InvalidDataException("저장 파일이 손상되었습니다(짐승 길).");
+                var xs = new int[c]; var ys = new int[c];
+                for (int j = 0; j < c; j++) { xs[j] = br.ReadInt32(); ys[j] = br.ReadInt32(); }
+                m.Set(dep, arr, xs, ys, c);
+            }
+            list.Add(h);
+        }
+        return (nextId, fish, ready, slept, list);
+    }
+
     private static void WriteFire(BinaryWriter bw, int tile, Fire f) { bw.Write(tile); bw.Write(f.Kind); bw.Write(f.Stamp); bw.Write(f.Fuel); bw.Write(f.Charcoal); bw.Write(f.Lighter); }
     private static (int, Fire) ReadFire(BinaryReader br) => (br.ReadInt32(), new Fire { Kind = br.ReadByte(), Stamp = br.ReadInt64(), Fuel = br.ReadInt64(), Charcoal = br.ReadBoolean(), Lighter = br.ReadInt32() });
 
@@ -283,6 +335,10 @@ public static class SaveGame
         foreach (var k in p.Known) { bw.Write(k.Level); bw.Write(k.LastUse); bw.Write((byte)k.Via); }
         bw.Write(p.Learning.Count); foreach (var ln in p.Learning) { bw.Write(ln.Rule); bw.Write(ln.Progress); bw.Write(ln.From); bw.Write((byte)ln.Via); bw.Write(ln.Tick); }
         bw.Write(p.LastTeach); bw.Write(p.LastPaint); bw.Write(p.LastStudy); bw.Write(p.RecordRule); bw.Write((byte)p.RecordWhy);
+        // (E5b)
+        bw.Write(p.Worn); bw.Write(p.WornFeet); bw.Write(p.WornWear); bw.Write(p.FeetWear); bw.Write(p.Injury); bw.Write((byte)p.InjuryCause);
+        bw.Write(p.LastHunt); bw.Write(p.LastFish); bw.Write(p.Kills);
+        bw.Write(p.FailHerd); bw.Write(p.FailHerdCell); bw.Write(p.FailHerdUntil);
     }
 
     private static void ReadPeople(BinaryReader br, GameWorld w, int version)
@@ -324,6 +380,11 @@ public static class SaveGame
                 dp = dp with { SchedHandle = nh, SchedOrder = no, Events = evs };
                 if (br.ReadBoolean()) awake.Add((cell, br.ReadInt64()));
             }
+            if (version >= 10)
+            {
+                var an = ReadAnimals(br);
+                dp = dp with { NextHerdId = an.NextId, FishStock = an.Fish, AnimalsReady = an.Ready, SleptAt = an.SleptAt, Herds = an.Herds };
+            }
             ps.Dormant[cell] = dp;
         }
         if (version >= 7)
@@ -345,6 +406,13 @@ public static class SaveGame
             }
             int ng = br.ReadInt32();
             for (int i = 0; i < ng; i++) ps.GroupFirst[br.ReadInt64()] = br.ReadInt64();
+        }
+        if (version >= 10)
+        {
+            int nh = br.ReadInt32();
+            for (int i = 0; i < nh; i++) { int s = br.ReadInt32(); ps.HuntFirsts[s] = new HuntFirst(br.ReadInt64(), br.ReadInt32(), br.ReadInt32(), br.ReadInt32()); }
+            int ng = br.ReadInt32();
+            for (int i = 0; i < ng; i++) ps.GroupHunts[br.ReadInt64()] = br.ReadInt64();
         }
         if (version >= 8)
         {
@@ -503,7 +571,7 @@ public static class SaveGame
         if (version >= 7)
         {
             int nw = br.ReadInt32();
-            if (nw != p.Wish.Length) throw new InvalidDataException("저장 파일의 바람 수가 지금 데이터와 다릅니다.");
+            if (nw != (version >= 10 ? p.Wish.Length : 8)) throw new InvalidDataException("저장 파일의 바람 수가 지금 데이터와 다릅니다.");
             for (int i = 0; i < nw; i++) { p.Wish[i] = br.ReadInt32(); p.WishSince[i] = br.ReadInt64(); }
             int nk = br.ReadInt32(); for (int k = 0; k < nk; k++) p.Known.Add(new Knowledge { Rule = br.ReadInt32(), Tick = br.ReadInt64(), Wish = br.ReadInt32(), Input = br.ReadInt32(), With = br.ReadInt32(), LearnedFrom = br.ReadInt32() });
             int ncl = br.ReadInt32(); for (int k = 0; k < ncl; k++) p.Clues.Add(new Clue { Rule = br.ReadInt32(), Key = br.ReadString(), Tick = br.ReadInt64(), Input = br.ReadInt32() });
@@ -516,6 +584,12 @@ public static class SaveGame
             for (int i = 0; i < p.Known.Count; i++) { var k = p.Known[i]; k.Level = br.ReadInt32(); k.LastUse = br.ReadInt64(); k.Via = (Via)br.ReadByte(); p.Known[i] = k; }
             int nl = br.ReadInt32(); for (int k = 0; k < nl; k++) p.Learning.Add(new Learning { Rule = br.ReadInt32(), Progress = br.ReadInt32(), From = br.ReadInt32(), Via = (Via)br.ReadByte(), Tick = br.ReadInt64() });
             p.LastTeach = br.ReadInt64(); p.LastPaint = br.ReadInt64(); p.LastStudy = br.ReadInt64(); p.RecordRule = br.ReadInt32(); p.RecordWhy = (Why)br.ReadByte();
+        }
+        if (version >= 10)
+        {
+            p.Worn = br.ReadInt32(); p.WornFeet = br.ReadInt32(); p.WornWear = br.ReadInt32(); p.FeetWear = br.ReadInt32(); p.Injury = br.ReadInt32(); p.InjuryCause = (DeathCause)br.ReadByte();
+            p.LastHunt = br.ReadInt64(); p.LastFish = br.ReadInt64(); p.Kills = br.ReadInt32();
+            if (version >= 11) { p.FailHerd = br.ReadInt32(); p.FailHerdCell = br.ReadInt32(); p.FailHerdUntil = br.ReadInt64(); }
         }
         else
             for (int i = 0; i < p.Known.Count; i++) { var k = p.Known[i]; k.Via = k.LearnedFrom < 0 ? Via.Self : Via.Watch; k.Level = PeopleSim.StartLevel(k.Via); k.LastUse = k.Tick; p.Known[i] = k; }

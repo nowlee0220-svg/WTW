@@ -39,9 +39,18 @@ public enum Act : byte
     Paint,
     /// <summary>그림을 들여다본다(Target = 그림 타일).</summary>
     Study,
+    // (E5b) 짐승
+    /// <summary>사냥: 무리 곁으로 가서 몰고 찌른다(Target = 무리 번호, TargetB = 쫓은 횟수, WhyArg = 이끄는 사람).</summary>
+    Hunt,
+    /// <summary>잡은 자리에서 손질한다(Target = 무리 번호(종), TargetB = 종, WhyArg = 이끄는 사람).</summary>
+    Butcher,
+    /// <summary>물가에서 물고기를 잡는다(Target = 물가 타일).</summary>
+    Fish,
 }
 
-public enum DeathCause : byte { None = 0, Starvation, Thirst, Cold, Heat, OldAge, Illness }
+public enum DeathCause : byte { None = 0, Starvation, Thirst, Cold, Heat, OldAge, Illness,
+    /// <summary>(E5b) 포식자에게 · 사냥하다 짐승에게.</summary>
+    Beast, HuntAccident }
 
 /// <summary>"왜" — 지금 하는 일을 고른 까닭. 값은 저장 파일에 남는다.</summary>
 public enum Why : byte
@@ -54,6 +63,8 @@ public enum Why : byte
     WantWarmth, WantSharp, WantHardTool, WantContainer, WantCooking, WantCarry, WantShiny, KnowHow, Clue, Fuel, TakeFire, Material, MineOre, MineStone, CookFood, Store, Carried2, FireNear, Rediscover,
     // (E5) 가르치는 까닭 · 배움 · 그림
     TeachChild, TeachFew, TeachAsked, TeachFaded, BeingTaught, WantRecord, RecordOld, RecordOnly, RecordFirst, StudyPainting,
+    // (E5b) 바람 · 사냥 · 물고기
+    WantFood, WantHunting, WantClothing, HuntFood, HuntHide, HuntBone, JoinHunt, HuntChase, FishFood, Butchering, Injured,
 }
 
 /// <summary>생김새(코드로 그리는 몸 — 부모를 닮는다). 값은 0~255.</summary>
@@ -82,6 +93,8 @@ public enum BioKind : byte
     Discovered, LearnedWatching, PartialSuccess, MadeThing, LitFire, FireDied, Mined, Nicknamed, NewWord, BorrowedWord, SawFire, BadStomach,
     // (E5) Other = 사람(또는 −1), Param = 규칙
     Taught, LearnedTeaching, Forgot, Painted, LearnedPainting, Refreshed,
+    // (E5b) Other = 종(또는 사람), Param = 함께한 사람 수 · 다침 정도 · 아이템
+    Hunted, HuntFailed, Injured, Attacked, Tamed, Wore, KilledBeast, DroveOff,
 }
 
 /// <summary>(E5) 어떻게 알게 되었나. 값은 저장 파일에 남는다.</summary>
@@ -214,8 +227,9 @@ public sealed class Person
 
     // (E4) 재료와 발견
     /// <summary>바람의 세기(0~100, crafting.json 의 wishes 순서)와 생긴 시각.</summary>
-    public int[] Wish = new int[8];
-    public long[] WishSince = new long[8];
+    public const int WishSlots = 12;
+    public int[] Wish = new int[WishSlots];
+    public long[] WishSince = new long[WishSlots];
     public readonly List<Knowledge> Known = new();
     public readonly List<Clue> Clues = new();
     public const int ClueMemory = 12;
@@ -243,6 +257,18 @@ public sealed class Person
     /// <summary>그리려는 것(규칙, −1 = 없음)과 그 까닭.</summary>
     public int RecordRule = -1;
     public Why RecordWhy;
+
+    // (E5b) 옷 · 다침 · 사냥
+    /// <summary>입은 것(아이템 번호, −1 = 없음): 몸 · 발. 닳음(0~1000, 1000 = 새것 — 0 이면 해져 버린다).</summary>
+    public int Worn = -1, WornFeet = -1, WornWear, FeetWear;
+    /// <summary>다친 정도(0~100,000 — 날이 지나면 낫는다)와 그 까닭(DeathCause.Beast · HuntAccident).</summary>
+    public int Injury;
+    public DeathCause InjuryCause;
+    public long LastHunt = long.MinValue / 2, LastFish = long.MinValue / 2;
+    /// <summary>(E5b 고침) 놓친 무리(지방 · 번호)를 이때까지는 노리지 않는다 — 같은 무리를 거듭 쫓아 먼 길을 걷지 않게.</summary>
+    public int FailHerd = -1, FailHerdCell = -1;
+    public long FailHerdUntil;
+    public int Kills;
 
     public readonly List<ThoughtInst> Thoughts = new();
     public readonly List<Relation> Relations = new(); // Other 순으로 정렬

@@ -12,14 +12,14 @@ public static class Prof
     public enum S : byte
     {
         Other = 0, Decide, Path, Near, Experiment, Material, Fire, Teach, Paint, Group, Language, Talk, Needs, Mood,
-        Cross, Wake, MapGen, Record, Day, Sync, Schedule, Sim, X1, X2, X3, X4, X5, X6, Count,
+        Cross, Wake, MapGen, Record, Day, Sync, Schedule, Sim, X1, X2, X3, X4, X5, X6, X7, X8, Count,
     }
 
     public static readonly string[] Names =
     {
         "그 밖(시뮬 밖 · 나머지)", "판단(그 밖)", "길 찾기", "주변 찾기(물 · 먹을 것 · 그늘 · 둘러보기)", "실험 · 만들기(계획)", "재료 구하기", "불 돌보기",
         "가르치기 · 배우기", "그림(그리기 · 보기)", "무리 셈 · 잊기(하루 경계)", "말(닮아 감 · 갈라짐 · 이름 · 지명)", "이야기 · 짝", "욕구 · 기온 셈", "기분 · 생각",
-        "지방 넘기(옮겨 가기)", "지방 깨우기 · 경계 만들기", "지방 지도 만들기", "저장용 기록 · 알림", "하루 경계(그 밖)", "맞추는 시각 · CPU 나눔", "예약(스케줄러)", "시뮬 그 밖(예약 처리 · 판단 밖)", "(조사 1)", "(조사 2)", "(조사 3)", "(조사 4)", "(조사 5)", "(조사 6)",
+        "지방 넘기(옮겨 가기)", "지방 깨우기 · 경계 만들기", "지방 지도 만들기", "저장용 기록 · 알림", "하루 경계(그 밖)", "맞추는 시각 · CPU 나눔", "예약(스케줄러)", "시뮬 그 밖(예약 처리 · 판단 밖)", "(E5b) 짐승 무리의 판단", "(E5b) 사냥할까 · 함께할 사람", "(E5b) 둘레의 사람(겁 · 노림)", "(E5b) 짐승 늘고 줄기(하루)", "(E5b) 사냥 · 손질 · 물고기", "(E5b) 옷 · 썩음 · 다침(하루)", "할 일 끝냄 · 닿음(처리)", "(E5b) 먹을 것 고르기(익히기 · 든 것 · 둔 것)",
     };
 
     public static readonly bool On = Environment.GetEnvironmentVariable("WTW_PROF") == "1";
@@ -38,15 +38,17 @@ public static class Prof
         double sim = 0; for (int i = 1; i < r.Length; i++) sim += r[i].Seconds;
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"\n## 구간별 시간 (시뮬 안 {sim:0.0}초, 모든 스레드 합)\n");
-        sb.AppendLine("| 일 종류 | 몫 | 초 | 불린 수 |");
-        sb.AppendLine("|---|---|---|---|");
+        sb.AppendLine("| 일 종류 | 몫 | 초 | 불린 수 | 할당 MB |");
+        sb.AppendLine("|---|---|---|---|---|");
+        var bytes = new long[r.Length];
+        lock (All) foreach (var a in All) for (int i = 0; i < r.Length; i++) bytes[i] += a.Bytes[i];
         foreach (int i in Enumerable.Range(1, r.Length - 1).OrderByDescending(i => r[i].Seconds))
-            sb.AppendLine($"| {Names[i]} | {100 * r[i].Seconds / Math.Max(1e-9, sim):0.0}% | {r[i].Seconds:0.0} | {r[i].Calls:N0} |");
+            sb.AppendLine($"| {Names[i]} | {100 * r[i].Seconds / Math.Max(1e-9, sim):0.0}% | {r[i].Seconds:0.0} | {r[i].Calls:N0} | {bytes[i] / 1_000_000:N0} |");
         sb.AppendLine($"| (따로) 메모리 정리(GC) 멈춤 | {100 * gcPause.TotalSeconds / Math.Max(1e-9, sim):0.0}% | {gcPause.TotalSeconds:0.0} | |");
         return sb.ToString();
     }
 
-    private sealed class Acc { public readonly long[] Ticks = new long[(int)S.Count]; public readonly long[] Calls = new long[(int)S.Count]; public readonly S[] Stack = new S[256]; public int Depth; public long Last; }
+    private sealed class Acc { public readonly long[] Ticks = new long[(int)S.Count]; public readonly long[] Calls = new long[(int)S.Count]; public readonly long[] Bytes = new long[(int)S.Count]; public long LastBytes; public readonly S[] Stack = new S[256]; public int Depth; public long Last; }
     [ThreadStatic] private static Acc? t_acc;
     private static readonly List<Acc> All = new();
 
@@ -54,7 +56,7 @@ public static class Prof
     {
         var a = t_acc;
         if (a is not null) return a;
-        a = new Acc { Last = Stopwatch.GetTimestamp() };
+        a = new Acc { Last = Stopwatch.GetTimestamp(), LastBytes = GC.GetAllocatedBytesForCurrentThread() };
         lock (All) All.Add(a);
         return t_acc = a;
     }
@@ -67,9 +69,10 @@ public static class Prof
         {
             if (!_on) return;
             var a = t_acc!;
-            long now = Stopwatch.GetTimestamp();
+            long now = Stopwatch.GetTimestamp(), b = GC.GetAllocatedBytesForCurrentThread();
             a.Ticks[(int)a.Stack[a.Depth]] += now - a.Last;
-            a.Last = now;
+            a.Bytes[(int)a.Stack[a.Depth]] += b - a.LastBytes;
+            a.Last = now; a.LastBytes = b;
             if (a.Depth > 0) a.Depth--;
         }
     }
@@ -78,9 +81,10 @@ public static class Prof
     {
         if (!On) return default;
         var a = Get();
-        long now = Stopwatch.GetTimestamp();
+        long now = Stopwatch.GetTimestamp(), b = GC.GetAllocatedBytesForCurrentThread();
         a.Ticks[(int)a.Stack[a.Depth]] += now - a.Last;
-        a.Last = now;
+        a.Bytes[(int)a.Stack[a.Depth]] += b - a.LastBytes;
+        a.Last = now; a.LastBytes = b;
         if (a.Depth < a.Stack.Length - 1) a.Stack[++a.Depth] = s;
         a.Calls[(int)s]++;
         return new Scope(true);
@@ -98,6 +102,6 @@ public static class Prof
 
     public static void Reset()
     {
-        lock (All) foreach (var a in All) { Array.Clear(a.Ticks); Array.Clear(a.Calls); a.Last = Stopwatch.GetTimestamp(); }
+        lock (All) foreach (var a in All) { Array.Clear(a.Ticks); Array.Clear(a.Calls); Array.Clear(a.Bytes); a.Last = Stopwatch.GetTimestamp(); }
     }
 }

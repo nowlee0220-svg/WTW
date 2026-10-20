@@ -60,6 +60,7 @@ public partial class SkipPanel : PanelContainer
             B("이 알 때까지", () => SkipGoals.Spread(ItemId(), (int)_people.Value, (int)_groups.Value)));
         Row(v, "지식", B("세계에서 사라짐", SkipGoals.KnowledgeLost), B("무리에서 끊김", SkipGoals.KnowledgeGroupLost), B("되찾음", SkipGoals.KnowledgeRefound));
         Row(v, "땅과 말", B("새 땅으로 옮김", SkipGoals.NewLand), B("땅 이름", SkipGoals.LandNamed), B("말 갈라짐", SkipGoals.LanguageSplit));
+        Row(v, "짐승", B("큰 짐승을 처음 잡음", SkipGoals.BigHunt), B("짐승에게 덮쳐짐", SkipGoals.BeastAttack), B("새끼가 따라다님", SkipGoals.Tamed));
         _pop = Spin(100, 5, 3000);
         Row(v, "인구", _pop, PeopleUi.L("명", UiTheme.FontSizeSmall + 1, UiTheme.Text), B("이 될 때까지", () => SkipGoals.Population((int)_pop.Value)));
 

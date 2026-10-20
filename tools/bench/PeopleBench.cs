@@ -45,11 +45,17 @@ public static class PeopleBench
             case "dialect": DialectBench.Run(I("seeds", 20), I("families", 3), I("years", 500), I("cap", 60), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "one": One(I("people", 10), I("years", 5), (ulong)I("seed", 1), Sx("cell", "home"), o.ContainsKey("family"), I("cap", 300)); break;
             case "breaks": BreakBench.Run(I("seeds", 4), I("people", 10), I("years", 30), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home")); break;
-            case "scenes": SceneBench.Run(o.GetValueOrDefault("out") ?? "game/scenes", (ulong)I("seed", 20261016), o.ContainsKey("artisan"), o.ContainsKey("copper")); break;
+            case "scenes": SceneBench.Run(o.GetValueOrDefault("out") ?? "game/scenes", (ulong)I("seed", 20261016), o.ContainsKey("artisan"), o.ContainsKey("copper"), o.ContainsKey("tundra")); break;
             case "copper": CopperBench.Run(I("seeds", 4), I("years", 200), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), I("cap", 300)); break;
             case "skip": SpeedBench.Skip(Sx("scene", "game/scenes/village-50y.wtw"), I("years", 50)); break;
             case "discover": DiscoverBench.Know = o.GetValueOrDefault("know") ?? ""; DiscoverBench.SaveTo = o.GetValueOrDefault("save"); DiscoverBench.Run(I("seeds", 20), I("people", 10), I("years", 200), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300)); break;
-            default: Console.WriteLine("모드: seeds | cap | one"); break;
+            case "thirst": ThirstBench.Run(I("seeds", 4), I("people", 9), I("years", 60), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300), o.ContainsKey("nocap")); break;
+            case "firenight": FireNightBench.Run(I("seeds", 20), I("years", 5), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
+            case "acts": ActCountBench.Run(I("people", 300), I("years", 20), I("per", 15), (ulong)I("seed", 1)); break;
+            case "huntdbg": HuntDebug.Run((ulong)I("seed", 1), I("days", 160)); break;
+            case "wolfscene": SceneBench.WolfMoment(o.GetValueOrDefault("out") ?? "wolf.wtw", (ulong)I("seed", 20261016), I("days", 400)); break;
+            case "hunt": HuntBench.Know = o.GetValueOrDefault("know") ?? ""; HuntBench.NoCap = o.ContainsKey("nocap"); HuntBench.Detail = o.ContainsKey("detail"); HuntBench.Run(I("seeds", 20), I("people", 9), I("years", 100), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300)); break;
+            default: Console.WriteLine("모드: seeds | cap | one | hunt …"); break;
         }
     }
 
@@ -60,7 +66,7 @@ public static class PeopleBench
         public int Alive, Ever, Peak, Births, Pairs, Breaks, Talks, Arguments;
         public double PersonYears; // 아기 아닌 사람 · 해
         public long PersonDays;
-        public readonly long[] Deaths = new long[8];
+        public readonly long[] Deaths = new long[12];
         public double MoodMedian, BreaksPerPersonYear;
         public List<int> MoodSamples = new();
         public List<int> PopByYear = new();
@@ -119,7 +125,7 @@ public static class PeopleBench
         var st = w.People.Stats;
         run.Alive = w.People.AliveCount; run.Ever = w.People.All.Count;
         run.Births = (int)st.Births; run.Pairs = (int)st.Pairs; run.Breaks = (int)st.Breaks; run.Talks = (int)st.Talks; run.Arguments = (int)st.Arguments;
-        Array.Copy(st.Deaths, run.Deaths, 8);
+        Array.Copy(st.Deaths, run.Deaths, 12);
         run.Events = st.Events; run.Decisions = st.Decisions; run.Paths = st.Paths; run.PathFails = st.PathFails;
         run.MoodMedian = Median(run.MoodSamples);
         run.BreaksPerPersonYear = run.PersonYears > 0 ? run.Breaks / run.PersonYears : 0;
@@ -139,7 +145,7 @@ public static class PeopleBench
     public static double Median(List<int> v) { if (v.Count == 0) return 0; var s = v.OrderBy(x => x).ToList(); return s.Count % 2 == 1 ? s[s.Count / 2] : (s[s.Count / 2 - 1] + s[s.Count / 2]) / 2.0; }
     public static double Median(IEnumerable<double> v) { var s = v.OrderBy(x => x).ToList(); if (s.Count == 0) return 0; return s.Count % 2 == 1 ? s[s.Count / 2] : (s[s.Count / 2 - 1] + s[s.Count / 2]) / 2.0; }
 
-    private static readonly string[] CauseNames = { "-", "굶주림", "목마름", "추위", "더위", "늙음", "병" };
+    private static readonly string[] CauseNames = { "-", "굶주림", "목마름", "추위", "더위", "늙음", "병", "짐승", "사냥 사고" };
 
     static void Seeds(int seeds, int people, int years, string passion, ulong first, int parallel, string? outPath)
     {
@@ -162,7 +168,7 @@ public static class PeopleBench
             sb.AppendLine();
             sb.AppendLine($"- **중앙값**: 끝 인구 {Median(runs.Select(r => (double)r.Alive))} · 가장 많을 때 {Median(runs.Select(r => (double)r.Peak))} · 태어남 {Median(runs.Select(r => (double)r.Births))} · 짝 {Median(runs.Select(r => (double)r.Pairs))} · 기분 {Median(runs.Select(r => r.MoodMedian)):0.0} · 정신 붕괴 {Median(runs.Select(r => r.BreaksPerPersonYear)):0.00}/사람·년");
             sb.AppendLine($"- 멸종(끝 인구 0): {runs.Count(r => r.Alive == 0)}/{seeds}");
-            sb.AppendLine($"- 죽음 원인(모든 시드 합 {deaths}): " + string.Join(" · ", Enumerable.Range(1, 6).Select(c => $"{CauseNames[c]} {runs.Sum(r => r.Deaths[c]) * 100.0 / Math.Max(1, deaths):0}%")));
+            sb.AppendLine($"- 죽음 원인(모든 시드 합 {deaths}): " + string.Join(" · ", Enumerable.Range(1, 8).Select(c => $"{CauseNames[c]} {runs.Sum(r => r.Deaths[c]) * 100.0 / Math.Max(1, deaths):0}%")));
             sb.AppendLine($"- 채집 기술 중앙값(살아 있는 어른) {Median(runs.Select(r => r.GatherMedian)):0.0} · 열정 가진 어른 비율 {Median(runs.Select(r => r.WithPassion)) * 100:0}%");
             if (pas)
             {
@@ -202,7 +208,7 @@ public static class PeopleBench
         Console.WriteLine($"  걸린 시간 {r.Seconds:0.0}초 · 사람 하루 {r.PersonDays:N0}개(평균 {r.PersonDays / (double)(years * GameTime.DaysPerYear):0}명이 살아 있음) · 사람 하루당 {us:0.0}µs");
         Console.WriteLine($"  {people}명이 {years}년 내내 살아 있다면(같은 비용으로 셈): {projected:0}초");
         Console.WriteLine($"  인구(10년마다): {string.Join(" · ", r.PopByYear.Where((_, i) => i % 10 == 0))} · 끝 {r.Alive} · 가장 많을 때 {r.Peak} · 태어남 {r.Births}");
-        Console.WriteLine($"  죽음: " + string.Join(" · ", Enumerable.Range(1, 6).Select(c => $"{CauseNames[c]} {r.Deaths[c]}")));
+        Console.WriteLine($"  죽음: " + string.Join(" · ", Enumerable.Range(1, 8).Select(c => $"{CauseNames[c]} {r.Deaths[c]}")));
         Console.WriteLine($"  메모리(관리 힙): 처음 {mem0 / 1048576.0:0} MB → 가장 클 때 {peakMem / 1048576.0:0} MB · 프로세스 {Process.GetCurrentProcess().PeakWorkingSet64 / 1048576.0:0} MB");
         Console.WriteLine("  " + SpeedBench.GcMark.Now().Since(gc, r.Seconds));
         Console.WriteLine($"  예약 {r.Events:N0} · 판단 {r.Decisions:N0} · 길 찾기 {r.Paths:N0} (실패 {r.PathFails:N0})");
@@ -309,7 +315,7 @@ public static class PeopleBench
             if (a.Count >= 2) Console.WriteLine($"  알아듣기: {ps.DisplayName(a[0])}↔{ps.DisplayName(a[1])} {ps.Understanding(a[0], a[1])}% · {ps.DisplayName(a[0])}↔{ps.DisplayName(a[^1])} {ps.Understanding(a[0], a[^1])}%");
         }
         Console.WriteLine($"끝: 살아 있음 {r.Alive}/{r.Ever} · 태어남 {r.Births} · 짝 {r.Pairs} · 붕괴 {r.Breaks} · 이야기 {r.Talks} · 말다툼 {r.Arguments} · 기분 중앙값 {r.MoodMedian} · {r.Seconds:0.0}초 · 칸 {r.Cell}({r.Biome}) 먹을 것 {r.FoodSupply / 100_000.0:0}명분/일");
-        Console.WriteLine("죽음: " + string.Join(" · ", Enumerable.Range(1, 6).Select(c => $"{CauseNames[c]} {r.Deaths[c]}")));
+        Console.WriteLine("죽음: " + string.Join(" · ", Enumerable.Range(1, 8).Select(c => $"{CauseNames[c]} {r.Deaths[c]}")));
         if (_lastWorld is { } lw2) Console.WriteLine($"찾아간 방법: 보임 {lw2.People.Stats.FindHow[0]} · 기억 {lw2.People.Stats.FindHow[1]} · 따라감 {lw2.People.Stats.FindHow[2]} · 찾아다님 {lw2.People.Stats.FindHow[3]} · 물 없어 죽음 {lw2.People.Stats.NoWaterDeaths} · 먹을 것 없어 죽음 {lw2.People.Stats.NoFoodDeaths}");
         Console.WriteLine($"예약 {r.Events:N0} · 판단 {r.Decisions:N0} · 길 {r.Paths:N0} 실패 {r.PathFails:N0} · 사람 하루당 {r.Seconds * 1e6 / Math.Max(1, r.PersonDays):0}µs");
         if (_lastWorld is { } lw3) Console.WriteLine(DiscoverBench.Summary(lw3));

@@ -42,4 +42,6 @@ public static class EventKinds
     public const int DotArrive = 2;
     /// <summary>사람의 다음 판단(E3).</summary>
     public const int Person = 3;
+    /// <summary>(E5b) 짐승 무리의 다음 판단(지방 예약표, 대상 = 지방 안의 무리 번호).</summary>
+    public const int Herd = 4;
 }

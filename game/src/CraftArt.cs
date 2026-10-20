@@ -162,6 +162,68 @@ public static partial class Art
                 s.Ellipse(24, 30, 13, 10, ink);
                 s.Ellipse(24, 30, 11.5f, 8.5f, id switch { "dried_fruit" => C(140, 70, 50), "stew" => C(150, 110, 70), "cracked_coconut" => C(240, 236, 220), _ => C(178, 92, 46) }, 1.2f);
                 break;
+            // (E5b) 짐승에게서 나온 것 · 가죽 일 · 사냥 도구
+            case "raw_meat": case "cooked_meat": case "dried_meat": case "smoked_meat": case "raw_fish": case "cooked_fish":
+                if (id is "raw_fish" or "cooked_fish")
+                {
+                    var fc = id == "raw_fish" ? C(150, 170, 186) : C(190, 130, 70);
+                    s.Ellipse(22, 26, 14, 7, ink); s.Ellipse(22, 26, 12.5f, 5.5f, fc, 1.2f);
+                    s.Polygon(new[] { new Vector2(34, 26), new Vector2(42, 19), new Vector2(42, 33) }, fc.Darkened(0.15f));
+                    s.Circle(14, 25, 1.4f, ink);
+                }
+                else
+                {
+                    var mc = id switch { "raw_meat" => C(200, 70, 70), "cooked_meat" => C(150, 80, 44), "dried_meat" => C(110, 50, 40), _ => C(90, 52, 36) };
+                    s.Ellipse(24, 28, 14, 10, ink); s.Ellipse(24, 28, 12.5f, 8.5f, mc, 1.2f);
+                    s.Ellipse(20, 26, 4, 2.5f, C(240, 224, 210, 160));
+                    s.Line(34, 32, 42, 38, 4, C(232, 224, 206));
+                }
+                break;
+            case "raw_hide": case "scraped_hide": case "dried_hide": case "tanned_hide":
+            {
+                var hc = id switch { "raw_hide" => C(150, 96, 70), "scraped_hide" => C(196, 150, 112), "dried_hide" => C(176, 138, 96), _ => C(150, 108, 70) };
+                var pts = new[] { new Vector2(10, 16), new Vector2(18, 10), new Vector2(30, 12), new Vector2(39, 9), new Vector2(40, 22), new Vector2(36, 36), new Vector2(26, 40), new Vector2(14, 38), new Vector2(8, 28) };
+                s.Polygon(pts.Select(q => q + (q - new Vector2(24, 24)).Normalized() * 2f).ToArray(), ink);
+                s.Polygon(pts, hc, 1);
+                if (id == "raw_hide") s.Ellipse(24, 26, 7, 5, C(170, 60, 60, 120));
+                break;
+            }
+            case "bone":
+                s.Line(12, 34, 36, 14, 6, ink); s.Line(12, 34, 36, 14, 4, C(236, 228, 210));
+                s.Circle(11, 35, 4, C(236, 228, 210)); s.Circle(37, 13, 4, C(236, 228, 210));
+                break;
+            case "sinew":
+                for (int k = 0; k < 3; k++) s.Line(10 + k * 3, 36 - k, 38 - k * 2, 12 + k * 2, 1.6f, C(220, 200, 170));
+                break;
+            case "fat":
+                s.Ellipse(24, 28, 12, 9, ink); s.Ellipse(24, 28, 10.5f, 7.5f, C(244, 236, 200), 1.2f);
+                break;
+            case "bone_needle":
+                s.Line(10, 38, 38, 10, 3.6f, ink); s.Line(10, 38, 38, 10, 2.2f, C(236, 228, 210));
+                s.Circle(13, 35, 2, ink);
+                break;
+            case "stone_spear":
+                s.Line(8, 42, 34, 14, 6, ink); s.Line(8, 42, 34, 14, 4.2f, wood);
+                Shard(s, 37, 11, 6, 4, C(70, 76, 90), -0.8f);
+                s.Line(29, 18, 33, 16, 3, C(190, 160, 96));
+                break;
+            case "fur_coat": case "fur_boots":
+            {
+                var fc = C(200, 180, 150);
+                if (id == "fur_coat")
+                {
+                    var pts = new[] { new Vector2(16, 8), new Vector2(32, 8), new Vector2(42, 18), new Vector2(36, 22), new Vector2(34, 42), new Vector2(14, 42), new Vector2(12, 22), new Vector2(6, 18) };
+                    s.Polygon(pts.Select(q => q + (q - new Vector2(24, 24)).Normalized() * 2f).ToArray(), ink);
+                    s.Polygon(pts, fc, 1);
+                    s.Ellipse(24, 9, 8, 3, C(236, 226, 206));
+                }
+                else
+                {
+                    s.Ellipse(18, 30, 7, 12, ink); s.Ellipse(18, 30, 5.5f, 10.5f, fc, 1);
+                    s.Ellipse(31, 32, 7, 12, ink); s.Ellipse(31, 32, 5.5f, 10.5f, fc.Darkened(0.1f), 1);
+                }
+                break;
+            }
             default:
                 // 자원: 둥근 돌 · 열매
                 s.Ellipse(24, 28, 11, 9, ink);

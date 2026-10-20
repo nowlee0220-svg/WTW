@@ -13,18 +13,46 @@ public sealed record PartialDef(string Key, string Text, string Hint, int Result
 /// <summary>
 /// 다루는 규칙 하나(crafting.json). 조건은 속성 번호 → 최소값(Input · With · Tool) · 최대값(InputMax). Heat 0~3, Tinder = 불쏘시개의 burns 최소값(0 = 없어도 됨).
 /// </summary>
+/// <summary>
+/// (E5b 고침) 규칙의 조건(속성 번호 → 값, 번호 순). 읽어 들인 뒤에는 바뀌지 않고 판단마다 수없이 돌아서,
+/// SortedDictionary 처럼 돌 때마다 메모리를 잡지 않게 번호 순 배열을 돈다(같은 순서 — 결과는 같다).
+/// </summary>
+public sealed class Conds : IEnumerable<KeyValuePair<int, int>>
+{
+    private readonly SortedDictionary<int, int> _d = new();
+    private KeyValuePair<int, int>[]? _arr;
+    private int[]? _keys;
+    public int Count => _d.Count;
+    public int this[int prop] { get => _d[prop]; set { _d[prop] = value; _arr = null; _keys = null; } }
+    public bool ContainsKey(int prop) => _d.ContainsKey(prop);
+    public bool TryGetValue(int prop, out int v) => _d.TryGetValue(prop, out v);
+    public KeyValuePair<int, int>[] Items => _arr ??= _d.ToArray();
+    public int[] Keys => _keys ??= _d.Keys.ToArray();
+    public Enumerator GetEnumerator() => new(Items);
+    IEnumerator<KeyValuePair<int, int>> IEnumerable<KeyValuePair<int, int>>.GetEnumerator() => ((IEnumerable<KeyValuePair<int, int>>)Items).GetEnumerator();
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => Items.GetEnumerator();
+
+    public struct Enumerator
+    {
+        private readonly KeyValuePair<int, int>[] _a; private int _i;
+        internal Enumerator(KeyValuePair<int, int>[] a) { _a = a; _i = -1; }
+        public KeyValuePair<int, int> Current => _a[_i];
+        public bool MoveNext() => ++_i < _a.Length;
+    }
+}
+
 public sealed class CraftRule
 {
     public int Index;
     public string Id = "", Name = "";
     public int Action;
-    public readonly SortedDictionary<int, int> Input = new(), InputMax = new(), With = new(), Tool = new();
-    public int Heat, Tinder, Chance = 100, Result = -1, Count = 1, Uses = 1, WithUses, TimeMin = 60, Skill = -1;
+    public readonly Conds Input = new(), InputMax = new(), With = new(), WithMax = new(), Tool = new();
+    public int Heat, Tinder, Chance = 100, Result = -1, Count = 1, Uses = 1, WithUses, ToolUses, TimeMin = 60, Skill = -1;
     public readonly Dictionary<string, PartialDef> Partial = new();
     public bool HasWith => With.Count > 0;
     public bool HasTool => Tool.Count > 0;
     /// <summary>조건 수(주 재료 · 둘째 · 도구 · 불 · 불쏘시개).</summary>
-    public int ConditionCount => Input.Count + InputMax.Count + With.Count + Tool.Count + (Heat > 0 ? 1 : 0) + (Tinder > 0 ? 1 : 0);
+    public int ConditionCount => Input.Count + InputMax.Count + With.Count + WithMax.Count + Tool.Count + (Heat > 0 ? 1 : 0) + (Tinder > 0 ? 1 : 0);
 }
 
 /// <summary>판정 결과: 성공(Result 아이템) · 부분 성공(Partial — 단서) · 아무 일 없음.</summary>
@@ -72,7 +100,7 @@ public sealed class CraftData
     public string ActionName(int a) => (uint)a < (uint)Actions.Count ? Actions[a].Name : "";
 
     // 자주 쓰는 속성 번호
-    public int P_burns, P_hardness, P_toughness, P_sharp, P_sharpens, P_splits, P_weight, P_edible, P_poison, P_holds, P_waterproof, P_moldable, P_fibrous, P_bends, P_rots, P_melts, P_reduces, P_warm, P_malleable, P_fires_hard, P_dries, P_tears;
+    public int P_burns, P_hardness, P_toughness, P_sharp, P_sharpens, P_splits, P_weight, P_edible, P_poison, P_holds, P_waterproof, P_moldable, P_fibrous, P_bends, P_rots, P_melts, P_reduces, P_warm, P_malleable, P_fires_hard, P_dries, P_tears, P_meat, P_covers, P_pierces;
 
     private static readonly Lazy<CraftData> DefaultData = new(() =>
     {
@@ -132,7 +160,7 @@ public sealed class CraftData
                 if (!seen.Add(r.Id)) problems.Add($"{where}: 아이디가 겹칩니다.");
                 r.Action = AI(e.GetProperty("action").GetString() ?? "");
                 if (r.Action < 0) problems.Add($"{where}: 모르는 행동입니다.");
-                void Conds(string key, SortedDictionary<int, int> into)
+                void ReadConds(string key, Conds into)
                 {
                     if (!e.TryGetProperty(key, out var o)) return;
                     foreach (var p in o.EnumerateObject())
@@ -141,7 +169,7 @@ public sealed class CraftData
                         if (pi < 0) problems.Add($"{where}: {key} 의 속성 '{p.Name}' 을(를) 모릅니다."); else into[pi] = p.Value.GetInt32();
                     }
                 }
-                Conds("input", r.Input); Conds("input_max", r.InputMax); Conds("with", r.With); Conds("tool", r.Tool);
+                ReadConds("input", r.Input); ReadConds("input_max", r.InputMax); ReadConds("with", r.With); ReadConds("with_max", r.WithMax); ReadConds("tool", r.Tool);
                 if (r.Input.Count == 0) problems.Add($"{where}: 주 재료 조건(input)이 없습니다.");
                 r.Heat = e.TryGetProperty("heat", out var he) ? he.GetInt32() : 0;
                 r.Tinder = e.TryGetProperty("tinder", out var ti) ? ti.GetInt32() : 0;
@@ -149,6 +177,7 @@ public sealed class CraftData
                 r.Count = e.TryGetProperty("count", out var cn) ? cn.GetInt32() : 1;
                 r.Uses = e.TryGetProperty("uses", out var us) ? us.GetInt32() : 1;
                 r.WithUses = e.TryGetProperty("with_uses", out var wu) ? wu.GetInt32() : 0;
+                r.ToolUses = e.TryGetProperty("tool_uses", out var tu) ? tu.GetInt32() : 0;
                 r.TimeMin = e.TryGetProperty("time_min", out var tm) ? tm.GetInt32() : 60;
                 string res = e.GetProperty("result").GetString() ?? "";
                 r.Result = II(res);
@@ -173,6 +202,7 @@ public sealed class CraftData
         d.P_weight = PI("weight"); d.P_edible = PI("edible"); d.P_poison = PI("poison"); d.P_holds = PI("holds"); d.P_waterproof = PI("waterproof"); d.P_moldable = PI("moldable");
         d.P_fibrous = PI("fibrous"); d.P_bends = PI("bends"); d.P_rots = PI("rots"); d.P_melts = PI("melts"); d.P_reduces = PI("reduces"); d.P_warm = PI("warm");
         d.P_malleable = PI("malleable"); d.P_fires_hard = PI("fires_hard"); d.P_dries = PI("dries"); d.P_tears = PI("tears");
+        d.P_meat = PI("meat"); d.P_covers = PI("covers"); d.P_pierces = PI("pierces");
         return d;
     }
 
@@ -193,6 +223,7 @@ public sealed class CraftData
             foreach (var (p, min) in r.Input) { bool pass = input[p] >= min; Check(pass, Properties[p].Id); if (pass) inputOk++; }
             foreach (var (p, max) in r.InputMax) { bool pass = input[p] <= max; Check(pass, Properties[p].Id); if (pass) inputOk++; }
             foreach (var (p, min) in r.With) Check(with is not null && with[p] >= min, "with");
+            foreach (var (p, max) in r.WithMax) Check(with is not null && with[p] <= max, "with");
             foreach (var (p, min) in r.Tool) Check(tool is not null && tool[p] >= min, "tool");
             if (r.Heat > 0) Check(heat >= r.Heat, "heat");
             if (r.Tinder > 0) Check(tinderBurns >= r.Tinder, "tinder");
@@ -228,6 +259,11 @@ public sealed class CraftData
     };
 
     /// <summary>익혔거나 말려 둔 먹을 것(들고 다니며 먹는 것)인가.</summary>
+    /// <summary>(E5b) 입을 수 있는 것: 0 아님 · 1 몸 · 2 발.</summary>
+    public int WearSlot(int item) => (uint)item < (uint)Catalog.Items.Count ? Catalog.Items[item].Wear switch { "body" => 1, "feet" => 2, _ => 0 } : 0;
+    /// <summary>(E5b) 짐승에게서 나온 것(날고기 · 날가죽 · 뼈 · 힘줄)인가.</summary>
+    public bool IsAnimal(int item) => (uint)item < (uint)Catalog.Items.Count && Catalog.Items[item].Kind == "animal";
+
     public bool IsCookedOrKept(int item) => (uint)item < (uint)Catalog.Items.Count && Catalog.Items[item].Kind == "made" && Prop(item, P_edible) > 0;
 
     /// <summary>불 세기 이름.</summary>

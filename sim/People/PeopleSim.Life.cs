@@ -211,6 +211,7 @@ public sealed partial class PeopleSim
             int g = PeopleData.Gathering;
             if (Now - p.LastGather > 3 * GameTime.TicksPerDay && p.SkillXp[g] > 0) p.SkillXp[g] = Math.Max(0, p.SkillXp[g] - p.SkillLevel(g) * 3);
             PurgeThoughts(p);
+            BodyDaily(p, rng);
             CraftDaily(p);
             MoveIntent(p, rng);
             // 안아 줄 사람이 없는 아기
@@ -218,7 +219,7 @@ public sealed partial class PeopleSim
         }
         if (Now / GameTime.TicksPerDay % GameTime.DaysPerYear == 0) LanguageYear();
         NameLands();
-        foreach (var (cell, life) in Provinces.ToList()) FiresDaily(cell, life);
+        foreach (var (cell, life) in Provinces.ToList()) { FiresDaily(cell, life); AnimalsDaily(life); RotGround(life, Rng(cell)); }
         CheckLostDiscoveries();
         GroupKnowledgeDaily();
         SleepEmptyProvinces();
@@ -309,6 +310,7 @@ public sealed partial class PeopleSim
     {
         if (p.Dead) return;
         Integrate(p, Now);
+        DeathHook?.Invoke(this, p, cause);
         Unschedule(p);
         p.Position(Now, out int x, out int y);
         if (p.Carrier >= 0 && Get(p.Carrier) is { } c) c.Position(Now, out x, out y);
@@ -327,6 +329,14 @@ public sealed partial class PeopleSim
             var lifeHere = Life(p.Cell);
             foreach (var (item, n) in p.Carry) if (item != I_ember) lifeHere.Drop(deathTile, item, n);
             p.Carry.Clear(); p.PotWater = 0; p.EmberTick = -1;
+        }
+        // (E5b) 입던 옷도 그 자리에 남는다(가족이 주워 입는다)
+        if ((uint)deathTile < HexFrame.TileCount && (p.Worn >= 0 || p.WornFeet >= 0))
+        {
+            var lifeHere = Life(p.Cell);
+            if (p.Worn >= 0) lifeHere.Drop(deathTile, p.Worn, 1);
+            if (p.WornFeet >= 0) lifeHere.Drop(deathTile, p.WornFeet, 1);
+            p.Worn = p.WornFeet = -1;
         }
         if (cause == DeathCause.Thirst && !Life(p.Cell).HasDrinkFrom(deathTile)) St.NoWaterDeaths++;
         if (cause == DeathCause.Starvation && !Life(p.Cell).HasFoodFrom(deathTile)) St.NoFoodDeaths++;

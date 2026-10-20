@@ -79,8 +79,7 @@ public partial class ProvinceView
     {
         _overlay.Visible = IsOpen;
         var xf = GetViewport().GetCanvasTransform();
-        int mk = 0, nl = 0, bb = 0;
-        _fadeNow.Clear();
+        int mk = 0, nl = 0, bb = 0; // (_fadeNow 는 UpdateAnimals 앞에서 비운다 — 짐승도 나무를 흐리게 한다)
         foreach (var n in _pool)
         {
             if (!n.Visible || n.Id < 0 || !_indexOfId.TryGetValue(n.Id, out int vi)) continue;
@@ -274,6 +273,7 @@ public partial class ProvinceView
             foreach (var m in _markers) m.Visible = false;
             _overlay.Visible = false;
             HideCraft();
+            HideAnimals();
             return;
         }
         ApplyRevealed(snap);
@@ -322,6 +322,8 @@ public partial class ProvinceView
             FollowCrossed?.Invoke(snap.People[fi].Cell);
         UpdateCrossLabels(snap);
         UpdateCraft(snap);
+        _fadeNow.Clear();
+        UpdateAnimals(snap, tick);
         UpdateVisibilityAids();
         _ = used;
     }
@@ -352,7 +354,7 @@ public partial class ProvinceView
         bool moving = v.Walking && (dx != 0 || dy != 0) && !v.Dead;
         bool lying = v.Dead || (v.Asleep && v.Carrier < 0);
         bool sitting = !moving && !lying && v.Act is Act.Rest or Act.Warm or Act.Follow;
-        var tex = Art.Person(v.Look, v.Female, v.Stage, lying ? Art.Facing.Front : node.Facing);
+        var tex = Art.Person(v.Look, v.Female, v.Stage, lying ? Art.Facing.Front : node.Facing, Art.ClothOf(v.Worn, v.WornFeet, v.Injured && !v.Dead));
         float scale = Art.PersonTiles * TilePx / Art.PersonH;
         var body = node.Body;
         body.Texture = tex;

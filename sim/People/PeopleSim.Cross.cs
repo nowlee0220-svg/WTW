@@ -269,6 +269,7 @@ public sealed partial class PeopleSim
         bool fresh = !Provinces.ContainsKey(b.Nb) && !Dormant.ContainsKey(b.Nb); // 아무도 들어가 본 적 없는 땅
         var to = Life(b.Nb);
         from = Life(p.Cell); // (to 를 깨우며 마지막 지방 기억이 바뀌었을 수 있다)
+        entry = OpenEntry(to, entry);
         var babies = new List<Person>();
         foreach (var q in from.People) if (!q.Dead && q.Carrier == p.Id) babies.Add(q);
         foreach (var q in babies.Prepend(p))
@@ -281,6 +282,7 @@ public sealed partial class PeopleSim
             q.ArrivedTick = Now;
             q.NewMotion().SetStill(Now, entry % S * 1000 + 500, entry / S * 1000 + 500);
         }
+        MoveCompanions(p, from, to, entry);
         p.SearchDir = b.InDir8;
         St.Crossings++;
         if (p.Why is Why.Scarce or Why.SeekMate or Why.Explore or Why.NoWater or Why.NoFood or Why.FollowFamily or Why.Break || !VisitedBefore(p, b.Nb))
@@ -290,6 +292,27 @@ public sealed partial class PeopleSim
         if (Crossings.Count > CrossingsKept) Crossings.RemoveRange(0, Crossings.Count - CrossingsKept);
         ForgetLastLife();
         Decide(p);
+    }
+
+    /// <summary>
+    /// (E5b 고침) 넘어가 설 자리가 바위 · 물에 갇힌 작은 땅이면(변은 지도의 땅만 보고 만들어 이어짐을 모른다) 가까운(10타일 안) 넓은 땅으로.
+    /// 갇힌 땅에 서면 물도 출구도 없어 목말라 죽거나, 두 지방 사이를 끝없이 오갔다.
+    /// </summary>
+    private static int OpenEntry(ProvinceLife to, int entry)
+    {
+        if (to.OpenLand(entry)) return entry;
+        int ex = entry % S, ey = entry / S;
+        for (int r = 1; r <= 10; r++)
+            for (int dy = -r; dy <= r; dy++)
+                for (int dx = -r; dx <= r; dx++)
+                {
+                    if (Math.Max(Math.Abs(dx), Math.Abs(dy)) != r) continue;
+                    int x = ex + dx, y = ey + dy;
+                    if ((uint)x >= S || (uint)y >= S) continue;
+                    int t = y * S + x;
+                    if (to.Walk[t] && to.OpenLand(t)) return t;
+                }
+        return entry;
     }
 
     private bool VisitedBefore(Person p, int cell)
@@ -344,6 +367,7 @@ public sealed partial class PeopleSim
         foreach (int cell in empty)
         {
             var life = Provinces[cell];
+            SleepAnimals(life);
             Provinces.Remove(cell);
             _livesDirty = true;
             Dormant[cell] = new DormantProvince(cell, life.Stocks.Select(kv => (kv.Key, kv.Value)).ToArray(), life.Revealed.ToArray(), life.People)
@@ -353,6 +377,7 @@ public sealed partial class PeopleSim
                 Dug = life.Dug.ToArray(),
                 // (S1) 예약 번호는 지방마다 이어진다(잠들었다 깨어나도 — 잠든 상태가 결과에 영향이 없게)
                 SchedHandle = life.Sched.NextHandle, SchedOrder = life.Sched.NextOrder, Events = life.Sched.ExportSorted(),
+                Herds = life.Herds.Values.ToList(), NextHerdId = life.NextHerdId, FishStock = life.FishStock, SleptAt = Now, AnimalsReady = true,
             };
         }
         ForgetLastLife();
@@ -384,6 +409,12 @@ public sealed record DormantProvince(int Cell, (int Tile, TileStock Stock)[] Sto
     public long SchedHandle { get; init; } = 1;
     public long SchedOrder { get; init; } = 1;
     public Scheduling.ScheduledEvent[] Events { get; init; } = Array.Empty<Scheduling.ScheduledEvent>();
+    /// <summary>(E5b) 짐승 무리 · 다음 무리 번호 · 물고기 몫 · 잠든 시각(−1 = 저장할 때 깨어 있었다 — 예약이 그대로 있다) · 짐승을 이미 만들었나(버전 9 이하 파일은 아니다).</summary>
+    public List<Herd> Herds { get; init; } = new();
+    public int NextHerdId { get; init; } = 1;
+    public int FishStock { get; init; }
+    public long SleptAt { get; init; } = -1;
+    public bool AnimalsReady { get; init; }
 }
 
 /// <summary>경계를 넘은 일 하나(화면 · 지구본의 이동 표시).</summary>

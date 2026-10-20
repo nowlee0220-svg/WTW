@@ -268,6 +268,9 @@ public sealed partial class PeopleSim
         "cord" => "cord", "basket" or "leaf_cup" => "basket", "wet_pot" or "dry_pot" or "pot" => "pot",
         "cooked_fruit" or "roasted_mushroom" or "roasted_acorn" or "stew" => "cooked", "dried_fruit" or "dry_grass" => "dried",
         "copper_lump" or "copper_blade" => "copper",
+        // (E5b)
+        "cooked_meat" or "cooked_fish" or "dried_meat" or "smoked_meat" => "meat", "scraped_hide" or "dried_hide" or "tanned_hide" => "hide",
+        "stone_spear" => "spear", "bone_needle" => "needle", "fur_coat" or "fur_boots" => "coat",
         _ => null,
     };
 
@@ -280,6 +283,28 @@ public sealed partial class PeopleSim
         if (!Languages.TryGetValue(p.LangId, out var lang)) return;
         string? cid = ConceptForItem(Craft.Catalog.Items[rule.Result].Id);
         if (cid is null) return;
+        int c = C(cid);
+        if (c < 0 || lang.Known.Contains(c)) return;
+        var teacher = from >= 0 ? Get(from) : null;
+        if (teacher is not null && teacher.LangId != p.LangId && Languages.TryGetValue(teacher.LangId, out var src) && src.Known.Contains(c))
+        {
+            lang.Loans[c] = WordOf(teacher, c);
+            lang.Origins[c] = (src.Id, Now);
+            AddBio(p, BioKind.BorrowedWord, from, c);
+        }
+        else
+        {
+            lang.Origins[c] = (-1, Now);
+            AddBio(p, BioKind.NewWord, -1, c);
+        }
+        lang.Known.Add(c);
+        lang.Version++;
+    }
+
+    /// <summary>(E5b) p 의 말에 뜻 cid 의 낱말이 없으면 생긴다(지어냄 — from 이 다른 말을 쓰면 빌려 온다). 짐승 이름 등.</summary>
+    private void NewWordConcept(Person p, string cid, int from)
+    {
+        if (!Languages.TryGetValue(p.LangId, out var lang)) return;
         int c = C(cid);
         if (c < 0 || lang.Known.Contains(c)) return;
         var teacher = from >= 0 ? Get(from) : null;

@@ -34,6 +34,9 @@ T = [
    ("private int StudyScore(Person p, ProvinceLife life, out Painting? target)", "Paint"), ("internal void FinishStudy(Person p)", "Paint"),
    ("internal void MakePainting(Person p, int here, Pcg32 rng)", "Paint"), ("private void RecordWishes(", "Paint"),
    ("internal void GroupKnowledgeDaily()", "Group"), ("internal void KnowledgeDaily(Person p)", "Group")]),
+ ("sim/People/PeopleSim.Acts.cs", [("private void Finish(Person p)", "X7"), ("private void Arrive(Person p)", "X7")]),
+ ("sim/People/PeopleSim.Find.cs", [("private bool TryFetchStash(", "X8")]),
+ ("sim/People/PeopleSim.Craft.cs", [("private bool TryCook(Person p, Why why)", "X8"), ("private int BestCarriedFood(Person p, bool desperate)", "X8")]),
  ("sim/People/PeopleSim.Drift.cs", [("internal void LanguageYear()", "Language")]),
  ("sim/People/PeopleSim.Places.cs", [("private void NameLands()", "Language")]),
  ("sim/People/PeopleSim.Speech.cs", [("internal void Converge(Person p, Person q, Pcg32 rng)", "Language"), ("public string WordOf(Person p, int concept, int minSyllables = 1)", "Language"),
@@ -48,6 +51,12 @@ T = [
  ("sim/Province/ProvinceGenerator.cs", [("public static ProvinceMap Generate(", "MapGen")]),
  ("sim/Scheduling/Scheduler.cs", [("public ScheduledEvent Pop()", "Schedule")]),
  ("sim/World/GameWorld.cs", [("public void AdvanceTo(long targetTick)", "Sim")]),
+ # (E5b) 짐승 · 사냥 — X1 무리의 판단 · X2 사냥할까 · X3 둘레의 사람 · X4 늘고 줄기 · X5 사냥 · 물고기 · X6 옷 · 썩음
+ ("sim/People/PeopleSim.Animals.cs", [("internal void OnHerdEvent(ProvinceLife life, int id)", "X1"), ("private Person? NearestPerson(", "X3"), ("private Person? Vulnerable(", "X3"),
+   ("private void AnimalsDaily(ProvinceLife life)", "X4"), ("private bool TryStalk(", "X1")]),
+ ("sim/People/PeopleSim.Hunt.cs", [("private int HuntScore(Person p, ProvinceLife life, out Herd? target", "X2"), ("public int WeaponPower(Person p)", "X2"), ("private void HuntHelpers(", "X2"), ("private bool TryHunt(Person p, Herd h)", "X5"),
+   ("private void ArriveHunt(Person p)", "X5"), ("private void ResolveHunt(Person p)", "X5"), ("private void FinishButcher(Person p, bool done)", "X5"), ("private int FishScore(", "X5"),
+   ("private void BodyDaily(Person p, Pcg32 rng)", "X6"), ("private void RotGround(", "X6")]),
 ]
 here = os.path.dirname(os.path.abspath(__file__))
 src = os.path.join(here, "..", "..", "sim", "Core", "Prof.cs")

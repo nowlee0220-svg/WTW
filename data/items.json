@@ -1,9 +1,9 @@
 {
   "_설명": [
-    "아이템 (E2 자원 30개 + E4 만들어지는 것 33개 + E5 벽 그림). stains(묻어난다)는 E5 에서 더함 — 숯 · 재 · 진흙. props = 재료 속성(properties.json 아이디 → 0~5 세기). 적지 않은 속성은 0.",
+    "아이템 (E2 자원 30개 + E4 만들어지는 것 33개 + E5 벽 그림 + E5b 짐승에게서 나오는 것 6개 · 만들어지는 것 11개). stains(묻어난다)는 E5 에서 더함 — 숯 · 재 · 진흙. props = 재료 속성(properties.json 아이디 → 0~5 세기). 적지 않은 속성은 0.",
     "E2 의 성질 메모(traits: 낮음 · 보통 · 높음 · 아주 높음)는 돌에 그대로 두고 숫자로 옮겼다(낮음 1~2 · 보통 2~3 · 높음 4 · 아주 높음 5).",
     "edible 는 들고 다니다 먹을 때의 영양(× 5 = 배부름, 한 끼 ≈ 33). 오브젝트에서 바로 따 먹는 영양은 people.json 의 foods 가 정한다.",
-    "kind: made = 만들어지는 것 · place = 땅 위에 놓이는 것(모닥불 · 화덕 — 들고 다니지 않음). 아이디는 행성 자원(resources.json)과 같은 이름 체계."
+    "kind: animal = 짐승에게서 나오는 것(사냥 · 손질로만 얻는다) · made = 만들어지는 것 · place = 땅 위에 놓이는 것(모닥불 · 화덕 — 들고 다니지 않음). wear: 입을 수 있는 것(body 몸 · feet 발) — 따뜻함(warm)만큼 추위를 막는다. 아이디는 행성 자원(resources.json)과 같은 이름 체계."
   ],
   "items": [
     { "id": "wood",          "name": "나무",        "props": { "burns": 4, "hardness": 2, "toughness": 4, "splits": 3, "bends": 1, "weight": 2, "dries": 2 } },
@@ -53,9 +53,9 @@
     { "id": "ash",           "name": "재",          "kind": "made",  "props": { "stains": 3, "mixes": 2, "weight": 0 } },
     { "id": "dry_grass",     "name": "마른 풀",     "kind": "made",  "props": { "burns": 5, "fibrous": 3, "tears": 5, "bends": 3, "weight": 0 } },
     { "id": "split_wood",    "name": "쪼갠 장작",   "kind": "made",  "props": { "burns": 5, "hardness": 2, "toughness": 3, "weight": 1 } },
-    { "id": "stick",         "name": "나무 막대",   "kind": "made",  "props": { "burns": 3, "hardness": 2, "toughness": 4, "bends": 1, "weight": 1 } },
-    { "id": "spear",         "name": "뾰족한 막대", "kind": "made",  "props": { "sharp": 2, "hardness": 3, "toughness": 4, "weight": 1 } },
-    { "id": "flake",         "name": "깬 돌 날",    "kind": "made",  "props": { "sharp": 4, "sharpens": 4, "hardness": 4, "toughness": 1, "weight": 1 } },
+    { "id": "stick",         "name": "나무 막대",   "kind": "made",  "props": { "pierces": 1, "burns": 3, "hardness": 2, "toughness": 4, "bends": 1, "weight": 1 } },
+    { "id": "spear",         "name": "뾰족한 막대", "kind": "made",  "props": { "sharp": 2, "pierces": 3, "hardness": 3, "toughness": 4, "weight": 1 } },
+    { "id": "flake",         "name": "깬 돌 날",    "kind": "made",  "props": { "sharp": 4, "pierces": 2, "sharpens": 4, "hardness": 4, "toughness": 1, "weight": 1 } },
     { "id": "dull_flake",    "name": "무딘 조각",   "kind": "made",  "props": { "sharp": 1, "hardness": 3, "toughness": 1, "weight": 1 } },
     { "id": "broken_stone",  "name": "깨진 돌",     "kind": "made",  "props": { "hardness": 3, "toughness": 2, "weight": 2 } },
     { "id": "chopper",       "name": "찍개",        "kind": "made",  "props": { "sharp": 2, "hardness": 4, "toughness": 3, "weight": 3 } },
@@ -79,6 +79,24 @@
     { "id": "molten_copper", "name": "녹은 구리",   "kind": "made",  "props": { "melts": 5, "warm": 5, "weight": 3 } },
     { "id": "copper_lump",   "name": "구리 덩이",   "kind": "made",  "props": { "malleable": 5, "hardness": 3, "toughness": 4, "melts": 3, "melt_heat": 3, "weight": 3 } },
     { "id": "copper_blade",  "name": "구리 날",     "kind": "made",  "props": { "sharp": 5, "hardness": 3, "toughness": 4, "malleable": 4, "weight": 2 } },
-    { "id": "painting",      "name": "벽 그림",     "kind": "place", "props": { "stains": 1 } }
+    { "id": "painting",      "name": "벽 그림",     "kind": "place", "props": { "stains": 1 } },
+
+    { "id": "raw_meat",      "name": "날고기",      "kind": "animal", "props": { "edible": 4, "meat": 3, "poison": 2, "rots": 5, "dries": 3, "weight": 2 } },
+    { "id": "raw_fish",      "name": "날생선",      "kind": "animal", "props": { "edible": 3, "meat": 2, "poison": 2, "rots": 5, "dries": 3, "weight": 1 } },
+    { "id": "raw_hide",      "name": "날가죽",      "kind": "animal", "wear": "body", "props": { "covers": 2, "warm": 2, "toughness": 2, "tears": 1, "rots": 5, "dries": 3, "weight": 2 } },
+    { "id": "bone",          "name": "뼈",          "kind": "animal", "props": { "hardness": 3, "toughness": 2, "splits": 2, "sharpens": 3, "weight": 1 } },
+    { "id": "fat",           "name": "기름 덩이",   "kind": "animal", "props": { "burns": 4, "edible": 3, "rots": 2, "weight": 1 } },
+    { "id": "sinew",         "name": "힘줄",        "kind": "animal", "props": { "fibrous": 4, "toughness": 4, "bends": 4, "dries": 3, "rots": 2, "weight": 0 } },
+    { "id": "cooked_meat",   "name": "익힌 고기",   "kind": "made",  "props": { "edible": 5, "rots": 3, "weight": 1 } },
+    { "id": "cooked_fish",   "name": "익힌 생선",   "kind": "made",  "props": { "edible": 4, "rots": 3, "weight": 1 } },
+    { "id": "dried_meat",    "name": "말린 고기",   "kind": "made",  "props": { "edible": 4, "rots": 1, "weight": 1 } },
+    { "id": "smoked_meat",   "name": "그을린 고기", "kind": "made",  "props": { "edible": 4, "rots": 0, "weight": 1 } },
+    { "id": "scraped_hide",  "name": "긁은 가죽",   "kind": "made",  "wear": "body", "props": { "covers": 2, "warm": 2, "toughness": 3, "rots": 3, "dries": 3, "weight": 2 } },
+    { "id": "dried_hide",    "name": "마른 가죽",   "kind": "made",  "wear": "body", "props": { "covers": 3, "warm": 3, "toughness": 4, "bends": 1, "rots": 2, "weight": 2 } },
+    { "id": "tanned_hide",   "name": "무두질한 가죽", "kind": "made", "wear": "body", "props": { "covers": 4, "warm": 3, "toughness": 5, "bends": 4, "rots": 0, "weight": 1 } },
+    { "id": "bone_needle",   "name": "뼈바늘",      "kind": "made",  "props": { "pierces": 4, "hardness": 2, "weight": 0 } },
+    { "id": "fur_coat",      "name": "털가죽 옷",   "kind": "made",  "wear": "body", "props": { "covers": 5, "warm": 5, "toughness": 4, "weight": 2 } },
+    { "id": "fur_boots",     "name": "털가죽 신",   "kind": "made",  "wear": "feet", "props": { "covers": 2, "warm": 2, "toughness": 4, "weight": 1 } },
+    { "id": "stone_spear",   "name": "돌창",        "kind": "made",  "props": { "pierces": 5, "sharp": 4, "hardness": 4, "toughness": 3, "weight": 2 } }
   ]
 }
