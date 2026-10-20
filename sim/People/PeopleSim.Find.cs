@@ -322,7 +322,8 @@ public sealed partial class PeopleSim
         }
         // 이웃 지방
         Border? crossB = null; int crossGate = -1;
-        if (HexFrame.BorderDistance(here) < 26 || p.SearchMiss >= 3)
+        // (E5b 고침) 막 넘어온 뒤 두 시간은 이 지방 안부터 찾는다 — 셋 이상의 지방 모서리를 빙빙 돌며 목말라 죽던 것
+        if (Now - p.ArrivedTick >= 2 * GameTime.TicksPerHour && (HexFrame.BorderDistance(here) < 26 || p.SearchMiss >= 3))
         {
             var planet = _w.Planet;
             foreach (var b in OpenBorders(life, here))
