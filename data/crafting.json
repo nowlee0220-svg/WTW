@@ -174,7 +174,7 @@
       "partial": { "with": { "text": "손으로 비비니 껍질만 벗겨졌다", "hint": "단단한 돌 위에 놓고 빻으면 가루가 날 것 같다" } } },
     { "id": "flatbread",    "name": "가루를 뭉쳐 불에 구워 빵을 만든다", "action": "roast", "input": { "mixes": 3, "edible": 1 }, "input_max": { "sprouts": 0, "poison": 0 }, "heat": 1, "result": "flatbread", "count": 1, "uses": 1, "time_min": 30, "skill": "cooking",
       "partial": { "heat": { "text": "가루가 뭉치기만 했다", "hint": "불에 구우면 먹기 좋아질 것 같다" } } },
-    { "id": "stone_hoe",    "name": "넓적한 돌을 막대 끝에 묶어 괭이를 만든다", "action": "twist", "input": { "hardness": 4, "toughness": 3 }, "input_max": { "sharp": 2, "pierces": 0 }, "with": { "toughness": 4, "hardness": 2 }, "with_max": { "weight": 1 }, "tool": { "fibrous": 4, "toughness": 4 }, "tool_uses": 1, "result": "stone_hoe", "count": 1, "uses": 1, "with_uses": 1, "time_min": 60, "skill": "crafting",
+    { "id": "stone_hoe",    "name": "넓적한 돌을 막대 끝에 묶어 괭이를 만든다", "action": "twist", "input": { "hardness": 4, "toughness": 3 }, "input_max": { "sharp": 1, "pierces": 0, "edible": 0 }, "with": { "toughness": 4, "hardness": 2 }, "with_max": { "weight": 1 }, "tool": { "fibrous": 4, "toughness": 4 }, "tool_uses": 1, "result": "stone_hoe", "count": 1, "uses": 1, "with_uses": 1, "time_min": 60, "skill": "crafting",
       "partial": { "tool": { "text": "묶을 것이 없어 돌이 빠져 버렸다", "hint": "질긴 끈으로 묶으면 될 것 같다" }, "with": { "text": "꽂을 막대가 없었다", "hint": "곧고 질긴 나무 막대가 있어야 할 것 같다" } } }
   ]
 }

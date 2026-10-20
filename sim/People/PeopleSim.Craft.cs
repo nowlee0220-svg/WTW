@@ -87,7 +87,18 @@ public sealed partial class PeopleSim
     private int Prop(int item, int prop) => Craft.Prop(item, prop);
     private bool IsMade(int item) => (uint)item < (uint)Craft.Catalog.Items.Count && Craft.Catalog.Items[item].Kind == "made";
 
-    public int CarryWeight(Person p) { int w = 0; foreach (var c in p.Carry) w += Math.Max(1, Prop(c.Item, Craft.P_weight)) * c.Count; return w; } // 가벼운 것도 하나에 1(손이 둘뿐)
+    public int CarryWeight(Person p)
+    {
+        int w = 0;
+        foreach (var c in p.Carry)
+        {
+            int wt = Prop(c.Item, Craft.P_weight);
+            // 가벼운 것도 하나에 1(손이 둘뿐) — (E5c) 다만 무게 0 인 씨(낟알 · 콩 한 줌)는 다섯 줌에 1(주머니 하나에 담긴다): 씨를 들면 짐이 금세 차서
+            // 애써 구한 돌을 내려놓고 다시 구하러 가기를 끝없이 되풀이했다
+            w += wt == 0 && P_sprouts >= 0 && Prop(c.Item, P_sprouts) > 0 ? (c.Count + 4) / 5 : Math.Max(1, wt) * c.Count;
+        }
+        return w;
+    }
     public int CarryCapOf(Person p) { int cap = CarryCap; foreach (var c in p.Carry) { if (Prop(c.Item, Craft.P_holds) >= 3) cap += 8; } return cap + Ability(p, PeopleData.Str) / 2; }
 
     /// <summary>들고 있는 것 중 속성 prop 이 가장 높은 것(min 이상). except 두 개는 빼고. 없으면 −1.</summary>
@@ -188,6 +199,7 @@ public sealed partial class PeopleSim
     {
         if (r.Result < 0) return false;
         if (w.Index == W_hunting) return Prop(r.Result, Craft.P_weight) >= 1 && (Prop(r.Result, Craft.P_pierces) >= 1 || Prop(r.Result, Craft.P_sharp) >= 3); // (E5b) 바늘은 무기가 아니다
+        if (w.Index == W_farming) return Prop(r.Result, P_digs) >= 2 || Prop(r.Result, P_sprouts) > 0 && Craft.Catalog.Items[r.Result].Kind == "place"; // (E5c) 밭일: 밭을 일굴 만한 도구(파는 힘 2 이상)나 밭 — 나무 막대(1)는 아니다
         foreach (int pr in w.Props) if (Prop(r.Result, pr) > 0) return true;
         if (w.Index == W_warmth && (r.Result == I_ember || r.Result == I_campfire || r.Result == I_hearth)) return true;
         if (w.Index == W_record) return r.Result == I_painting;
@@ -202,6 +214,7 @@ public sealed partial class PeopleSim
     internal bool Plan(Person p, int wish, bool known, Pcg32 rng, CraftRule? force = null)
     {
         St.PlanWhy[0]++;
+        if ((uint)wish < 16) St.PlanByWish[wish * 2 + (known ? 1 : 0)]++;
         bool r = PlanInner(p, wish, known, rng, force);
         if (r) St.PlanWhy[7]++;
         return r;
@@ -240,6 +253,7 @@ public sealed partial class PeopleSim
             }
             if (best is null) return false;
             rule = best; action = rule.Action;
+            St.PlanKnownRule[rule.Index]++;
         }
         else
         {
@@ -352,7 +366,7 @@ public sealed partial class PeopleSim
         {
             // 재료가 없다 → 그 속성이 높은 것을 얻으러
             St.PlanWhy[2]++;
-            if (rule is not null) { if (StartMaterialFor(p, rule.Input, Why.KnowHow)) return true; St.PlanWhy[3]++; return false; }
+            if (rule is not null) { if (StartMaterialFor(p, rule.Input, Why.KnowHow, rule.Result)) return true; St.PlanWhy[3]++; return false; }
             foreach (int pr in inPref) if (StartMaterialFor(p, pr, 2, WishWhy(wish))) return true;
             St.PlanWhy[3]++;
             return false;
@@ -447,6 +461,7 @@ public sealed partial class PeopleSim
     private bool AlreadyCovered(Person p, int wish, int result)
     {
         if (wish == W_cooking || wish == W_warmth || wish == W_record || wish == W_food) return false; // 먹을 것 · 불은 쓰면 없어진다, 그림은 들고 다니지 않는다
+        if (wish == W_farming) { foreach (var c in p.Carry) if (Prop(c.Item, P_digs) >= 2) return true; return false; } // (E5c) 땅 파는 도구가 이미 있으면 더 만들지 않는다(돌괭이를 만들려 귀한 돌을 끝없이 찾아다니던 것)
         if (wish == W_clothing) // (E5b) 이미 그만한 옷을 입었거나 남는 옷이 있다(가죽 같은 중간 것은 따지지 않는다)
         {
             if (WornCovers(p, result)) return true;
@@ -476,7 +491,8 @@ public sealed partial class PeopleSim
             {
                 if (c.Item == I_ember) continue;
                 // (E5b 고침) 그릇 · 바구니(담는 것)는 마지막까지 든다 — 뼈 · 힘줄 · 기름에 밀려 바구니를 내려놓고 다시 엮기를 끝없이 되풀이했다
-                int sc = (IsMade(c.Item) ? 40 : Craft.IsAnimal(c.Item) ? 10 : 0) + (Prop(c.Item, Craft.P_holds) > 0 ? 60 : 0) + Prop(c.Item, wantProp) * 10 + Prop(c.Item, Craft.P_edible) * 6 - Prop(c.Item, Craft.P_weight) * 3 - (c.Count > 2 ? 15 : 0);
+                // (E5c 고침) 단단한 날붙이(갈아 만든 돌날 등)도 끝까지 든다 — 바구니 재료를 들려고 돌날을 내려놓고, 돌날이 없어 다시 그것을 주우러 가기를 되풀이했다
+                int sc = (IsMade(c.Item) ? 40 : Craft.IsAnimal(c.Item) ? 10 : 0) + (Prop(c.Item, Craft.P_holds) > 0 ? 60 : 0) + (IsMade(c.Item) && Prop(c.Item, Craft.P_hardness) >= 4 && Prop(c.Item, Craft.P_sharp) >= 2 ? 50 : 0) + Prop(c.Item, wantProp) * 10 + Prop(c.Item, Craft.P_edible) * 6 - Prop(c.Item, Craft.P_weight) * 3 - (c.Count > 2 ? 15 : 0);
                 if (sc < ws) { ws = sc; worst = c.Item; }
             }
             if (worst < 0) break;
@@ -712,19 +728,21 @@ public sealed partial class PeopleSim
     private const long MissMemory = 12 * GameTime.TicksPerHour;
 
     /// <summary>조건(속성 → 최소값)을 모두 맞는 재료를 얻으러 간다.</summary>
-    private bool StartMaterialFor(Person p, Conds conds, Why why)
+    /// <param name="notItem">(E5c 고침) 재료로 줍지 않을 것 — 만들 것 그 자체(땅에 놓인 돌날을 "단단한 돌"로 주워 돌날을 또 갈려던 것)</param>
+    private bool StartMaterialFor(Person p, Conds conds, Why why, int notItem = -1)
     {
         if (conds.Count == 0) return false;
-        long key = 1000;
+        long key = 1000 + notItem;
         foreach (var (pr, mn) in conds) key = key * 131 + pr * 16 + mn;
         if (p.MissKey == key && Now - p.MissTick < MissMemory) return false;
-        if (StartMaterialFor(p, it => { foreach (var (pr, mn) in conds) if (Prop(it, pr) < mn) return false; return true; }, conds.Keys.First(), why)) return true;
+        if (StartMaterialFor(p, it => { if (it == notItem) return false; foreach (var (pr, mn) in conds) if (Prop(it, pr) < mn) return false; return true; }, conds.Keys.First(), why)) return true;
         p.MissKey = key; p.MissTick = Now;
         return false;
     }
 
     private bool StartMaterialFor(Person p, Func<int, bool> itemOk, int prop, Why why)
     {
+        if ((uint)p.PlanWish < 16) St.MatByWish[p.PlanWish * 2 + (why == Why.KnowHow ? 1 : 0)]++;
         var life = Life(p.Cell);
         if (CarryWeight(p) + 3 > CarryCapOf(p)) { AddWish(p, W_carry, 8); MakeRoom(p, prop, 3); if (CarryWeight(p) + 1 > CarryCapOf(p)) return false; }
         p.Position(Now, out int px, out int py);

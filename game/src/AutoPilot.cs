@@ -259,7 +259,7 @@ public sealed class AutoPilot
         else if (_look is not null && _provinceReady && snap is not null && !_lookDone)
         {
             _lookWait += delta;
-            if (Look(snap) || _lookWait > (_look == "painting" ? 1200 : 300)) { _lookDone = true; _sinceProvince = 0; }
+            if (Look(snap) || _lookWait > (_look is "painting" or "fieldherd" or "stash" or "ripe" or "harvest" ? 1500 : 300)) { _lookDone = true; _sinceProvince = 0; }
             return;
         }
         else if (_existingCard is int ec && _provinceReady && snap is not null && !_existingDone)
@@ -376,7 +376,7 @@ public sealed class AutoPilot
         if (_look is "sprout" or "fieldherd" or "stash" or "ripe")
         {
             int tile = -1;
-            if (_look == "stash" && snap.Stashes.TryGetValue(center, out int st) && snap.GroundItems.TryGetValue(center, out var gi) && gi.Count(g => g.Tile == st) >= 2) tile = st;
+            if (_look == "stash" && snap.Stashes.TryGetValue(center, out int st) && snap.GroundItems.TryGetValue(center, out var gi) && gi.Count(g => g.Tile == st) >= 1) tile = st;
             if (_look == "sprout" && snap.Plots.TryGetValue(center, out var ps1)) tile = ps1.Where(q => q.Wild && q.Stage >= Wtw.Sim.People.PlotStage.Sprout).Select(q => q.Tile).DefaultIfEmpty(-1).First();
             if (_look == "ripe" && snap.Plots.TryGetValue(center, out var ps2) && ps2.Count(q => q.Stage == Wtw.Sim.People.PlotStage.Ripe) >= 6) tile = ps2.First(q => q.Stage == Wtw.Sim.People.PlotStage.Ripe).Tile;
             if (_look == "fieldherd" && snap.Animals.TryGetValue(center, out var hs2) && hs2.FirstOrDefault(h => h.TargetKind == 3 && h.Owner < 0) is { } fh)
@@ -390,7 +390,7 @@ public sealed class AutoPilot
                 var lp = pv.LayoutOf(center, tile % HexFrame.Size, tile / HexFrame.Size)!.Value;
                 float z = _pzoom ?? 2f;
                 bool panel = _look is "stash" or "sprout";
-                pv.LookAt(lp.X - (panel ? (CellPanel.Width / 2.0) / z / ProvinceView.TilePx : 0), lp.Y, z);
+                pv.LookAt(lp.X + (panel ? (CellPanel.Width / 2.0) / z / ProvinceView.TilePx : 0), lp.Y, z);
                 if (panel) { _main.ClickForTest(center, tile % HexFrame.Size, tile / HexFrame.Size); host.SetPaused(true); }
                 else host.SetSpeed(1);
                 GD.Print($"LOOK {_look} tile={tile}");
@@ -414,7 +414,8 @@ public sealed class AutoPilot
                 "hunt" => (v.Act == Wtw.Sim.People.Act.Hunt && !v.Walking && snap.People.Take(snap.PeopleCount).Count(q => q.Cell == center && q.Act == Wtw.Sim.People.Act.Hunt && q.Target == v.Target) >= 2) || (v.Act == Wtw.Sim.People.Act.Butcher && snap.People.Take(snap.PeopleCount).Count(q => q.Cell == center && q.Act == Wtw.Sim.People.Act.Butcher) >= 2),
                 "coat" => v.Worn >= 0 && Wtw.Sim.Data.CraftData.Default.Catalog.Items[v.Worn].Id == "fur_coat" && !v.Asleep && v.Stage >= Wtw.Sim.People.LifeStage.Child,
                 "teach" or "study" or "paintact" => CardLookOk(v),
-                "till" or "harvest" => CardLookOk(v),
+                "till" => CardLookOk(v),
+                "harvest" => CardLookOk(v) && snap.Plots.TryGetValue(center, out var hp) && hp.Any(q => q.Tile == v.Target && q.Tilled), // 일군 밭을 거두는 사람
                 _ => false,
             };
             if (!ok || pv.PersonWorld(v.Id) is not { } wp) continue;

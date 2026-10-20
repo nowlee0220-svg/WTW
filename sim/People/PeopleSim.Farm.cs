@@ -296,23 +296,24 @@ public sealed partial class PeopleSim
     /// 밭일 점수(심는 법을 아는 열 살 넘은 사람, 낮에): 익은 것 거두기 30 · 밭을 노리는 짐승 쫓기 24 · 심기 18 · 거둔 것 모아 두기 20 · 씨 가지러 15 · 김매기 12.
     /// 가장 급한 일 하나를 고른다.
     /// </summary>
-    private int FarmScore(Person p, ProvinceLife life, out FarmJob job, out int tile)
+    private int FarmScore(Person p, ProvinceLife life, out FarmJob job, out int tile, int bar = int.MinValue)
     {
         job = FarmJob.None; tile = -1;
         var bj = FarmJob.None; int btile = -1;
-        int r = FarmScoreInner(p, life, ref bj, ref btile);
+        int r = FarmScoreInner(p, life, ref bj, ref btile, bar);
         job = bj; tile = btile;
         return r;
     }
 
-    private int FarmScoreInner(Person p, ProvinceLife life, ref FarmJob jobOut, ref int tileOut)
+    private int FarmScoreInner(Person p, ProvinceLife life, ref FarmJob jobOut, ref int tileOut, int bar)
     {
         if (p.Known.Count == 0 || life.IsNight(Now) || p.AgeYears(Now) < 10 || !KnowsFarming(p)) return int.MinValue;
         int here = p.Tile(Now);
         int skill = p.SkillLevel(PeopleData.Farming);
+        if (bar >= 30 + skill * 2) return bar; // 가장 높은 밭일(거두기)도 이길 수 없다
         var v = ViewOf(life);
         // (가장 높은 점수의 일 하나 — 이길 수 없는 일은 셈하지 않는다. 지역 함수 · 람다를 쓰지 않는다: 판단마다 메모리를 잡지 않게)
-        int best = int.MinValue; FarmJob job = FarmJob.None; int tile = -1;
+        int best = bar; FarmJob job = FarmJob.None; int tile = -1;
         bool room = CarryWeight(p) + 3 <= CarryCapOf(p);
         // 1) 익은 것
         if (room && v.Ripe.Count > 0) { int rt = NearestOf(v.Ripe, here, 40, life); if (rt >= 0 && 30 + skill * 2 > best) { best = 30 + skill * 2; job = FarmJob.Harvest; tile = rt; } }
@@ -337,7 +338,7 @@ public sealed partial class PeopleSim
                 {
                     st = NewPlotTile(life, here);
                     if (st >= 0 && life.Region[st] != life.Region[here]) st = -1;
-                    if (st < 0) { p.MissKey = NoLandKey; p.MissTick = Now; expand = 0; } // 둘레에 심을 땅이 없다 — 여섯 시간은 다시 찾지 않는다
+                    if (st < 0) { p.FarmMissKey = NoLandKey; p.FarmMissTick = Now; expand = 0; } // 둘레에 심을 땅이 없다 — 여섯 시간은 다시 찾지 않는다
                 }
                 if (st >= 0) { best = 18 + skill; job = FarmJob.Sow; tile = st; }
             }
@@ -358,19 +359,19 @@ public sealed partial class PeopleSim
 
     private bool Expand(Person p, ProvinceLife life, FarmView v, ref int memo)
     {
-        if (memo < 0) memo = v.EmptyTilled.Count == 0 && !(p.MissKey == NoLandKey && Now - p.MissTick < 6 * GameTime.TicksPerHour) && v.Plots - v.Wild < FarmTarget(FarmPeople(life)) ? 1 : 0;
+        if (memo < 0) memo = v.EmptyTilled.Count == 0 && !(p.FarmMissKey == NoLandKey && Now - p.FarmMissTick < 6 * GameTime.TicksPerHour) && v.Plots - v.Wild < FarmTarget(FarmPeople(life)) ? 1 : 0;
         return memo == 1;
     }
 
     /// <summary>둘레에 씨를 맺는 들풀이 없었던 지 한 시간이 안 됐다(재료 못 찾음 기억과 같은 칸).</summary>
-    private bool SeedMissed(Person p) => p.MissKey == SeedMissKey && Now - p.MissTick < GameTime.TicksPerHour;
+    private bool SeedMissed(Person p) => p.FarmMissKey == SeedMissKey && Now - p.FarmMissTick < GameTime.TicksPerHour;
 
     /// <summary>r 타일 안의 몫이 남은 씨 맺는 들풀(낟알 풀 · 들콩 · 덩이뿌리). 없으면 한 시간 동안 기억한다.</summary>
     private int NearestSeedPlant(Person p, ProvinceLife life, int r)
     {
         p.Position(Now, out int px, out int py);
         int t = life.NearestCarryWhere(px / 1000, py / 1000, Now, r, _seedOk!);
-        if (t < 0) { p.MissKey = SeedMissKey; p.MissTick = Now; }
+        if (t < 0) { p.FarmMissKey = SeedMissKey; p.FarmMissTick = Now; }
         return t;
     }
 

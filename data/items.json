@@ -63,7 +63,7 @@
     { "id": "scraper",       "name": "긁개",        "kind": "made",  "props": { "sharp": 3, "hardness": 3, "toughness": 2, "weight": 1 } },
     { "id": "stone_knife",   "name": "돌칼",        "kind": "made",  "props": { "sharp": 5, "hardness": 4, "toughness": 1, "weight": 1 } },
     { "id": "ground_axe",    "name": "갈아 만든 돌날", "kind": "made", "props": { "sharp": 3, "hardness": 4, "toughness": 4, "weight": 3 } },
-    { "id": "hafted_axe",    "name": "손잡이 단 돌도끼", "kind": "made", "props": { "sharp": 3, "digs": 2, "hardness": 4, "toughness": 4, "weight": 3 } },
+    { "id": "hafted_axe",    "name": "손잡이 단 돌도끼", "kind": "made", "props": { "sharp": 3, "hardness": 4, "toughness": 4, "weight": 3 } },
     { "id": "cord",          "name": "끈",          "kind": "made",  "props": { "toughness": 4, "bends": 5, "fibrous": 5, "weight": 0 } },
     { "id": "basket",        "name": "엮은 바구니", "kind": "made",  "props": { "holds": 3, "bends": 2, "weight": 1 } },
     { "id": "leaf_cup",      "name": "잎 그릇",     "kind": "made",  "props": { "holds": 1, "waterproof": 2, "rots": 4, "weight": 0 } },

@@ -173,7 +173,10 @@ public sealed partial class PeopleSim
         int hs = HuntScore(p, life, out var huntHerd, bar); if (hs > int.MinValue) Opt(16, hs);
         int fsc = FishScore(p, life, out int fishSpot); if (fsc > int.MinValue) Opt(17, fsc);
         // (E5c) 밭일
-        int frs = FarmScore(p, life, out var farmJob, out int farmTile); if (frs > int.MinValue) Opt(18, frs);
+        // (이길 수 없는 밭일은 셈하지 않는다 — 셋째로 높은 점수 이하면 같은 점수일 때도 번호가 커서 뽑히지 않는다)
+        bar = int.MinValue;
+        if (opts.Count >= 3) { int a1 = int.MinValue, a2 = int.MinValue, a3 = int.MinValue; foreach (var (sc, _) in opts) { if (sc > a1) { a3 = a2; a2 = a1; a1 = sc; } else if (sc > a2) { a3 = a2; a2 = sc; } else if (sc > a3) a3 = sc; } bar = a3; }
+        int frs = FarmScore(p, life, out var farmJob, out int farmTile, bar); if (frs > bar) Opt(18, frs);
         opts.Sort((a, b) => b.Score != a.Score ? b.Score.CompareTo(a.Score) : a.Code.CompareTo(b.Code));
         for (int k = 0; k < Math.Min(3, opts.Count); k++)
         {

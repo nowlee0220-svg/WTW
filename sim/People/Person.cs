@@ -247,6 +247,8 @@ public sealed class Person
     public long LastCraftFail = long.MinValue / 2;
     /// <summary>(E4) 마지막으로 둘레에서 찾지 못한 재료(조건 열쇠)와 그때.</summary>
     public long MissKey, MissTick = long.MinValue / 2;
+    /// <summary>(E5c) 밭일에서 "둘레에 없었다"(심을 땅 · 씨 맺는 들풀) — 재료 찾기 기억(MissKey)과 따로 둔다(덮어쓰면 재료를 거듭 다시 뒤졌다).</summary>
+    public long FarmMissKey, FarmMissTick = long.MinValue / 2;
     public int Experiments;
     /// <summary>들고 있는 불씨가 생긴 시각(−1 = 없음) — 두 시간이면 꺼진다.</summary>
     public long EmberTick = -1;

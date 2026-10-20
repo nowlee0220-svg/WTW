@@ -21,11 +21,11 @@ public partial class ProvinceView
     private void ReadyCraft()
     {
         _addMat = new CanvasItemMaterial { BlendMode = CanvasItemMaterial.BlendModeEnum.Add };
+        ReadyFarm(); // (E5c) 밭은 땅의 물건보다 먼저(같은 층에서 밑에) 그린다
         _itemRoot = new Node2D { ZIndex = 2 };
         AddChild(_itemRoot);
         _glowRoot = new Node2D { ZIndex = 2 };
         AddChild(_glowRoot);
-        ReadyFarm();
     }
 
     /// <summary>불 · 불빛 · 물건 · 캔 자리를 맞춘다(매 프레임).</summary>

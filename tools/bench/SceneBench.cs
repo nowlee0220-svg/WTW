@@ -74,13 +74,14 @@ public static class SceneBench
         if (!onlyArtisan) CopperScene(outDir, seed, index);
         if (!onlyArtisan) TundraScene(outDir, seed, index);
         if (!onlyArtisan) FarmScene(outDir, seed, index);
-        // (E5) 마지막 장인이 늙음: 세계에서 그 법을 아는 사람이 셋 이하이고 모두 45살 넘은 때 가운데 가장 "끊기기 쉬운" 때
-        // (아는 사람이 적을수록 · 가장 젊은 아는 사람도 늙었을수록). 150년 안. 결정론이라 늘 같은 장면.
+        // (E5) 마지막 장인이 늙음: 세계에서 그 법을 아는 사람이 셋 이하이고 모두 40살 넘은 때 가운데 가장 "끊기기 쉬운" 때
+        // (아는 사람이 적을수록 · 가장 젊은 아는 사람도 늙었을수록). 200년 안. 결정론이라 늘 같은 장면.
+        // (E5c) 150년 · 45살로는 찾지 못해(지식이 더 널리 퍼졌다) 200년 · 40살로 넓혔다.
         {
             var w = New();
             var c = w.People.Craft;
             string? best = null; byte[]? bestBytes = null; int bestScore = int.MinValue;
-            for (long t = 0; t < 150 * GameTime.TicksPerYear; t += GameTime.TicksPerDay)
+            for (long t = 0; t < 200 * GameTime.TicksPerYear; t += GameTime.TicksPerDay)
             {
                 w.AdvanceTo(t + GameTime.TicksPerDay);
                 if (t < 10 * GameTime.TicksPerYear || (t / GameTime.TicksPerDay) % 5 != 0) continue;
@@ -90,7 +91,7 @@ public static class SceneBench
                     var knowers = w.People.All.Where(q => !q.Dead && q.Knows(rule)).ToList();
                     if (knowers.Count == 0 || knowers.Count > 3) continue;
                     int young = knowers.Min(q => q.AgeYears(w.Now));
-                    if (young < 45) continue;
+                    if (young < 40) continue;
                     int score = young - knowers.Count * 8;
                     if (score <= bestScore) continue;
                     var oldest = knowers.OrderByDescending(q => q.AgeYears(w.Now)).First();
@@ -107,7 +108,7 @@ public static class SceneBench
                 index.Add($"{file}|마지막 장인이 늙음|{best}. [넘기기] → 지식 · 세계에서 사라짐, 그리고 [지식의 행방] 창");
                 Console.WriteLine($"{file}: {best}");
             }
-            else Console.WriteLine("마지막 장인 장면: 150년 안에 찾지 못함");
+            else Console.WriteLine("마지막 장인 장면: 200년 안에 찾지 못함");
         }
         File.WriteAllLines(Path.Combine(outDir, "index.txt"), index);
     }

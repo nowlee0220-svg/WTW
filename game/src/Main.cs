@@ -493,10 +493,11 @@ public partial class Main : Node
         var facts = new List<(string, string)>
         {
             ("지금", stage),
-            ("잡풀", q.Weeds >= 60 ? $"많다({q.Weeds}) — 김을 매야 한다" : $"{q.Weeds}"),
+            ("잡풀", q.Wild ? "들풀 속에 났다" : !q.Tilled ? $"{q.Weeds} — 일구지 않은 땅이라 금세 덮인다" : q.Weeds >= 50 ? $"많다({q.Weeds}) — 김을 매야 한다" : $"{q.Weeds}"),
             ("짐승", q.Damage > 0 ? $"뜯어 먹혔다({q.Damage}%)" : "멀쩡하다"),
             ("이 땅", $"자라기 좋은 정도 {q.Grow}/100 — 익는 데 약 {Wtw.Sim.People.PeopleSim.GrowDays(q.Grow)}일(기온 · 비 · 흙으로)"),
         };
+        facts.Add(("까닭", why));
         return new TileReport(kind + (crop.Length > 0 ? $" — {crop}" : ""), stage, why, facts);
     }
 

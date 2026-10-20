@@ -64,6 +64,8 @@ public sealed class PeopleStats
     public long WildSprouts, SproutSights, SproutLearned, Tilled, Sown, HarvestTiles, HarvestItems, Weeded, FieldEaten, FieldsRuined,
         Guarded, ChasedOff, FieldsFallen, FieldsWeededOver, SeedsFailed, SeedEaten, BadHarvests, Stored, StashTaken, StashLost, SeedFetch, SeedGathered,
         StayFarmDays, StayFarmN, StayOtherDays, StayOtherN, RotBerries;
+    /// <summary>(E5c 측정) 계획 · 재료 구하기를 바람마다(바람 × 2 + 아는 법이면 1).</summary>
+    public readonly long[] PlanByWish = new long[32], MatByWish = new long[32], PlanKnownRule = new long[64];
 }
 
 /// <summary>

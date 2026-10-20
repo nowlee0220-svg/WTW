@@ -366,7 +366,7 @@ public static class SaveGame
         bw.Write(p.LastHunt); bw.Write(p.LastFish); bw.Write(p.Kills);
         bw.Write(p.FailHerd); bw.Write(p.FailHerdCell); bw.Write(p.FailHerdUntil);
         // (E5c)
-        bw.Write(p.SproutSeen); bw.Write(p.LastSproutLook); bw.Write(p.Harvested); bw.Write(p.FirstSow);
+        bw.Write(p.SproutSeen); bw.Write(p.LastSproutLook); bw.Write(p.Harvested); bw.Write(p.FirstSow); bw.Write(p.FarmMissKey); bw.Write(p.FarmMissTick);
     }
 
     private static void ReadPeople(BinaryReader br, GameWorld w, int version)
@@ -619,7 +619,7 @@ public static class SaveGame
             p.Worn = br.ReadInt32(); p.WornFeet = br.ReadInt32(); p.WornWear = br.ReadInt32(); p.FeetWear = br.ReadInt32(); p.Injury = br.ReadInt32(); p.InjuryCause = (DeathCause)br.ReadByte();
             p.LastHunt = br.ReadInt64(); p.LastFish = br.ReadInt64(); p.Kills = br.ReadInt32();
             if (version >= 11) { p.FailHerd = br.ReadInt32(); p.FailHerdCell = br.ReadInt32(); p.FailHerdUntil = br.ReadInt64(); }
-            if (version >= 12) { p.SproutSeen = br.ReadInt32(); p.LastSproutLook = br.ReadInt64(); p.Harvested = br.ReadInt32(); p.FirstSow = br.ReadInt64(); }
+            if (version >= 12) { p.SproutSeen = br.ReadInt32(); p.LastSproutLook = br.ReadInt64(); p.Harvested = br.ReadInt32(); p.FirstSow = br.ReadInt64(); p.FarmMissKey = br.ReadInt64(); p.FarmMissTick = br.ReadInt64(); }
         }
         else
             for (int i = 0; i < p.Known.Count; i++) { var k = p.Known[i]; k.Via = k.LearnedFrom < 0 ? Via.Self : Via.Watch; k.Level = PeopleSim.StartLevel(k.Via); k.LastUse = k.Tick; p.Known[i] = k; }

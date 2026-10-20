@@ -17,7 +17,7 @@ public partial class ProvinceView
 
     private void ReadyFarm()
     {
-        _farmRoot = new Node2D { ZIndex = 1 };
+        _farmRoot = new Node2D { ZIndex = 2 }; // 땅(구운 땅 포함)보다 위, 사람 · 불보다 아래
         AddChild(_farmRoot);
     }
 
@@ -38,6 +38,7 @@ public partial class ProvinceView
                     var p0 = TileWorld(sh, q.Tile); var p1 = TileWorld(sh, q.Tile + 1);
                     s.Rotation = (p1 - p0).Angle(); // 타일 결을 따라(지방마다 놓인 방향이 다르다)
                     s.Visible = true;
+                    if (q.Wild && q.Stage >= PlotStage.Sprout) FadeAround(s.Position, 0.6f); // 저절로 난 싹은 작아서 — 나무에 가리지 않게
                 }
             if (snap.Stashes.TryGetValue(cell, out int st))
             {
@@ -102,15 +103,16 @@ public static partial class Art
             for (int k = 0; k < 5; k++) s.Line(7, 13 + k * 9, 57, 13 + k * 9, 2.2f, soil.Darkened(0.3f));
         }
         else if (!wild) s.Ellipse(32, 36, 20, 11, soil, 1.5f);
+        else { s.Ellipse(32, 35, 21, 13, C(0, 0, 0, 50)); s.Ellipse(32, 34, 19, 11, C(126, 96, 62, 235), 1.2f); } // 흘린 씨가 떨어진 맨땅(머물던 자리)
         if (stage == PlotStage.Empty) { if (weedy) Weeds(s, r, 6); return; }
         if (stage == PlotStage.Sown) { for (int k = 0; k < 6; k++) s.Circle(14 + k * 7, 34 + r.R(-6, 6), 1.6f, C(214, 180, 96)); return; }
-        int rows = wild ? 3 : tilled ? 5 : 3, per = wild ? 2 : tilled ? 6 : 3;
+        int rows = tilled ? 5 : 3, per = tilled ? 6 : 3;
         for (int row = 0; row < rows; row++)
             for (int k = 0; k < per; k++)
             {
                 if (eaten && r.F() < 0.55f) continue;
                 float x = (tilled ? 10 + k * 9 : 20 + k * 10) + r.R(-2, 2), y = (tilled ? 15 + row * 9 : 28 + row * 6) + r.R(-1, 1);
-                if (stage == PlotStage.Sprout) { s.Line(x, y + 3, x - 1.5f, y - 3, 1.6f, C(110, 170, 70)); s.Line(x, y + 3, x + 2, y - 2, 1.6f, C(110, 170, 70)); continue; }
+                if (stage == PlotStage.Sprout) { s.Line(x, y + 3, x - 2.5f, y - 4, 2.4f, C(150, 210, 80)); s.Line(x, y + 3, x + 3, y - 3, 2.4f, C(150, 210, 80)); continue; }
                 bool ripe = stage == PlotStage.Ripe;
                 switch (kind)
                 {

@@ -85,7 +85,9 @@ public class FarmTests
         Assert.Equal("cook_beans", C.Judge(roast, P("beans"), null, null, 1, 0, 0).Rule!.Id);
         Assert.Equal("roasted_acorn", C.Judge(roast, P("acorn"), null, null, 1, 0, 0).Rule!.Id); // 도토리는 그대로
         Assert.Equal("flatbread", C.Judge(roast, P("flour"), null, null, 1, 0, 0).Rule!.Id);
-        Assert.Equal("stone_hoe", C.Judge(twist, P("chopper"), P("stick"), P("cord"), 0, 0, 0).Rule!.Id);
+        Assert.Equal("stone_hoe", C.Judge(twist, P("basalt"), P("stick"), P("cord"), 0, 0, 0).Rule!.Id);
+        var hc = C.Judge(twist, P("chopper"), P("stick"), P("cord"), 0, 0, 0); // 날 선 찍개는 괭이 돌이 아니다(찍개를 괭이로 바꿔 날붙이를 잃던 것)
+        Assert.False(hc.Success && hc.Rule?.Id == "stone_hoe");
         Assert.Equal("hafted_axe", C.Judge(twist, P("ground_axe"), P("cord"), null, 0, 0, 0).Rule!.Id);
     }
 
