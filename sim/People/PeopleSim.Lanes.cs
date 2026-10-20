@@ -199,6 +199,9 @@ public sealed partial class PeopleSim
                 case PendingOp.Kinds.Hunt:
                     if (Get(op.A) is { } hunter) { if (op.C < 0) NewWordConcept(hunter, Fauna.Animals[op.B].Id, op.D); else HuntWorld(hunter, op.B, op.C); }
                     break;
+                case PendingOp.Kinds.Farm:
+                    ApplyFarmOp(op);
+                    break;
                 default:
                     throw new InvalidOperationException($"모르는 미룬 일: {op.Kind}");
             }

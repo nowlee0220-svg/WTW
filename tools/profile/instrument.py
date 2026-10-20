@@ -57,6 +57,9 @@ T = [
  ("sim/People/PeopleSim.Hunt.cs", [("private int HuntScore(Person p, ProvinceLife life, out Herd? target", "X2"), ("public int WeaponPower(Person p)", "X2"), ("private void HuntHelpers(", "X2"), ("private bool TryHunt(Person p, Herd h)", "X5"),
    ("private void ArriveHunt(Person p)", "X5"), ("private void ResolveHunt(Person p)", "X5"), ("private void FinishButcher(Person p, bool done)", "X5"), ("private int FishScore(", "X5"),
    ("private void BodyDaily(Person p, Pcg32 rng)", "X6"), ("private void RotGround(", "X6")]),
+ # (E5c) 농사
+ ("sim/People/PeopleSim.Farm.cs", [("private int FarmScore(Person p", "Farm"), ("private bool TryFarm(Person p", "Farm"), ("private void ArriveFarm(Person p)", "Farm"), ("private void FinishFarm(Person p, bool done)", "Farm"),
+   ("private void SeeSprouts(Person p", "Farm"), ("private void FarmDaily(int cell", "Farm"), ("internal bool HerdToField(", "Farm"), ("private bool TryStashFood(", "Farm"), ("private bool TryGatherSeedFood(", "Farm"), ("private void SpillSeed(", "Farm")]),
 ]
 here = os.path.dirname(os.path.abspath(__file__))
 src = os.path.join(here, "..", "..", "sim", "Core", "Prof.cs")

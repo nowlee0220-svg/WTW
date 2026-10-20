@@ -10,10 +10,17 @@ using Wtw.Sim.World;
 /// </summary>
 public static class SceneBench
 {
-    public static void Run(string outDir, ulong seed, bool onlyArtisan = false, bool onlyCopper = false, bool onlyTundra = false)
+    public static void Run(string outDir, ulong seed, bool onlyArtisan = false, bool onlyCopper = false, bool onlyTundra = false, bool onlyFarm = false)
     {
         Directory.CreateDirectory(outDir);
         var index = new List<string>();
+        if (onlyFarm)
+        {
+            index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("river-farm")));
+            FarmScene(outDir, seed, index);
+            File.WriteAllLines(Path.Combine(outDir, "index.txt"), index);
+            return;
+        }
         if (onlyTundra)
         {
             index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("tundra-edge")));
@@ -66,6 +73,7 @@ public static class SceneBench
         }
         if (!onlyArtisan) CopperScene(outDir, seed, index);
         if (!onlyArtisan) TundraScene(outDir, seed, index);
+        if (!onlyArtisan) FarmScene(outDir, seed, index);
         // (E5) 마지막 장인이 늙음: 세계에서 그 법을 아는 사람이 셋 이하이고 모두 45살 넘은 때 가운데 가장 "끊기기 쉬운" 때
         // (아는 사람이 적을수록 · 가장 젊은 아는 사람도 늙었을수록). 150년 안. 결정론이라 늘 같은 장면.
         {
@@ -135,6 +143,32 @@ public static class SceneBench
         string animals = string.Join(" · ", w.People.Fauna.Animals.Where(a => c[a.Index] > 0).Select(a => $"{a.Name} {c[a.Index]}"));
         index.Add($"{file}|털옷을 아는 무리, 툰드라 가장자리|침엽수림과 맞닿은 툰드라(칸 {cell}, 연평균 {w.Planet.Temp10[cell] / 10.0:0.0}°C)에 세 가족 — 털가죽 옷 · 신을 입고 불 피우기와 가죽 일을 안다. 해 질 녘에서 시작: 첫날 밤을 넘기는지, 옷이 닳기 전에 새 옷을 짓는지, 밤에 불 없는 곳에 늑대가 오는지. 짐승: {animals} ({GameTime.Format(w.Now)} · 사람 {w.People.AliveCount}명)");
         Console.WriteLine($"{file}: 칸 {cell} · 사람 {w.People.AliveCount}명 · {animals}");
+    }
+
+    /// <summary>(E5c) 씨를 아는 무리, 강가 초원: 큰 강이 흐르는 따뜻한 초원(사바나 · 온대림도 받음)에 세 가족 — 어른들은 불 · 낟알 볶기 · 씨 묻기 · 밭 일구는 법을 알고 낟알 씨와 땅 파는 막대를 든다.</summary>
+    public static int RiverGrassland(Wtw.Sim.Planet.Planet p) => PeopleSamples.Ranked(p, (pl, c) =>
+        pl.Biome[c] is Wtw.Sim.Planet.Biome.Grassland or Wtw.Sim.Planet.Biome.Savanna or Wtw.Sim.Planet.Biome.Temperate && pl.RiverSize[c] > 0 && pl.Temp10[c] is >= 140 and <= 260 && pl.PrecipMm[c] >= 500
+            ? (pl.Biome[c] == Wtw.Sim.Planet.Biome.Grassland ? 30 : 0) + Math.Min((int)pl.RiverSize[c], 40) - Math.Abs(pl.Temp10[c] - 200) / 10 : int.MinValue).FirstOrDefault(-1);
+
+    private static void FarmScene(string outDir, ulong seed, List<string> index)
+    {
+        var w = GameWorld.Create(seed, new WorldConfig { DotCount = 0 });
+        int cell = RiverGrassland(w.Planet);
+        if (cell < 0) { Console.WriteLine("강가 초원: 이 행성에 맞는 땅이 없음"); return; }
+        foreach (var (x, y) in PeopleSamples.SpawnSpots(w.People.Life(cell), 3))
+            w.Apply(new Intervention(0, Intervention.Kinds.SpawnFamily, new long[] { cell, x, y }));
+        w.AdvanceTo(1);
+        FarmBench.Teach(w, "field");
+        // 아침(그 지방 7시)에서 시작 — 바로 일하는 모습을 볼 수 있게
+        var life = w.People.Life(cell);
+        long t = 1;
+        while (life.LocalHour(t) != 7) t += GameTime.TicksPerHour / 4;
+        w.AdvanceTo(t);
+        string file = "river-farm.wtw";
+        SaveGame.SaveFile(w, Path.Combine(outDir, file));
+        string land = Wtw.Sim.Planet.PlanetNames.Of(w.Planet.Biome[cell]);
+        index.Add($"{file}|씨를 아는 무리, 강가 초원|큰 강이 흐르는 {land}(칸 {cell}, 연평균 {w.Planet.Temp10[cell] / 10.0:0.0}°C)에 세 가족 — 어른들은 씨를 묻고 땅을 일구는 법을 알고 낟알 씨와 땅 파는 막대를 든다. 1~2배속으로 밭을 일구는 모습을, 5배속으로 며칠 넘겨 싹 → 익음 → 거두기와 밭에 오는 짐승을 보세요 ({GameTime.Format(w.Now)} · 사람 {w.People.AliveCount}명)");
+        Console.WriteLine($"{file}: 칸 {cell}({land}) · 사람 {w.People.AliveCount}명");
     }
 
     /// <summary>(E5b 스크린샷용) 툰드라 가장자리 장면을 흘려 보며 늑대가 불가의 사람에게 다가가다 쫓겨난 때를 찾아, 그 한 시간 전을 저장한다.</summary>

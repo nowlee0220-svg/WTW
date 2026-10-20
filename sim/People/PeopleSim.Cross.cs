@@ -378,6 +378,7 @@ public sealed partial class PeopleSim
                 // (S1) 예약 번호는 지방마다 이어진다(잠들었다 깨어나도 — 잠든 상태가 결과에 영향이 없게)
                 SchedHandle = life.Sched.NextHandle, SchedOrder = life.Sched.NextOrder, Events = life.Sched.ExportSorted(),
                 Herds = life.Herds.Values.ToList(), NextHerdId = life.NextHerdId, FishStock = life.FishStock, SleptAt = Now, AnimalsReady = true,
+                Plots = life.Plots.Values.ToList(), Stash = life.Stash, FarmSince = life.FarmSince, YearHarvest = life.YearHarvest, YearPotential = life.YearPotential, HarvestYear = life.HarvestYear, FirstHarvest = life.FirstHarvest, SeedsEatenYear = life.SeedsEatenYear,
             };
         }
         ForgetLastLife();
@@ -415,6 +416,15 @@ public sealed record DormantProvince(int Cell, (int Tile, TileStock Stock)[] Sto
     public int FishStock { get; init; }
     public long SleptAt { get; init; } = -1;
     public bool AnimalsReady { get; init; }
+    /// <summary>(E5c) 밭 · 모아 둔 자리 · 처음 밭 · 올해 거둔 양(ProvinceLife 와 같은 뜻).</summary>
+    public List<Plot> Plots { get; init; } = new();
+    public int Stash { get; init; } = -1;
+    public long FarmSince { get; init; } = -1;
+    public int YearHarvest { get; init; }
+    public int YearPotential { get; init; }
+    public int HarvestYear { get; init; }
+    public long FirstHarvest { get; init; } = -1;
+    public int SeedsEatenYear { get; init; } = -1;
 }
 
 /// <summary>경계를 넘은 일 하나(화면 · 지구본의 이동 표시).</summary>

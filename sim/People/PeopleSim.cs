@@ -14,7 +14,9 @@ public enum WorldEventKind : byte { Spawn = 0, Birth, Death, Pair, Break, LandNa
     /// <summary>(E5) 한 무리에서 끊김 · 되찾음.</summary>
     GroupLost, GroupRefound,
     /// <summary>(E5b) 세계에서 처음 · 무리에서 처음 큰 짐승을 잡음 · 짐승에게 덮쳐짐 · 새끼 짐승이 따라다님.</summary>
-    HuntFirst, HuntGroup, BeastAttack, Tamed }
+    HuntFirst, HuntGroup, BeastAttack, Tamed,
+    /// <summary>(E5c) 흉년 · 씨앗까지 먹어 버림 · 무리에서 처음 거둠 · 짐승이 밭을 먹음.</summary>
+    BadHarvest, SeedsEaten, HarvestFirst, FieldEaten }
 
 /// <summary>측정용 셈(저장하지 않는다 — 결과에 영향 없음).</summary>
 public sealed class PeopleStats
@@ -57,6 +59,11 @@ public sealed class PeopleStats
     public readonly long[] HuntBySpecies = new long[16], KillsBySpecies = new long[16];
     /// <summary>(E5b 고침 측정) 썩어 버린 것: 들고 있던 날고기 · 날생선 / 날가죽 / 그 밖(열매 등) · 땅에 둔 짐승 아이템 · 손질로 얻은 고기 · 들 수 없어 그 자리에 둔 것.</summary>
     public long RotMeat, RotHide, RotOther, RotGround, MeatGot, ButcherDropped, MeatShared, MeatDried, StashEaten;
+    /// <summary>(E5c) 농사: 저절로 난 싹 · 싹을 본 번 · 보고 알아냄 · 일군 타일 · 심은 타일 · 거둔 타일 · 거둔 수 · 김맨 타일 · 짐승이 먹은 타일(번) · 다 먹혀 망친 밭 ·
+    /// 지킨 번 · 쫓아낸 번 · 떨어져 버려진 밭 · 잡풀이 덮어 사라진 밭 · 싹이 안 난 씨 · 씨까지 먹은 번 · 흉년 · 모아 둔 수 · 모아 둔 데서 가져감 · 모아 둔 것을 잃음 · 씨앗을 가지러 · 씨앗 먹을 거리로 주움.</summary>
+    public long WildSprouts, SproutSights, SproutLearned, Tilled, Sown, HarvestTiles, HarvestItems, Weeded, FieldEaten, FieldsRuined,
+        Guarded, ChasedOff, FieldsFallen, FieldsWeededOver, SeedsFailed, SeedEaten, BadHarvests, Stored, StashTaken, StashLost, SeedFetch, SeedGathered,
+        StayFarmDays, StayFarmN, StayOtherDays, StayOtherN, RotBerries;
 }
 
 /// <summary>
@@ -141,6 +148,7 @@ public sealed partial class PeopleSim
         InitCraft();
         InitKnowledge();
         InitHunt();
+        InitFarm();
     }
 
     public IReadOnlyList<Person> All => _all;
@@ -188,6 +196,7 @@ public sealed partial class PeopleSim
                 life.Sched.Import(d.Events, d.SchedHandle, d.SchedOrder);
                 St.Wakes++;
                 WakeAnimals(life, d);
+                WakeFarm(life, d);
             }
             else InitAnimals(life); // (E5b) 처음 열린 지방: 먹이만큼 짐승
         }

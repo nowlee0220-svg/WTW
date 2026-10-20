@@ -219,7 +219,7 @@ public sealed partial class PeopleSim
         }
         if (Now / GameTime.TicksPerDay % GameTime.DaysPerYear == 0) LanguageYear();
         NameLands();
-        foreach (var (cell, life) in Provinces.ToList()) { FiresDaily(cell, life); AnimalsDaily(life); RotGround(life, Rng(cell)); }
+        foreach (var (cell, life) in Provinces.ToList()) { FiresDaily(cell, life); AnimalsDaily(life); RotGround(life, Rng(cell)); FarmDaily(cell, life); }
         CheckLostDiscoveries();
         GroupKnowledgeDaily();
         SleepEmptyProvinces();

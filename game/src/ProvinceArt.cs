@@ -430,6 +430,34 @@ public static partial class Art
                 }
                 break;
             }
+            // (E5c) 씨를 맺는 들풀: 낟알 풀(이삭) · 들콩 덩굴(꼬투리) · 덩이뿌리 풀(넓은 잎)
+            case "grass_grain":
+            {
+                var g = C(150, 160, 80);
+                for (int i = 0; i < 16; i++)
+                {
+                    float x = Bx + r.R(-22, 22), top = By - r.R(30, 52), dx = r.R(-8, 8);
+                    s.Line(x, By, x + dx, top, 2.6f, 1, Jit(g, r, 0.06f));
+                    s.Ellipse(x + dx, top - 3, 2.6f, 7, Jit(C(214, 180, 96), r, 0.05f), 1, 0.25f);
+                }
+                break;
+            }
+            case "beans":
+            {
+                for (int i = 0; i < 9; i++) s.Circle(Bx + r.R(-24, 24), By - r.R(6, 24), r.R(7, 10), Jit(C(84, 132, 64), r, 0.05f), 1);
+                for (int i = 0; i < 5; i++) { float x = Bx + r.R(-18, 18), y = By - r.R(10, 22); s.Line(x, y, x + 4, y + 9, 3.2f, C(140, 150, 70)); }
+                break;
+            }
+            case "tuber":
+            {
+                for (int i = 0; i < 6; i++)
+                {
+                    float a2 = -Mathf.Pi / 2 + r.R(-1.1f, 1.1f);
+                    s.Line(Bx, By - 2, Bx + Mathf.Cos(a2) * 22, By - 2 + Mathf.Sin(a2) * 26, 2.2f, C(90, 120, 60));
+                    s.Ellipse(Bx + Mathf.Cos(a2) * 24, By - 2 + Mathf.Sin(a2) * 28, 9, 5, Jit(C(70, 130, 60), r, 0.05f), 1, a2);
+                }
+                break;
+            }
             case "reeds":
             {
                 for (int i = 0; i < 14; i++)

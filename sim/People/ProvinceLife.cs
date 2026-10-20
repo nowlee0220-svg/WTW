@@ -170,6 +170,41 @@ public sealed class ProvinceLife
     public int[] AnimalCap = Array.Empty<int>();
     public int FishCap;
 
+    /// <summary>
+    /// (E5c) 밭 · 심은 자리(타일 → 밭, 타일 번호 순) · 다음 단계로 바뀌는 시각 순 목록 · 모아 둔 자리(−1 = 없음) · 처음 밭이 생긴 때 ·
+    /// 올해 거둔 양 · 거둘 수 있었던 양(흉년을 가리는 데) · 그 해. 모두 저장한다. 자라기 좋은 정도(Grow)는 지도로 다시 만든다.
+    /// </summary>
+    public readonly SortedDictionary<int, Plot> Plots = new();
+    public readonly SortedSet<(long Due, int Tile)> PlotDue = new();
+    public int Stash = -1;
+    public long FarmSince = -1;
+    public int YearHarvest, YearPotential, HarvestYear;
+    /// <summary>(E5c) 이 무리가 처음 거둔 때(−1 = 아직) · 씨앗까지 먹어 버렸다고 알린 해(−1 = 없음). 저장한다.</summary>
+    public long FirstHarvest = -1;
+    public int SeedsEatenYear = -1;
+    public byte[]? Grow;
+    /// <summary>(E5c) 밭일 찾기의 기억(PeopleSim.FarmView — 저장 안 함).</summary>
+    public object? FarmCache;
+    /// <summary>(E5c) 밭이 바뀔 때마다 오른다(밭일 찾기의 기억을 버리려고 — 저장 안 함).</summary>
+    public int FarmVersion;
+
+    public void SetPlotDue(Plot p, long due)
+    {
+        if (p.Due > 0) PlotDue.Remove((p.Due, p.Tile));
+        p.Due = due;
+        if (due > 0) PlotDue.Add((due, p.Tile));
+        FarmVersion++;
+    }
+
+    public void AddPlot(Plot p) { Plots[p.Tile] = p; if (p.Due > 0) PlotDue.Add((p.Due, p.Tile)); FarmVersion++; }
+
+    public void RemovePlot(int tile)
+    {
+        if (!Plots.Remove(tile, out var p)) return;
+        if (p.Due > 0) PlotDue.Remove((p.Due, p.Tile));
+        FarmVersion++;
+    }
+
     private static List<int>[] NewBuckets() { var a = new List<int>[Buckets * Buckets]; for (int i = 0; i < a.Length; i++) a[i] = new List<int>(); return a; }
 
     public ProvinceLife(Planet.Planet planet, ProvinceMap map, PeopleData data)

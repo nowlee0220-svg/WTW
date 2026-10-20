@@ -6,7 +6,7 @@
     "rules: action 으로 input(주 재료, 속성 최소값) 을 다룬다. input_max = 넘으면 안 되는 값, with = 둘째 재료(속성 최소값), with_max = 둘째 재료가 넘으면 안 되는 값, tool = 들고 있는 도구(속성 최소값), heat = 필요한 불 세기, tinder = 불쏘시개(burns 최소값)가 함께 있어야 함.",
     "  chance = 조건이 다 맞을 때 성공할 백분율(손재주 · 영리함 · 기술이 더해짐). result/count = 나오는 것, uses = 쓰는 주 재료 수, with_uses = 쓰는 둘째 재료 수, tool_uses = 쓰는 도구 수(끈처럼 묶으면 없어지는 것), time_min = 걸리는 시간(분), skill = 오르는 기술.",
     "  partial: 조건 하나가 모자랄 때(그 속성 이름 · 'heat' · 'tool' · 'with' · 'tinder' · 'chance') 남는 부분 성공 — text(결과 글) · hint(다음 실험의 단서) · result(남는 것). 없으면 generic_hints 의 말을 쓴다.",
-    "판정 순서: 같은 행동의 규칙 중 맞는 조건이 가장 많은 것(같으면 먼저 적은 것). 조건이 모두 맞으면 성공(chance), 주 재료 조건의 절반 넘게 맞으면 부분 성공, 아니면 아무 일도 없다."
+    "(E5c) 심기(bury)는 실험이 아니라 싹이 난 것을 보고 알아낸다 — 그때도 이 규칙으로 판정한다(씨의 속성 sprouts). 판정 순서: 같은 행동의 규칙 중 맞는 조건이 가장 많은 것(같으면 먼저 적은 것). 조건이 모두 맞으면 성공(chance), 주 재료 조건의 절반 넘게 맞으면 부분 성공, 아니면 아무 일도 없다."
   ],
   "actions": [
     { "id": "strike",  "name": "두드리기" },
@@ -29,7 +29,8 @@
     { "id": "draw",    "name": "그리기" },
     { "id": "scrape",  "name": "긁기" },
     { "id": "smoke",   "name": "그을리기" },
-    { "id": "sew",     "name": "꿰매기" }
+    { "id": "sew",     "name": "꿰매기" },
+    { "id": "dig",     "name": "땅 파기" }
   ],
   "heat_names": [ "불 없음", "맨불(모닥불)", "가둔 불(돌 화덕)", "숯 + 가둔 불" ],
   "generic_hints": {
@@ -67,7 +68,8 @@
     { "id": "record",    "name": "남겨 두기", "props": ["stains"],                    "actions": ["draw"] },
     { "id": "food",      "name": "먹을 것",  "props": ["edible", "meat"],              "actions": ["dry", "roast", "smoke"] },
     { "id": "hunting",   "name": "사냥 도구", "props": ["pierces", "sharp"],           "actions": ["roast", "twist", "strike", "grind", "cut"] },
-    { "id": "clothing",  "name": "입을 것",  "props": ["covers", "warm"],              "actions": ["scrape", "dry", "smoke", "twist", "sew", "grind"] }
+    { "id": "clothing",  "name": "입을 것",  "props": ["covers", "warm"],              "actions": ["scrape", "dry", "smoke", "twist", "sew", "grind"] },
+    { "id": "farming",   "name": "밭일",     "props": ["digs", "sprouts"],             "actions": ["dig", "roast", "twist"] }
   ],
   "rules": [
     { "id": "flake",        "name": "돌을 깨뜨려 날을 낸다",     "action": "strike", "input": { "splits": 3, "sharpens": 3 }, "tool": { "hardness": 3 }, "result": "flake", "count": 2, "uses": 1, "time_min": 40, "skill": "crafting",
@@ -160,6 +162,19 @@
     { "id": "fur_boots",    "name": "마른 가죽을 꿰매 신을 짓는다",   "action": "sew", "input": { "covers": 3, "toughness": 4 }, "input_max": { "covers": 3 }, "with": { "fibrous": 4, "toughness": 3 }, "tool": { "pierces": 3 }, "result": "fur_boots", "count": 1, "uses": 1, "with_uses": 1, "time_min": 180, "skill": "crafting",
       "partial": { "tool": { "text": "가죽에 구멍이 나지 않아 꿰맬 수 없었다", "hint": "뾰족하고 가는 것(뼈를 갈아 만든 바늘)이 있으면 꿰맬 수 있을 것 같다" }, "with": { "text": "꿰맬 실이 없었다", "hint": "질긴 실(힘줄 · 끈)이 있어야 할 것 같다" } } },
     { "id": "stone_spear",  "name": "돌 날을 막대 끝에 끈으로 묶어 창을 만든다", "action": "twist", "input": { "sharp": 3, "pierces": 2 }, "with": { "toughness": 4, "hardness": 2 }, "with_max": { "weight": 1 }, "tool": { "fibrous": 4, "toughness": 4 }, "tool_uses": 1, "result": "stone_spear", "count": 1, "uses": 1, "with_uses": 1, "time_min": 60, "skill": "crafting",
-      "partial": { "tool": { "text": "묶을 것이 없어 날이 빠져 버렸다", "hint": "질긴 끈(끈 · 힘줄)으로 묶으면 될 것 같다" }, "with": { "text": "꽂을 막대가 없었다", "hint": "곧고 질긴 나무 막대가 있어야 할 것 같다" } } }
+      "partial": { "tool": { "text": "묶을 것이 없어 날이 빠져 버렸다", "hint": "질긴 끈(끈 · 힘줄)으로 묶으면 될 것 같다" }, "with": { "text": "꽂을 막대가 없었다", "hint": "곧고 질긴 나무 막대가 있어야 할 것 같다" } } },
+
+    { "id": "sow",          "name": "씨를 땅에 묻어 둔다(싹이 나기를 기다린다)", "action": "bury", "input": { "sprouts": 2 }, "result": "sown_patch", "count": 1, "uses": 1, "time_min": 20, "skill": "farming" },
+    { "id": "field",        "name": "땅을 고르고 파서 일군 뒤 씨를 묻는다(밭)", "action": "dig", "input": { "sprouts": 2 }, "tool": { "digs": 2 }, "result": "field", "count": 1, "uses": 1, "time_min": 60, "skill": "farming",
+      "partial": { "tool": { "text": "맨손으로는 땅이 얕게만 긁혔다", "hint": "끝이 뾰족하고 단단한 막대가 있으면 깊이 팔 수 있을 것 같다" }, "sprouts": { "text": "땅을 팠지만 묻을 씨가 아니었다", "hint": "싹이 나는 것(낟알 · 콩)을 묻어야 할 것 같다" } } },
+    { "id": "roast_grain",  "name": "낟알을 불에 볶는다",           "action": "roast", "input": { "edible": 1, "sprouts": 2, "hardness": 2 }, "input_max": { "poison": 0 }, "heat": 1, "result": "roasted_grain", "count": 1, "uses": 1, "time_min": 15, "skill": "cooking" },
+    { "id": "cook_beans",   "name": "콩을 불에 익혀 독을 뺀다",      "action": "roast", "input": { "edible": 2, "sprouts": 2, "poison": 1 }, "heat": 1, "result": "cooked_beans", "count": 1, "uses": 1, "time_min": 25, "skill": "cooking" },
+    { "id": "roast_tuber",  "name": "덩이뿌리를 불에 굽는다",        "action": "roast", "input": { "edible": 2, "sprouts": 2, "weight": 1 }, "input_max": { "hardness": 1 }, "heat": 1, "result": "roasted_tuber", "count": 1, "uses": 1, "time_min": 30, "skill": "cooking" },
+    { "id": "flour",        "name": "낟알을 돌로 빻아 가루를 낸다",   "action": "grind", "input": { "sprouts": 2, "hardness": 2, "edible": 1 }, "input_max": { "poison": 0 }, "with": { "hardness": 3 }, "result": "flour", "count": 1, "uses": 1, "time_min": 40, "skill": "cooking",
+      "partial": { "with": { "text": "손으로 비비니 껍질만 벗겨졌다", "hint": "단단한 돌 위에 놓고 빻으면 가루가 날 것 같다" } } },
+    { "id": "flatbread",    "name": "가루를 뭉쳐 불에 구워 빵을 만든다", "action": "roast", "input": { "mixes": 3, "edible": 1 }, "input_max": { "sprouts": 0, "poison": 0 }, "heat": 1, "result": "flatbread", "count": 1, "uses": 1, "time_min": 30, "skill": "cooking",
+      "partial": { "heat": { "text": "가루가 뭉치기만 했다", "hint": "불에 구우면 먹기 좋아질 것 같다" } } },
+    { "id": "stone_hoe",    "name": "넓적한 돌을 막대 끝에 묶어 괭이를 만든다", "action": "twist", "input": { "hardness": 4, "toughness": 3 }, "input_max": { "sharp": 2, "pierces": 0 }, "with": { "toughness": 4, "hardness": 2 }, "with_max": { "weight": 1 }, "tool": { "fibrous": 4, "toughness": 4 }, "tool_uses": 1, "result": "stone_hoe", "count": 1, "uses": 1, "with_uses": 1, "time_min": 60, "skill": "crafting",
+      "partial": { "tool": { "text": "묶을 것이 없어 돌이 빠져 버렸다", "hint": "질긴 끈으로 묶으면 될 것 같다" }, "with": { "text": "꽂을 막대가 없었다", "hint": "곧고 질긴 나무 막대가 있어야 할 것 같다" } } }
   ]
 }

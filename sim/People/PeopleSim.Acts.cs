@@ -95,6 +95,7 @@ public sealed partial class PeopleSim
         p.Position(Now, out int px, out int py);
         int hx = px / 1000, hy = py / 1000;
         SeeAround(p, life, hx, hy);
+        SeeSprouts(p, life, here); // (E5c) 싹이 난 자리를 보면 — 심는 법을 알아내기도 한다
 
         // 정신 붕괴 중
         if (p.BreakUntil > Now && p.Food > 5_000 && p.Water > 5_000 && p.Rest > UrgentRest) { ContinueBreak(p); return; }
@@ -171,6 +172,8 @@ public sealed partial class PeopleSim
         if (opts.Count >= 3) { int a1 = int.MinValue, a2 = int.MinValue, a3 = int.MinValue; foreach (var (sc, _) in opts) { if (sc > a1) { a3 = a2; a2 = a1; a1 = sc; } else if (sc > a2) { a3 = a2; a2 = sc; } else if (sc > a3) a3 = sc; } bar = a3; }
         int hs = HuntScore(p, life, out var huntHerd, bar); if (hs > int.MinValue) Opt(16, hs);
         int fsc = FishScore(p, life, out int fishSpot); if (fsc > int.MinValue) Opt(17, fsc);
+        // (E5c) 밭일
+        int frs = FarmScore(p, life, out var farmJob, out int farmTile); if (frs > int.MinValue) Opt(18, frs);
         opts.Sort((a, b) => b.Score != a.Score ? b.Score.CompareTo(a.Score) : a.Code.CompareTo(b.Code));
         for (int k = 0; k < Math.Min(3, opts.Count); k++)
         {
@@ -193,6 +196,7 @@ public sealed partial class PeopleSim
                 15 => study is not null && TryStudy(p, study),
                 16 => huntHerd is not null && TryHunt(p, huntHerd),
                 17 => fishSpot >= 0 && TryFish(p, fishSpot),
+                18 => TryFarm(p, farmJob, farmTile),
                 _ => false,
             };
             if (ok && p.ActUntil > Now) return;
@@ -507,6 +511,10 @@ public sealed partial class PeopleSim
             case Act.Fish:
                 DoStill(p, GameTime.TicksPerHour * WorkPercent(p) / 100);
                 return;
+            // (E5c)
+            case Act.Farm:
+                ArriveFarm(p);
+                return;
             default:
                 Decide(p);
                 return;
@@ -555,11 +563,12 @@ public sealed partial class PeopleSim
             case Act.Gather when done:
             {
                 var h = life.HarvestAt(p.Target);
-                if (h is not null && life.Take(p.Target, 1, Now) > 0)
+                int took = h is null ? 0 : life.Take(p.Target, p.Why is Why.SeedFood or Why.FarmSeed ? 3 : 1, Now); // (E5c) 먹을 거리 · 심을 것으로 줍는 씨는 한 번에 셋까지
+                if (took > 0)
                 {
-                    int item = h.ItemIndex;
+                    int item = h!.ItemIndex;
                     int k = p.Carry.FindIndex(c => c.Item == item);
-                    if (k >= 0) p.Carry[k] = (item, p.Carry[k].Count + 1); else p.Carry.Add((item, 1));
+                    if (k >= 0) p.Carry[k] = (item, p.Carry[k].Count + took); else p.Carry.Add((item, took));
                 }
                 break;
             }
@@ -615,6 +624,9 @@ public sealed partial class PeopleSim
                 break;
             case Act.Fish when done:
                 FinishFish(p);
+                break;
+            case Act.Farm when !p.Walking:
+                FinishFarm(p, done);
                 break;
             case Act.DrinkCarried when done:
                 if (p.PotWater > 0) { p.PotWater--; p.Water = Clamp(p.Water + 45_000); p.Dehydration = Math.Max(0, p.Dehydration - 10_000); }

@@ -27,11 +27,12 @@ namespace Wtw.Sim.Persistence;
 /// 버전 10(E5b): 지방마다 짐승 무리 · 다음 무리 번호 · 물고기 몫 · 잠든 시각, 세계에서 처음 잡은 짐승 · 무리마다 처음, 사람의 옷 · 다침 · 사냥 시각 · 바람 12칸.
 ///   버전 9 이하 파일은 지방이 깨어날 때 짐승을 처음처럼 만든다(바람은 앞 8칸만).
 /// 버전 11(E5b 고침): 사람마다 놓친 무리 기억(번호 · 지방 · 언제까지). 버전 10 파일은 기억 없이 읽는다.
+/// 버전 12(E5c): 지방마다 밭 · 모아 둔 자리 · 처음 밭 · 올해 거둔 양, 사람마다 싹을 본 횟수 · 거둔 수 · 처음 심은 때. 버전 11 파일은 밭 없이 읽는다.
 /// 버전 1(E0) · 2(E1) · 3(E2) 파일도 읽는다(행성 설정은 기본값, 사람 없음).
 /// </summary>
 public static class SaveGame
 {
-    public const int Version = 11;
+    public const int Version = 12;
     private static readonly byte[] Magic = "WTWS"u8.ToArray();
 
     public static byte[] ToBytes(GameWorld w)
@@ -151,6 +152,7 @@ public static class SaveGame
                 foreach (var e in evs) { bw.Write(e.Handle); bw.Write(e.Order); bw.Write(e.Tick); bw.Write(e.Target); bw.Write(e.Kind); }
                 bw.Write(true); bw.Write(life.EmptySince); // (S1) 깨어 있었나 — 사람이 다 죽은 뒤 잠들기 전(불은 계속 탄다)도 그대로
                 WriteAnimals(bw, life.NextHerdId, life.FishStock, true, -1, life.Herds.Values);
+                WriteFarm(bw, life.Stash, life.FarmSince, life.FirstHarvest, life.SeedsEatenYear, life.YearHarvest, life.YearPotential, life.HarvestYear, life.Plots.Values);
             }
             else
             {
@@ -169,6 +171,7 @@ public static class SaveGame
                 foreach (var e in d.Events) { bw.Write(e.Handle); bw.Write(e.Order); bw.Write(e.Tick); bw.Write(e.Target); bw.Write(e.Kind); }
                 bw.Write(false);
                 WriteAnimals(bw, d.NextHerdId, d.FishStock, d.AnimalsReady, d.SleptAt, d.Herds);
+                WriteFarm(bw, d.Stash, d.FarmSince, d.FirstHarvest, d.SeedsEatenYear, d.YearHarvest, d.YearPotential, d.HarvestYear, d.Plots);
             }
         }
         // (E4) 발견 목록 · 부분 성공 · 무리마다 처음
@@ -283,6 +286,29 @@ public static class SaveGame
         return (nextId, fish, ready, slept, list);
     }
 
+    private static void WriteFarm(BinaryWriter bw, int stash, long since, long firstHarvest, int seedsEatenYear, int yh, int yp, int hy, IEnumerable<Plot> plots)
+    {
+        bw.Write(stash); bw.Write(since); bw.Write(firstHarvest); bw.Write(seedsEatenYear); bw.Write(yh); bw.Write(yp); bw.Write(hy);
+        var list = plots.OrderBy(p => p.Tile).ToList();
+        bw.Write(list.Count);
+        foreach (var p in list)
+        {
+            bw.Write(p.Tile); bw.Write((byte)p.Stage); bw.Write(p.Tilled); bw.Write(p.Wild); bw.Write(p.Crop);
+            bw.Write(p.Stamp); bw.Write(p.Due); bw.Write(p.LastTend); bw.Write(p.Damage); bw.Write(p.Planter);
+        }
+    }
+
+    private static DormantProvince ReadFarm(BinaryReader br, DormantProvince dp)
+    {
+        int stash = br.ReadInt32(); long since = br.ReadInt64(), first = br.ReadInt64(); int sey = br.ReadInt32(), yh = br.ReadInt32(), yp = br.ReadInt32(), hy = br.ReadInt32();
+        int n = br.ReadInt32();
+        var list = new List<Plot>(n);
+        for (int i = 0; i < n; i++)
+            list.Add(new Plot { Tile = br.ReadInt32(), Stage = (PlotStage)br.ReadByte(), Tilled = br.ReadBoolean(), Wild = br.ReadBoolean(), Crop = br.ReadInt32(),
+                Stamp = br.ReadInt64(), Due = br.ReadInt64(), LastTend = br.ReadInt64(), Damage = br.ReadInt32(), Planter = br.ReadInt32() });
+        return dp with { Stash = stash, FarmSince = since, FirstHarvest = first, SeedsEatenYear = sey, YearHarvest = yh, YearPotential = yp, HarvestYear = hy, Plots = list };
+    }
+
     private static void WriteFire(BinaryWriter bw, int tile, Fire f) { bw.Write(tile); bw.Write(f.Kind); bw.Write(f.Stamp); bw.Write(f.Fuel); bw.Write(f.Charcoal); bw.Write(f.Lighter); }
     private static (int, Fire) ReadFire(BinaryReader br) => (br.ReadInt32(), new Fire { Kind = br.ReadByte(), Stamp = br.ReadInt64(), Fuel = br.ReadInt64(), Charcoal = br.ReadBoolean(), Lighter = br.ReadInt32() });
 
@@ -339,6 +365,8 @@ public static class SaveGame
         bw.Write(p.Worn); bw.Write(p.WornFeet); bw.Write(p.WornWear); bw.Write(p.FeetWear); bw.Write(p.Injury); bw.Write((byte)p.InjuryCause);
         bw.Write(p.LastHunt); bw.Write(p.LastFish); bw.Write(p.Kills);
         bw.Write(p.FailHerd); bw.Write(p.FailHerdCell); bw.Write(p.FailHerdUntil);
+        // (E5c)
+        bw.Write(p.SproutSeen); bw.Write(p.LastSproutLook); bw.Write(p.Harvested); bw.Write(p.FirstSow);
     }
 
     private static void ReadPeople(BinaryReader br, GameWorld w, int version)
@@ -385,6 +413,7 @@ public static class SaveGame
                 var an = ReadAnimals(br);
                 dp = dp with { NextHerdId = an.NextId, FishStock = an.Fish, AnimalsReady = an.Ready, SleptAt = an.SleptAt, Herds = an.Herds };
             }
+            if (version >= 12) dp = ReadFarm(br, dp);
             ps.Dormant[cell] = dp;
         }
         if (version >= 7)
@@ -590,6 +619,7 @@ public static class SaveGame
             p.Worn = br.ReadInt32(); p.WornFeet = br.ReadInt32(); p.WornWear = br.ReadInt32(); p.FeetWear = br.ReadInt32(); p.Injury = br.ReadInt32(); p.InjuryCause = (DeathCause)br.ReadByte();
             p.LastHunt = br.ReadInt64(); p.LastFish = br.ReadInt64(); p.Kills = br.ReadInt32();
             if (version >= 11) { p.FailHerd = br.ReadInt32(); p.FailHerdCell = br.ReadInt32(); p.FailHerdUntil = br.ReadInt64(); }
+            if (version >= 12) { p.SproutSeen = br.ReadInt32(); p.LastSproutLook = br.ReadInt64(); p.Harvested = br.ReadInt32(); p.FirstSow = br.ReadInt64(); }
         }
         else
             for (int i = 0; i < p.Known.Count; i++) { var k = p.Known[i]; k.Via = k.LearnedFrom < 0 ? Via.Self : Via.Watch; k.Level = PeopleSim.StartLevel(k.Via); k.LastUse = k.Tick; p.Known[i] = k; }

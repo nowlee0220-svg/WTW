@@ -46,6 +46,9 @@ public enum Act : byte
     Butcher,
     /// <summary>물가에서 물고기를 잡는다(Target = 물가 타일).</summary>
     Fish,
+    // (E5c) 농사
+    /// <summary>밭일(Target = 밭 타일 또는 모아 둔 자리, TargetB = FarmJob).</summary>
+    Farm,
 }
 
 public enum DeathCause : byte { None = 0, Starvation, Thirst, Cold, Heat, OldAge, Illness,
@@ -65,6 +68,8 @@ public enum Why : byte
     TeachChild, TeachFew, TeachAsked, TeachFaded, BeingTaught, WantRecord, RecordOld, RecordOnly, RecordFirst, StudyPainting,
     // (E5b) 바람 · 사냥 · 물고기
     WantFood, WantHunting, WantClothing, HuntFood, HuntHide, HuntBone, JoinHunt, HuntChase, FishFood, Butchering, Injured,
+    // (E5c) 밭일의 까닭
+    WantFarming, FarmRipe, FarmSow, FarmTill, FarmWeed, FarmGuard, FarmStore, FarmSeed, FarmChase, SeedFood,
 }
 
 /// <summary>생김새(코드로 그리는 몸 — 부모를 닮는다). 값은 0~255.</summary>
@@ -95,6 +100,8 @@ public enum BioKind : byte
     Taught, LearnedTeaching, Forgot, Painted, LearnedPainting, Refreshed,
     // (E5b) Other = 종(또는 사람), Param = 함께한 사람 수 · 다침 정도 · 아이템
     Hunted, HuntFailed, Injured, Attacked, Tamed, Wore, KilledBeast, DroveOff,
+    // (E5c) Other = 씨 아이템(또는 종 · 사람), Param = 타일 수 · 거둔 수
+    SawSprouts, Sowed, Harvested, FieldEaten, AteSeeds, FirstField,
 }
 
 /// <summary>(E5) 어떻게 알게 되었나. 값은 저장 파일에 남는다.</summary>
@@ -269,6 +276,11 @@ public sealed class Person
     public int FailHerd = -1, FailHerdCell = -1;
     public long FailHerdUntil;
     public int Kills;
+    /// <summary>(E5c) 싹이 난 자리를 본 횟수 · 마지막으로 둘러본 때 · 거둔 수 · 처음 심은 때.</summary>
+    public int SproutSeen;
+    public long LastSproutLook = long.MinValue / 2;
+    public int Harvested;
+    public long FirstSow = -1;
 
     public readonly List<ThoughtInst> Thoughts = new();
     public readonly List<Relation> Relations = new(); // Other 순으로 정렬

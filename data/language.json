@@ -69,7 +69,13 @@
     { "id": "wolf", "meaning": "늑대", "kind": "짐승", "name": true },
     { "id": "bear", "meaning": "곰", "kind": "짐승", "name": true },
     { "id": "lion", "meaning": "큰 고양이", "kind": "짐승", "name": true },
-    { "id": "fish", "meaning": "물고기", "kind": "짐승" }
+    { "id": "fish", "meaning": "물고기", "kind": "짐승" },
+    { "id": "seed", "meaning": "씨", "kind": "발견" },
+    { "id": "sprout", "meaning": "싹", "kind": "자연", "name": true },
+    { "id": "field", "meaning": "밭", "kind": "발견", "name": true },
+    { "id": "grain", "meaning": "낟알", "kind": "발견" },
+    { "id": "bread", "meaning": "빵", "kind": "발견" },
+    { "id": "hoe", "meaning": "괭이", "kind": "발견" }
   ],
   "sounds": {
     "initials": { "ㄱ": 8, "ㄴ": 9, "ㄷ": 8, "ㄹ": 7, "ㅁ": 9, "ㅂ": 7, "ㅅ": 8, "ㅇ": 8, "ㅈ": 6, "ㅎ": 6, "ㅋ": 3, "ㅌ": 4, "ㅍ": 3 },

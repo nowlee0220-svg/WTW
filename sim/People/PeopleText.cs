@@ -120,7 +120,24 @@ public sealed partial class PeopleSim
             Act.Hunt => HuntText(p, life, w),
             Act.Butcher => $"잡은 {Hangul.Eul(AnimalName(p.TargetB))} 그 자리에서 손질하는 중" + (p.WhyArg != p.Id ? $" ({NameOf(p.WhyArg)}와 함께)" : ""),
             Act.Fish => w ? "물고기를 잡으러 물가로 가는 중" : (WeaponPower(p) >= 3 ? "물가에서 창으로 물고기를 찌르는 중" : "물가에서 손으로 물고기를 더듬는 중"),
+            // (E5c)
+            Act.Farm => FarmText(p, life, w),
             _ => "둘러보는 중",
+        };
+    }
+
+    private string FarmText(Person p, ProvinceLife life, bool w)
+    {
+        string crop = life.Plots.TryGetValue(p.Target, out var q) && q.Crop >= 0 ? ItemName(q.Crop) : "";
+        return (FarmJob)p.TargetB switch
+        {
+            FarmJob.Harvest => w ? $"익은 {Hangul.Eul(crop.Length > 0 ? crop : "것")} 거두러 밭으로 가는 중" : $"익은 {Hangul.Eul(crop.Length > 0 ? crop : "것")} 거두는 중" + (HasSharpTool(p) ? " (날 선 돌로 베어)" : " (손으로 훑어)"),
+            FarmJob.Sow => w ? "씨를 심으러 가는 중" : KnowsField(p) && BestTool(p, P_digs, 2) >= 0 ? "땅을 고르고 파서 밭을 일구고 씨를 묻는 중" : KnowsField(p) ? "땅을 손으로 파서 씨를 묻는 중 (땅 파는 막대가 있었으면)" : "땅에 씨를 묻는 중",
+            FarmJob.Weed => w ? "김을 매러 밭으로 가는 중" : "밭의 잡풀을 뽑는 중",
+            FarmJob.Guard => w ? "밭을 노리는 짐승을 쫓으러 가는 중" : "밭 곁에서 짐승이 오지 않게 지키는 중",
+            FarmJob.Store => w ? "거둔 것을 모아 둔 자리로 나르는 중" : "거둔 것을 모아 둔 자리에 내려놓는 중",
+            FarmJob.FetchSeed => w ? "심을 씨를 가지러 모아 둔 자리로 가는 중" : "모아 둔 자리에서 심을 씨를 챙기는 중",
+            _ => "밭일 하는 중",
         };
     }
 
@@ -285,6 +302,16 @@ public sealed partial class PeopleSim
             Why.HuntChase => "짐승이 달아나서 — 따라간다(세 번까지)",
             Why.JoinHunt => $"{Hangul.I(NameOf(arg))} 큰 짐승을 잡자고 불러서 — 혼자서는 어렵다",
             Why.FishFood => $"배가 고픈데 물가가 가까워서 (배부름 {p.Food / 1000}%)",
+            // (E5c)
+            Why.WantFarming => $"밭이 더 잘 되었으면 — 잡풀 · 짐승에 거둔 것이 적어서 (바람 {WishStrength(p, "farming")}): {TryReason(p, "farming")}",
+            Why.FarmRipe => "심은 것이 익었다 — 오래 두면 떨어져 버린다",
+            Why.FarmSow => "씨를 묻으면 싹이 난다는 것을 알아서 — 머무는 곳 곁에",
+            Why.FarmTill => "땅을 일구고 심으면 더 많이 거둔다는 것을 알아서",
+            Why.FarmWeed => "잡풀이 자라는 것을 덮어 가서",
+            Why.FarmGuard => "풀 먹는 짐승이 밭 가까이 와서 — 곁에 아무도 없다",
+            Why.FarmStore => "거둔 것을 무리가 함께 먹게 모아 둔다(들고 다니면 무겁다)",
+            Why.FarmSeed => "심을 씨가 없어서 — 들의 낟알 · 콩 · 덩이뿌리를 모은다",
+            Why.SeedFood => $"딸 열매가 없어서 — 낟알 · 콩 · 덩이뿌리라도 (배부름 {p.Food / 1000}%)",
             Why.Butchering => HasSharpTool(p) ? "날 선 도구가 있어 고기 · 가죽 · 뼈 · 힘줄을 가른다" : "날 선 도구가 없어 고기만 조금 뜯어낸다",
             _ => "",
         } + HowText(p);
@@ -509,6 +536,13 @@ public sealed partial class PeopleSim
         BioKind.Wore => $"{Hangul.Eul(ItemName(b.Param))} 입기 시작했다",
         BioKind.KilledBeast => $"덮쳐 온 {Hangul.Eul(AnimalName(b.Other))} 쓰러뜨렸다",
         BioKind.DroveOff => $"{Hangul.Eul(AnimalName(b.Other))} 쫓아냈다",
+        // (E5c)
+        BioKind.SawSprouts => $"흘린 {ItemName(b.Other)} 씨에서 싹이 난 것을 보았다",
+        BioKind.Sowed => $"처음으로 씨를 땅에 묻었다({b.Param}곳)",
+        BioKind.FirstField => $"처음으로 땅을 일궈 밭을 만들고 씨를 묻었다({b.Param}칸)",
+        BioKind.Harvested => $"심은 것을 거두었다({b.Param}개)",
+        BioKind.FieldEaten => $"{Hangul.I(AnimalName(b.Other))} 심어 둔 밭을 뜯어 먹었다",
+        BioKind.AteSeeds => $"굶주려 남겨 둔 씨앗({ItemName(b.Other)})까지 먹었다",
         _ => "",
     };
 

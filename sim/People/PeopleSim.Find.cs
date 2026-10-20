@@ -160,6 +160,8 @@ public sealed partial class PeopleSim
             if (tile >= 0) how = 1;
         }
         life.Claims = null;
+        // (E5c) 모아 둔 자리에 먹을 것이 있으면 가져온다(딸 것이 없을 때 — 굶주림이 덜하다)
+        if (tile < 0 && TryStashFood(p, life, here, why)) return true;
         if (tile < 0) p.Scarcity++; // 둘레에도 기억에도 딸 것이 없다(누가 다 땄거나 원래 없음)
         // 2-1) 기억(이웃 지방) → 넘어간다
         if (tile < 0 && CrossToKnown(p, life, here, p.KnownFood, why, arg)) return true;
@@ -185,6 +187,8 @@ public sealed partial class PeopleSim
         }
         // (E5b 고침) 둘레에 말려 둔 고기 같은 먹을 것이 놓여 있으면 가져온다
         if (p.Food < 40_000 && TryFetchStash(p, life, hx, hy, why)) return true;
+        // (E5c) 둘레의 낟알 · 콩 · 덩이뿌리를 줍는다(익히는 법을 알거나 아주 배고플 때)
+        if (TryGatherSeedFood(p, life, hx, hy, why)) return true;
         // (E5b) 딸 것이 없다 → 보이는 짐승을 잡거나 물고기를 잡는다
         if (TryHuntForFood(p)) return true;
         // 4) 찾아다님(초록이 짙은 쪽으로 — 이웃 지방도)

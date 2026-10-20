@@ -41,7 +41,10 @@
     { "object": "loose_stones",    "item": "stone",    "stock": 3, "regrow_days": 0 },
     { "object": "flint_nodules",   "item": "flint",    "stock": 3, "regrow_days": 0 },
     { "object": "quartz_pebbles",  "item": "quartz",   "stock": 2, "regrow_days": 0 },
-    { "object": "obsidian_shards", "item": "obsidian", "stock": 3, "regrow_days": 0 }
+    { "object": "obsidian_shards", "item": "obsidian", "stock": 3, "regrow_days": 0 },
+      { "object": "wild_grain", "item": "grain", "stock": 4, "regrow_days": 10.0 },
+      { "object": "wild_beans", "item": "beans", "stock": 3, "regrow_days": 10.0 },
+      { "object": "wild_tuber", "item": "tuber", "stock": 2, "regrow_days": 14.0 }
 
   ],
   "traits": [
