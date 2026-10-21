@@ -6,7 +6,7 @@ using Wtw.Sim.World;
 
 /// <summary>
 /// (E5c) 농사 측정. dotnet run -c Release --project tools/bench -- people farm …
-///   [--seeds 20] [--people 9] [--years 200] [--cell home|cool|cold|칸] [--know sow|field] [--cap 300] [--nocap] [--parallel N] [--threads auto] [--out 파일.md]
+///   [--seeds 20] [--people 9] [--years 200] [--cell home|cool|cold|칸] [--know sow|field] [--cap 300] [--nocap] [--land N] [--parallel N] [--threads auto] [--out 파일.md]
 ///   시드마다 그 땅에 가족(사람 수 ÷ 3)을 뿌리고 Y 년 → 처음 심음 · 처음 밭 · 밭 · 거둔 양 · 흉년 · 씨까지 먹음 · 짐승이 먹은 밭 · 머문 날 ·
 ///   죽음 원인 · 발견 해 · 인구(10년마다) · 사람 사는 지방 · 지방마다 먹을 것(들 · 짐승 · 밭) 처음 → 끝 · 속도.
 ///   --know sow: 처음부터 심는 법(+ 불 · 볶기)을 알고 낟알을 든다. --know field: 거기에 일구는 법 · 땅 파는 막대.
@@ -32,10 +32,13 @@ public static class FarmBench
 
     public static string Know = "";
     public static bool NoCap;
+    /// <summary>(E5c 고침) --land N: 땅 N 칸의 작은 행성(측정 도구만 1,000 칸 아래를 만든다 — 땅이 다 차는 굶주린 세계).</summary>
+    public static int Land;
 
     public static Row Simulate(ulong seed, int people, int years, string where, int cap)
     {
-        var w = GameWorld.Create(seed, new WorldConfig { DotCount = 0, PeopleCap = NoCap ? 5000 : cap });
+        if (Land > 0) Wtw.Sim.Planet.PlanetGenerator.AllowTinyForBench = true;
+        var w = GameWorld.Create(seed, new WorldConfig { DotCount = 0, PeopleCap = NoCap ? 5000 : cap, LandCells = Land > 0 ? Land : 16_000 });
         var p = w.Planet;
         int cell = where == "home" ? PeopleSamples.Home(p) : where == "cold" ? PeopleSamples.Cold(p) : where == "cool" ? PeopleSamples.Cool(p) : int.Parse(where);
         var row = new Row { Seed = seed, Cell = cell, Biome = Wtw.Sim.Planet.PlanetNames.Of(p.Biome[cell]), Temp = p.Temp10[cell] / 10.0 };
@@ -127,7 +130,7 @@ public static class FarmBench
         double Med(IEnumerable<double> xs) { var l = xs.OrderBy(x => x).ToList(); return l.Count == 0 ? double.NaN : l.Count % 2 == 1 ? l[l.Count / 2] : (l[l.Count / 2 - 1] + l[l.Count / 2]) / 2; }
         double M(Func<Row, double> f) => Med(rows.Select(f));
         var sb = new StringBuilder();
-        sb.AppendLine($"# 농사 측정 — 시드 {seeds}개 · {where} · 가족 {Math.Max(1, people / 3)} · {years}년 · 아는 것 '{(Know.Length == 0 ? "없음" : Know)}' · 상한 {(NoCap ? "없음(5000)" : cap.ToString())} · 걸린 시간 {sw.Elapsed.TotalMinutes:0.0}분");
+        sb.AppendLine($"# 농사 측정 — 시드 {seeds}개 · {where} · 가족 {Math.Max(1, people / 3)} · {years}년 · 아는 것 '{(Know.Length == 0 ? "없음" : Know)}' · 상한 {(NoCap ? "없음(5000)" : cap.ToString())}{(Land > 0 ? $" · 땅 {Land}칸(작은 행성)" : "")} · 걸린 시간 {sw.Elapsed.TotalMinutes:0.0}분");
         sb.AppendLine();
         sb.AppendLine("| 시드 | 칸(땅, 연평균) | 끝 인구 | 가장 많을 때(해) | 멸종 | 사는 지방 | 처음 심음 | 처음 밭 | 밭 무리 | 일군 밭 · 묻은 자리 · 저절로 | 심은 타일 | 거둔 수 | 흉년 | 씨까지 먹음 | 짐승이 먹음 | 모아 둔 먹을 것 · 씨 | 굶주림 | 초 |");
         sb.AppendLine("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
@@ -144,6 +147,7 @@ public static class FarmBench
         sb.AppendLine($"- 일군 타일 {M(r => r.St.Tilled)} · 심은 타일 {M(r => r.St.Sown)} · 거둔 타일 {M(r => r.St.HarvestTiles)} · **거둔 수 {M(r => r.St.HarvestItems)}** · 김맨 타일 {M(r => r.St.Weeded)} · 싹이 안 난 씨 {M(r => r.St.SeedsFailed)}");
         sb.AppendLine($"- 다 익고 오래 두어 떨어짐 {M(r => r.St.FieldsFallen)} · 빈 밭에 잡풀이 덮음 {M(r => r.St.FieldsWeededOver)} · **흉년 {M(r => r.St.BadHarvests)}** · **씨까지 먹어 버림 {M(r => r.St.SeedEaten)}**");
         sb.AppendLine($"- **짐승이 뜯어 먹은 밭(칸 · 번) {M(r => r.St.FieldEaten)}** · 다 먹혀 망침 {M(r => r.St.FieldsRuined)} · 지키러 남음 {M(r => r.St.Guarded)} · 쫓아냄 {M(r => r.St.ChasedOff)}");
+        sb.AppendLine($"- 아이: 가짐 {M(r => r.St.Conceptions)} · 태어남 {M(r => r.St.Births)} · **짝 곁에서 아이를 가질 만했는데 배를 곯아(영양 부족) 갖지 않은 번 {M(r => r.St.ConceiveHungry)}**");
         sb.AppendLine($"- 모아 둠 {M(r => r.St.Stored)} · 모아 둔 데서 가져감 {M(r => r.St.StashTaken)} · 모아 둔 것을 쥐 · 벌레가 먹음 {M(r => r.St.StashLost)} · 씨를 가지러 {M(r => r.St.SeedFetch)} · 씨를 먹을 거리로 주움 {M(r => r.St.SeedGathered)}");
         sb.AppendLine($"- 썩어 버린 것(들고 있다): 열매 등 {M(r => r.St.RotOther)} · 날고기 · 날생선 {M(r => r.St.RotMeat)} · 날가죽 {M(r => r.St.RotHide)} · 땅의 짐승 것 {M(r => r.St.RotGround)}");
         long fd = rows.Sum(r => r.St.StayFarmDays), fn = rows.Sum(r => r.St.StayFarmN), od = rows.Sum(r => r.St.StayOtherDays), on = rows.Sum(r => r.St.StayOtherN);

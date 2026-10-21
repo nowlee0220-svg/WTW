@@ -158,6 +158,9 @@ public sealed partial class PeopleSim
         {
             tile = NearestKnown(p.KnownFood, p.Cell, here, life, t => t != skipTile && life.StockAt(t, Now) > (claims.TryGetValue(t, out int c) ? c : 0));
             if (tile >= 0) how = 1;
+            // (E5c 고침) 이 지방에서 기억하는 자리가 다 따였으면 잊는다 — 잊지 않으면 "이웃 지방에도 있었지"를 따라 넘어가고, 거기서도 다 따인 것을 보고
+            // 또 다른 이웃으로 넘어가기를 되풀이했다(굶주린 세계에서 굶어 죽은 사람의 95% 가 마지막 사흘에 세 지방 모서리를 수십 번 오감)
+            else ForgetEmptyFood(p, life);
         }
         life.Claims = null;
         // (E5c) 모아 둔 자리에 먹을 것이 있으면 가져온다(딸 것이 없을 때 — 굶주림이 덜하다)
@@ -222,6 +225,13 @@ public sealed partial class PeopleSim
     }
 
     /// <summary>기억 중 이 지방(cell)의 자리에서 가장 가까운 것(타일). 없으면 −1.</summary>
+    private void ForgetEmptyFood(Person p, ProvinceLife life)
+    {
+        var known = p.KnownFood;
+        for (int i = known.Count - 1; i >= 0; i--)
+            if (Person.PlaceCell(known[i]) == p.Cell && life.StockAt(Person.PlaceTile(known[i]), Now) <= 0) known.RemoveAt(i);
+    }
+
     private int NearestKnown(List<int> known, int cell, int here, ProvinceLife life, Func<int, bool> ok)
     {
         int best = -1; long bd = long.MaxValue;

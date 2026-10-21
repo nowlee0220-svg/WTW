@@ -50,11 +50,13 @@ public static class PeopleBench
             case "skip": SpeedBench.Detail = o.ContainsKey("detail"); SpeedBench.Skip(Sx("scene", "game/scenes/village-50y.wtw"), I("years", 50)); break;
             case "discover": DiscoverBench.Know = o.GetValueOrDefault("know") ?? ""; DiscoverBench.SaveTo = o.GetValueOrDefault("save"); DiscoverBench.Run(I("seeds", 20), I("people", 10), I("years", 200), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300)); break;
             case "thirst": ThirstBench.Run(I("seeds", 4), I("people", 9), I("years", 60), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300), o.ContainsKey("nocap")); break;
+            case "starve": StarveBench.Run(I("seeds", 4), I("people", 9), I("years", 130), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), o.ContainsKey("nocap"), I("land", 0)); break;
+            case "landinfo": LandInfo.Run(I("land", 1000), I("seeds", 4), (ulong)I("seed", 1)); break;
             case "firenight": FireNightBench.Run(I("seeds", 20), I("years", 5), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "acts": ActCountBench.Run(I("people", 300), I("years", 20), I("per", 15), (ulong)I("seed", 1)); break;
             case "huntdbg": HuntDebug.Run((ulong)I("seed", 1), I("days", 160)); break;
             case "wolfscene": SceneBench.WolfMoment(o.GetValueOrDefault("out") ?? "wolf.wtw", (ulong)I("seed", 20261016), I("days", 400)); break;
-            case "farm": FarmBench.Know = o.GetValueOrDefault("know") ?? ""; FarmBench.NoCap = o.ContainsKey("nocap"); FarmBench.Run(I("seeds", 20), I("people", 9), I("years", 200), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300)); break;
+            case "farm": FarmBench.Know = o.GetValueOrDefault("know") ?? ""; FarmBench.NoCap = o.ContainsKey("nocap"); FarmBench.Land = I("land", 0); FarmBench.Run(I("seeds", 20), I("people", 9), I("years", 200), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300)); break;
             case "hunt": HuntBench.Know = o.GetValueOrDefault("know") ?? ""; HuntBench.NoCap = o.ContainsKey("nocap"); HuntBench.Detail = o.ContainsKey("detail"); HuntBench.Run(I("seeds", 20), I("people", 9), I("years", 100), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300)); break;
             default: Console.WriteLine("모드: seeds | cap | one | hunt …"); break;
         }

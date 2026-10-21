@@ -63,7 +63,9 @@ public sealed class PeopleStats
     /// 지킨 번 · 쫓아낸 번 · 떨어져 버려진 밭 · 잡풀이 덮어 사라진 밭 · 싹이 안 난 씨 · 씨까지 먹은 번 · 흉년 · 모아 둔 수 · 모아 둔 데서 가져감 · 모아 둔 것을 잃음 · 씨앗을 가지러 · 씨앗 먹을 거리로 주움.</summary>
     public long WildSprouts, SproutSights, SproutLearned, Tilled, Sown, HarvestTiles, HarvestItems, Weeded, FieldEaten, FieldsRuined,
         Guarded, ChasedOff, FieldsFallen, FieldsWeededOver, SeedsFailed, SeedEaten, BadHarvests, Stored, StashTaken, StashLost, SeedFetch, SeedGathered,
-        StayFarmDays, StayFarmN, StayOtherDays, StayOtherN, RotBerries;
+        StayFarmDays, StayFarmN, StayOtherDays, StayOtherN, RotBerries,
+        /// <summary>(E5c 고침 측정) 아이를 가질 만했는데(짝 곁 · 나이 · 상한 아래) 배를 곯아(영양 부족) 갖지 않은 번.</summary>
+        ConceiveHungry;
     /// <summary>(E5c 측정) 계획 · 재료 구하기를 바람마다(바람 × 2 + 아는 법이면 1).</summary>
     public readonly long[] PlanByWish = new long[32], MatByWish = new long[32], PlanKnownRule = new long[64];
 }

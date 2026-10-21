@@ -688,12 +688,15 @@ public sealed partial class PeopleSim
         if (list.Count == 0) life.RemoveItems(life.Stash);
     }
 
-    /// <summary>하루 경계: 모아 둔 자리의 먹을 것 · 씨는 쥐 · 벌레 · 짐승이 조금씩 먹는다 — 담는 것이 없으면 하루 1/12, 바구니 1/30, 토기 1/80.</summary>
+    /// <summary>하루 경계: 모아 둔 자리의 먹을 것 · 씨는 쥐 · 벌레 · 짐승이 조금씩 먹는다 — 담는 것이 없으면 하루 1/40, 바구니 1/100, 토기 1/300(썩는 것은 더 빨리).</summary>
     private void StashDaily(ProvinceLife life, Pcg32 rng)
     {
         if (life.Stash < 0 || !life.Items.TryGetValue(life.Stash, out var list)) return;
         int hold = StashContainer(life);
-        int div = hold >= 4 ? 80 : hold >= 2 ? 30 : 12;
+        // (E5c 고침) 마른 낟알 · 콩 · 볶은 것(썩음 2 이하)은 담는 것 없이 하루 1/40(한 해 40일에 절반 남짓) · 바구니 1/100 · 토기 1/300.
+        // 전에는 1/12 · 1/30 · 1/80 — E5b 의 "땅에 둔 고기는 하루 1/10"(짐승을 끄는 고기)을 따라 잡은 값이라 마른 씨에는 너무 빨라,
+        // 쌓은 것의 대부분(114만 가운데 64만)을 쥐 · 벌레가 먹었다. 썩는 것(썩음 3 이상 — 고기 등)은 아래처럼 그보다 빨리.
+        int div = hold >= 4 ? 300 : hold >= 2 ? 100 : 40;
         for (int k = list.Count - 1; k >= 0; k--)
         {
             var (it, n) = list[k];
@@ -719,7 +722,9 @@ public sealed partial class PeopleSim
     /// </summary>
     private bool TryStashFood(Person p, ProvinceLife life, int here, Why why)
     {
-        if (life.Stash < 0 || !life.Items.TryGetValue(life.Stash, out var list) || Cheb(here, life.Stash) > 40) return false;
+        // (E5c 고침) 많이 배고프면(40% 아래) 지방 안 어디든 무리의 모아 둔 자리까지 간다 — 전에는 40타일 안에서만 찾아,
+        // 굶어 죽은 사람이 모아 둔 자리에서 중앙값 78타일 떨어져 있었다
+        if (life.Stash < 0 || !life.Items.TryGetValue(life.Stash, out var list) || (Cheb(here, life.Stash) > 40 && p.Food >= 40_000)) return false;
         if (!life.Paths.Reachable(here, life.Stash)) return false;
         int best = -1, bs = int.MinValue;
         int seeds = 0; foreach (var (it, c) in list) if (IsSeed(it)) seeds += c;
@@ -730,7 +735,7 @@ public sealed partial class PeopleSim
         {
             if (c <= 0 || Prop(it, Craft.P_edible) <= 0) continue;
             bool seed = IsSeed(it);
-            if (seed && !roast && Prop(it, Craft.P_edible) < 2) continue;
+            if (seed && !roast && Prop(it, Craft.P_edible) < 2 && p.Food >= UrgentFood) continue; // 날낟알은 아주 배고플 때만(들에서 줍는 것과 같게)
             int s = Prop(it, Craft.P_edible) * 10 - (seed ? 15 : 0) - Prop(it, Craft.P_poison) * 10;
             if (seed && spare <= 0) continue;
             if (!seed) seedsOnly = false;
