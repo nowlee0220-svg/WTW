@@ -150,6 +150,10 @@ public static class FarmBench
         sb.AppendLine($"- 아이: 가짐 {M(r => r.St.Conceptions)} · 태어남 {M(r => r.St.Births)} · **짝 곁에서 아이를 가질 만했는데 배를 곯아(영양 부족) 갖지 않은 번 {M(r => r.St.ConceiveHungry)}**");
         sb.AppendLine($"- 모아 둠 {M(r => r.St.Stored)} · 모아 둔 데서 가져감 {M(r => r.St.StashTaken)} · 모아 둔 것을 쥐 · 벌레가 먹음 {M(r => r.St.StashLost)} · 씨를 가지러 {M(r => r.St.SeedFetch)} · 씨를 먹을 거리로 주움 {M(r => r.St.SeedGathered)}");
         sb.AppendLine($"- 썩어 버린 것(들고 있다): 열매 등 {M(r => r.St.RotOther)} · 날고기 · 날생선 {M(r => r.St.RotMeat)} · 날가죽 {M(r => r.St.RotHide)} · 땅의 짐승 것 {M(r => r.St.RotGround)}");
+        {
+            long Mv(Why w) => rows.Sum(r => r.St.MoveWhy[(int)w]);
+            sb.AppendLine($"- 떠난 까닭(모든 시드 합): 먹을 것이 모자라서 {Mv(Why.Scarce):N0} · 가족 따라 {Mv(Why.FollowFamily):N0} · 돌아감 {Mv(Why.GoBack):N0} · 짝 찾기 {Mv(Why.SeekMate):N0} · 호기심 {Mv(Why.Explore):N0}");
+        }
         long fd = rows.Sum(r => r.St.StayFarmDays), fn = rows.Sum(r => r.St.StayFarmN), od = rows.Sum(r => r.St.StayOtherDays), on = rows.Sum(r => r.St.StayOtherN);
         var stays = rows.SelectMany(r => r.FarmStays).Select(x => (double)x).ToList();
         sb.AppendLine($"- **머문 날**: 떠난 사람이 그 땅에 머문 날(평균) — 밭이 있는 무리 {(fn > 0 ? fd / (double)fn : double.NaN):0}일({fn}번) · 없는 무리 {(on > 0 ? od / (double)on : double.NaN):0}일({on}번) · 끝에 밭이 있는 지방이 밭을 가진 지 중앙값 {Med(stays):0}일({stays.Count}곳)");

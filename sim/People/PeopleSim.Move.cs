@@ -27,7 +27,9 @@ public sealed partial class PeopleSim
         var life = Life(p.Cell);
         // 가족 따라: 짝 · (아이면) 부모가 바로 이웃 땅에 있다
         foreach (int id in st == LifeStage.Child ? new[] { p.Mother, p.Father, p.Partner } : new[] { p.Partner })
-            if (id >= 0 && Get(id) is { Dead: false } f && f.Cell != p.Cell && life.Map.SlotOf(f.Cell) >= 0 && f.Act != Act.Cross)
+            // (E5c 고침) 이웃 땅에 잠깐 먹을 것 · 물을 찾으러 간 가족은 따라가지 않는다(그 땅에 반나절 넘게 머문 가족만) — 전에는 짝 · 부모가
+            // 이웃 땅에 다녀오는 사이에 하루 경계에서 따라 넘어가고, 그 가족은 다시 돌아와 서로 오가기를 되풀이했다(작은 행성에서 "떠남"의 3분의 2)
+            if (id >= 0 && Get(id) is { Dead: false } f && f.Cell != p.Cell && life.Map.SlotOf(f.Cell) >= 0 && f.Act != Act.Cross && Now - f.ArrivedTick >= GameTime.TicksPerDay / 2)
             {
                 if (st == LifeStage.Child || rng.NextInt(100) < 50) { p.MoveWhy = Why.FollowFamily; p.MoveTo = f.Cell; return; }
             }
