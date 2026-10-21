@@ -65,7 +65,7 @@ public static class SceneBench
             Console.WriteLine($"{file}: {GameTime.Format(w.Now)} · 사람 {w.People.AliveCount}명 · {new FileInfo(Path.Combine(outDir, file)).Length / 1024}KB");
         }
         if (!onlyArtisan) {
-        long fire = FirstTick("campfire", 100);
+        long fire = FirstTick("campfire", 200); // (E5c 고침) 장면 시드에서 첫 불이 100년 뒤로 밀려 200년까지 찾는다
         if (fire > 0) Save("first-fire.wtw", "첫 불 직전", "따뜻한 숲의 세 가족 — 이틀 뒤에 누군가 처음으로 모닥불을 피운다. 1배속으로 지켜보세요", fire - 2 * GameTime.TicksPerDay);
         long pot = FirstTick("pot", 150);
         if (pot > 0) Save("first-pot.wtw", "첫 토기 직전", "이틀 뒤에 누군가 처음으로 진흙 그릇을 불에 구워 토기를 만든다", pot - 2 * GameTime.TicksPerDay);

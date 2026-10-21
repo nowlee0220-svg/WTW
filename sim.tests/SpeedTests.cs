@@ -110,5 +110,5 @@ public class SpeedTests
     //   E5b 고침(목마름 · 썩음 · 속도 — 경계 넘어 설 자리 · 사냥 길 · 무리 판단 · 손질 몫 · 바구니 되풀이): 결과가 바뀌어 새 값(마을은 장면도 다시 만듦)
     //   E5c 농사(씨 맺는 들풀 · 밭 · 모아 둔 자리 · 저장 버전 12): 들풀이 지방 지도를 바꾸고 농사가 세계를 바꿔 새 값(장면도 다시 만듦)
     private const ulong PinFamilies = 0x7789BC7999395213UL;
-    private const ulong PinVillage = 0xF770C874F38EF485UL;
+    private const ulong PinVillage = 0x97452FD3C38B8438UL;
 }
