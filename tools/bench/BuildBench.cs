@@ -153,7 +153,7 @@ public static class BuildBench
             if (RowOf(s) is not { } r) return;
             lock (r.Rep)
             {
-                if (r.Rep.LastFail.TryGetValue(p.Id, out var lf) && lf.Rule == rule && rule >= 0 && s.NowTick - lf.Tick < 2 * GameTime.TicksPerHour + 2 * GameTime.TicksPerHour) r.Rep.T(p.Id)[1]++;
+                if (r.Rep.LastFail.TryGetValue(p.Id, out var lf) && lf.Rule == rule && rule >= 0 && s.NowTick - lf.Tick < 2 * GameTime.TicksPerHour + 2 * GameTime.TicksPerHour) { int c1 = ++r.Rep.T(p.Id)[1]; if (Debug && c1 == 10) Console.WriteLine($"[실패] 사람 {p.Id} 법 {s.Craft.ItemName(s.Craft.Rules[rule].Result)} {p.Act}/{p.Why} 바람 {p.PlanWish}"); }
                 if (!ok) r.Rep.LastFail[p.Id] = (rule, s.NowTick); else r.Rep.LastFail.Remove(p.Id);
             }
         };
@@ -175,7 +175,7 @@ public static class BuildBench
             {
                 var (a, b) = r.Rep.Goals.TryGetValue(p.Id, out var x) ? x : (-1, -1);
                 // A → B → A: 두 걸음 전 목표로 되돌아간다(10타일 넘게 떨어진 두 자리)
-                if (a == g && b >= 0 && b / 22_500 == g / 22_500 && Math.Max(Math.Abs(b % 22_500 % 150 - goal % 150), Math.Abs(b % 22_500 / 150 - goal / 150)) > 10) r.Rep.T(p.Id)[3]++;
+                if (a == g && b >= 0 && b / 22_500 == g / 22_500 && Math.Max(Math.Abs(b % 22_500 % 150 - goal % 150), Math.Abs(b % 22_500 / 150 - goal / 150)) > 10) { int c3 = ++r.Rep.T(p.Id)[3]; if (Debug && c3 >= 18 && c3 <= 21) Console.WriteLine($"[오감] 사람 {p.Id} {c3} {p.Act}/{p.Why} 목표 {goal} 이전 {b % 22_500} 시각 {s.NowTick % 60000 / 2500}시 배 {p.Food / 1000} 물 {p.Water / 1000} 저체온 {p.Hypothermia / 1000}"); }
                 r.Rep.Goals[p.Id] = (b, g);
             }
         };
