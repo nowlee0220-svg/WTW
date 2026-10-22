@@ -1365,7 +1365,7 @@ public sealed partial class PeopleSim
             else
             {
                 if (BestCarried(p, Craft.P_burns, 3, I_ember) < 0) { if (StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel)) return true; }
-                else if (KeptEmber(p) && !NeedFireNow(p, life)) { } // (E6 툰드라) 담아 둔 불씨는 저녁 · 추울 때까지 아껴 든다
+                else if (KeptEmber(p) && (!NeedFireNow(p, life) || life.NearestFire(here % S, here / S, Now, 8) >= 0)) { } // (E6 툰드라) 담아 둔 불씨는 저녁 · 추울 때까지, 곁에 불이 없을 때까지 아껴 든다(곁에 불이 있는데 떨어진 곳에 또 피우러 오가지 않게)
                 else if (life.NearestFire(here % S, here / S, Now, 4) < 0 || !life.Walk[here]) { if (TryLightWithEmber(p, here, rng)) { Decide(p); return true; } }
                 else
                 {
@@ -1427,8 +1427,8 @@ public sealed partial class PeopleSim
         // (E6) 버릇이 있으면 막 꺼진 불(재 속 불씨)도 되살린다
         if (ft < 0 && p.FireHabit >= 30 && EmberFire(life, here, 40) is int ef && ef >= 0)
         {
-            int f0 = BestCarried(p, Craft.P_burns, 3, I_ember);
-            return f0 >= 0 ? StartTend(p, ef, f0, Why.Fuel) : StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel);
+            int f0 = BestFuel(p);
+            return f0 >= 0 ? StartTend(p, ef, f0, Why.Fuel) : FetchFuel(p, Why.Fuel);
         }
         // (E6) 불을 지키는 버릇이 있으면(추운 땅에서 떨며 자 본 사람) 꺼지기 훨씬 전에(6시간) 넣는다 — 꺼지면 다시 피우기 어렵다
         // (E6 고침) 6시간은 저녁 · 밤에만(그 땅 15시 ~ 7시) — 낮에도 6시간을 채우려 땔감을 하나씩 끝없이 날랐다
@@ -1436,11 +1436,11 @@ public sealed partial class PeopleSim
         bool evening = tod >= 15 * GameTime.TicksPerHour || tod < 7 * GameTime.TicksPerHour;
         long keep = (p.FireHabit >= 30 && evening ? 6 : 3) * GameTime.TicksPerHour;
         if (ft < 0 || life.Fires[ft].Remaining(Now) > keep) return false;
-        int fuel = BestCarried(p, Craft.P_burns, 3, I_ember);
-        if (fuel < 0) return StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel);
+        int fuel = BestFuel(p);
+        if (fuel < 0) return FetchFuel(p, Why.Fuel);
         // (E6) 버릇으로 미리 넣는 것이면(아직 한 시간 넘게 탄다) 땔감을 셋은 모아 한 번에
         if (p.FireHabit >= 30 && life.Fires[ft].Remaining(Now) > GameTime.TicksPerHour && CountCarried(p, Craft.P_burns, 3, Craft.P_burns, 3) - p.CarryCount(I_ember) < 3
-            && StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel)) return true;
+            && FetchFuel(p, Why.Fuel)) return true;
         return StartTend(p, ft, fuel, Why.Fuel);
     }
 
@@ -1480,7 +1480,7 @@ public sealed partial class PeopleSim
             long need = p.Why == Why.Fuel ? 6 * GameTime.TicksPerHour : (31 * GameTime.TicksPerHour - life.LocalTickOfDay(Now)) % GameTime.TicksPerDay;
             for (int guard = 0; guard < 6 && f.Remaining(Now) + add < need; guard++)
             {
-                int more = BestCarried(p, Craft.P_burns, 3, I_ember);
+                int more = BestFuel(p);
                 if (more < 0) break;
                 p.RemoveCarry(more, 1);
                 long a2 = FuelTicks(more); if (f.Kind == 2) a2 = a2 * 3 / 2;

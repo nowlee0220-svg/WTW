@@ -733,9 +733,9 @@ public sealed partial class PeopleSim
         // 막 꺼진 불(네 시간 안 — 재 속에 불씨가 남았다)은 땔감을 얹으면 되살아난다
         if (ft < 0 && EmberFire(life, here, 25) is int ef && ef >= 0)
         {
-            int fuel0 = BestCarried(p, Craft.P_burns, 3, I_ember);
+            int fuel0 = BestFuel(p);
             if (fuel0 >= 0) { St.EveningFires++; p.LastEveningFire = Now; return StartTend(p, ef, fuel0, Why.EveningFire); }
-            if (StartMaterialFor(p, Craft.P_burns, 3, Why.EveningFire)) return true;
+            if (FetchFuel(p, Why.EveningFire)) return true;
         }
         long tod = life.LocalTickOfDay(Now);
         long untilMorning = (31 * GameTime.TicksPerHour - tod) % GameTime.TicksPerDay;
@@ -745,14 +745,14 @@ public sealed partial class PeopleSim
             var f = life.Fires[ft];
             if (f.Remaining(Now) < untilMorning)
             {
-                int fuel = BestCarried(p, Craft.P_burns, 3, I_ember);
+                int fuel = BestFuel(p);
                 // 밤새 탈 만큼(땔감 셋 남짓) 모아서 넣는다
                 // (E6 고침 — 되풀이 감시) 한 저녁에 모아서 한 번 넣고 끝낸다 — 풀 같은 약한 땔감으로 밤새 탈 만큼 채우려 하루 수십 번 오갔다
                 if (fuel >= 0 && (fuels >= 3 || f.Remaining(Now) < 2 * GameTime.TicksPerHour)) { St.EveningFires++; p.LastEveningFire = Now; return StartTend(p, ft, fuel, Why.EveningFire); }
-                if (StartMaterialFor(p, Craft.P_burns, 3, Why.EveningFire)) return true;
+                if (FetchFuel(p, Why.EveningFire)) return true;
                 if (fuel >= 0) { St.EveningFires++; p.LastEveningFire = Now; return StartTend(p, ft, fuel, Why.EveningFire); }
             }
-            else if (fuels < 3 && StartMaterialFor(p, Craft.P_burns, 3, Why.EveningFire)) return true; // 밤에 다시 넣을 땔감
+            else if (fuels < 3 && FetchFuel(p, Why.EveningFire)) return true; // 밤에 다시 넣을 땔감
             p.LastEveningFire = Now;
             return false;
         }
@@ -774,6 +774,34 @@ public sealed partial class PeopleSim
         if (life.Mean10 - life.Range10 / 2 >= 120 || life.IsNight(Now) || Now - p.LastFireKit < 6 * GameTime.TicksPerHour) return int.MinValue;
         if (TinderCount(p) >= 2) return int.MinValue;
         return 13 + p.FireHabit / 10;
+    }
+
+    /// <summary>(E6 고침 — 되풀이 감시) 불에 넣을 땔감: 오래 타는 것(무거운 나무)부터, 불버릇이 있으면 불쏘시개(타는 정도 5 · 가벼움) 둘은 남긴다 —
+    /// 쌀쌀한 땅에서 챙겨 둔 자작나무 껍질(한 시간 탐)을 땔감으로 태우고 다시 챙기러 가기를 끝없이 되풀이했다.</summary>
+    private int BestFuel(Person p)
+    {
+        int best = -1; long bt = 0;
+        int tinder = p.FireHabit >= 25 ? TinderCount(p) : 99;
+        foreach (var c in p.Carry)
+        {
+            if (c.Item == I_ember || Prop(c.Item, Craft.P_burns) < 3) continue;
+            if (tinder <= 2 && Prop(c.Item, Craft.P_burns) >= 5 && Prop(c.Item, Craft.P_weight) == 0 && c.Count <= 2) continue;
+            long t = FuelTicks(c.Item);
+            if (t > bt) { bt = t; best = c.Item; }
+        }
+        return best;
+    }
+
+    /// <summary>땔감을 구하러: 오래 타는 것(무게 1 이상 — 나무 · 가지 · 기름)부터, 없으면 아무 타는 것.</summary>
+    private bool FetchFuel(Person p, Why why)
+    {
+        const long key = 0x7F_0000_0001L; // 무거운 땔감을 찾았는데 둘레에 없었다(같은 기억 칸 — 반나절은 다시 찾지 않는다)
+        if (!(p.MissKey == key && Now - p.MissTick < MissMemory))
+        {
+            if (StartMaterialFor(p, it => Prop(it, Craft.P_burns) >= 3 && Prop(it, Craft.P_weight) >= 1, Craft.P_burns, why)) return true;
+            p.MissKey = key; p.MissTick = Now;
+        }
+        return StartMaterialFor(p, Craft.P_burns, 3, why);
     }
 
     private int TinderCount(Person p) { int n = 0; foreach (var c in p.Carry) if (c.Item != I_ember && Prop(c.Item, Craft.P_burns) >= 5) n += c.Count; return n; }
