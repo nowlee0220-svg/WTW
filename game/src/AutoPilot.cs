@@ -400,13 +400,14 @@ public sealed class AutoPilot
             return false;
         }
         // (E6) 건물: hut 다 지은 움집 · site 짓는 자리 · grave 무덤 · bench 작업대 · pit 저장 구덩이 · village 건물 여럿(창 없이 넓게)
-        if (_look is "hut" or "site" or "grave" or "bench" or "pit" or "village" or "windbreak")
+        if (_look is "hut" or "tent" or "site" or "grave" or "bench" or "pit" or "village" or "windbreak")
         {
             BuildingView? b = null;
             if (snap.Buildings.TryGetValue(center, out var bl))
                 b = _look switch
                 {
                     "hut" => bl.FirstOrDefault(q => q.Done && q.Name == "움집"),
+                    "tent" => bl.FirstOrDefault(q => q.Done && q.Name == "가죽 천막"),
                     "windbreak" => bl.FirstOrDefault(q => q.Done && q.Name == "바람막이"),
                     "site" => bl.Where(q => !q.Done && q.Progress > 0.3f && !q.Name.Contains("무덤")).OrderByDescending(q => q.Progress).FirstOrDefault(),
                     "grave" => bl.FirstOrDefault(q => q.Done && q.Name.Contains("무덤")),

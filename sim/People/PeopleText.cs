@@ -348,6 +348,7 @@ public sealed partial class PeopleSim
             Why.Bury => p.Act == Act.Build && Life(p.Cell).Buildings.TryGetValue(p.Target, out var gb) && BDef(gb).Grave > 0 ? $"{Hangul.I(NameOf(gb.Person))} 죽어서 — 가까운 이를 그대로 둘 수 없다(무리가 해 오던 대로)" : "가까운 이가 죽어서",
             Why.Home => "우리 집안의 움집에서 잔다 — 안은 바람이 막혀 덜 춥다",
             Why.Windbreak => "추운 밤이라 바람막이 곁에서 잔다",
+            Why.FireKit => $"불을 다시 피울 때 쓸 마른 풀(불쏘시개)을 챙긴다 — 추운 땅에서 불이 꺼지면 다시 피우기 어렵다(버릇 {p.FireHabit})",
             Why.EveningFire => $"해가 진다 — 자기 전에 불을 피워 두고 땔감을 챙긴다(추운 밤을 겪어 생긴 버릇 {p.FireHabit})",
             Why.Workbench => "아는 법대로 만드는데 그 일을 하는 자리(작업대)가 있어서 — 거기서 하면 더 잘 되고 빨리 된다",
             Why.Butchering => HasSharpTool(p) ? "날 선 도구가 있어 고기 · 가죽 · 뼈 · 힘줄을 가른다" : "날 선 도구가 없어 고기만 조금 뜯어낸다",

@@ -30,15 +30,15 @@ public static class BuildBench
         public Repeat Rep = new();
     }
 
-    /// <summary>되풀이 감시: 사람 · 날마다 (1) 경계를 넘은 수 (2) 같은 법을 실패하고 곧바로(두 시간 안) 다시 한 수 (3) 같은 물건을 버리고 그날 다시 주운 수 (4) 같은 두 자리(10타일 넘게 떨어진)를 오간 수.</summary>
+    /// <summary>되풀이 감시: 사람 · 날마다 (1) 경계를 넘은 수 (2) 같은 법을 실패하고 곧바로(두 시간 안) 다시 한 수 (3) 같은 물건을 버리고 그날 다시 주운 수 (4) 같은 두 자리(10타일 넘게 떨어진)를 오간 수 (5) (E6) 땔감을 구하러 가거나 불에 넣은 수(불을 지키는 일).</summary>
     public sealed class Repeat
     {
-        public static readonly string[] Names = { "하루에 지방 경계를 넘은 수", "같은 법을 실패하고 곧바로 다시 한 수", "같은 물건을 버리고 그날 다시 주운 수", "같은 두 자리를 오간 수" };
-        public static readonly int[] Thresholds = { 20, 10, 10, 20 };
-        public readonly long[] Sum = new long[4];
-        public readonly int[] Max = new int[4];
-        public readonly int[] MaxPerson = { -1, -1, -1, -1 };
-        public readonly long[] Over = new long[4];
+        public static readonly string[] Names = { "하루에 지방 경계를 넘은 수", "같은 법을 실패하고 곧바로 다시 한 수", "같은 물건을 버리고 그날 다시 주운 수", "같은 두 자리를 오간 수", "땔감을 구하러 가거나 불에 넣은 수" };
+        public static readonly int[] Thresholds = { 20, 10, 10, 20, 10 };
+        public readonly long[] Sum = new long[5];
+        public readonly int[] Max = new int[5];
+        public readonly int[] MaxPerson = { -1, -1, -1, -1, -1 };
+        public readonly long[] Over = new long[5];
         public long PersonDays;
         // 사람마다 오늘의 셈 · 기억
         internal readonly Dictionary<int, int[]> Today = new();
@@ -46,13 +46,13 @@ public static class BuildBench
         internal readonly Dictionary<int, HashSet<int>> Dropped = new();
         internal readonly Dictionary<int, (int A, int B)> Goals = new();
 
-        internal int[] T(int id) { if (!Today.TryGetValue(id, out var a)) Today[id] = a = new int[4]; return a; }
+        internal int[] T(int id) { if (!Today.TryGetValue(id, out var a)) Today[id] = a = new int[5]; return a; }
 
         internal void EndDay(GameWorld w)
         {
             foreach (var q in w.People.All) if (!q.Dead) PersonDays++;
             foreach (var (id, a) in Today)
-                for (int k = 0; k < 4; k++)
+                for (int k = 0; k < 5; k++)
                 {
                     Sum[k] += a[k];
                     if (a[k] > Max[k]) { Max[k] = a[k]; MaxPerson[k] = id; }
@@ -107,7 +107,7 @@ public static class BuildBench
                             int tile = q.Tile(w.Now);
                             row.SleepHours++;
                             if (l.NearestFire(tile % 150, tile / 150, w.Now, 6) >= 0) row.SleepByFire++;
-                            if (l.BuildingOn(tile) is { Done: true } b && b.Kind == bd.Index("hut")) row.SleepInHouse++;
+                            if (l.BuildingOn(tile) is { Done: true } b && (b.Kind == bd.Index("hut") || b.Kind == bd.Index("tent"))) row.SleepInHouse++;
                             if (l.Warm is { } wm && wm[tile] > 0) row.SleepSheltered++;
                         }
                     }
@@ -148,6 +148,12 @@ public static class BuildBench
     private static void Hook()
     {
         PeopleSim.CrossHook = (s, p, _) => { if (RowOf(s) is { } r) lock (r.Rep) r.Rep.T(p.Id)[0]++; };
+        // (E6) 땔감 나르기 · 불에 넣기(쌀쌀한 땅에서 땔감 하나씩 끝없이 나르던 되풀이를 이 표가 놓쳤다)
+        PeopleSim.ActHook = (s, p) =>
+        {
+            if (!(p.Act == Act.TendFire || p.Act == Act.Material && (p.Why == Why.Fuel || p.Why == Why.EveningFire || p.Why == Why.FireKit))) return;
+            if (RowOf(s) is { } r) lock (r.Rep) { int c4 = ++r.Rep.T(p.Id)[4]; if (Debug && c4 >= 20 && c4 <= 26) Console.WriteLine($"[땔감] 사람 {p.Id} {c4} {p.Act}/{p.Why} 찾는 것 {(p.PlanItem >= 0 ? s.Craft.ItemName(p.PlanItem) : "-")} 시각 {s.NowTick % 60000 / 2500}시 버릇 {p.FireHabit} 든 것 {string.Join(",", p.Carry.Select(c2 => s.Craft.ItemName(c2.Item) + c2.Count))}"); }
+        };
         PeopleSim.WorkHook = (s, p, rule, ok) =>
         {
             if (RowOf(s) is not { } r) return;
@@ -212,6 +218,9 @@ public static class BuildBench
         }
         row.Named = ps.Named.Count;
         if (Debug)
+            foreach (var q in ps.All.Where(q => q.Dead && q.Cause == DeathCause.Cold))
+                Console.WriteLine($"[얼어죽음] 시드 {row.Seed} {q.DeathTick / GameTime.TicksPerYear}년 {q.DeathTick % GameTime.TicksPerYear / GameTime.TicksPerDay}일 {q.DeathTick % GameTime.TicksPerDay / GameTime.TicksPerHour}시 나이 {q.AgeYears(q.DeathTick)} 옷 {(q.Worn >= 0 ? ps.Craft.ItemName(q.Worn) + "/" + q.WornWear : "없음")} 신 {(q.WornFeet >= 0 ? ps.Craft.ItemName(q.WornFeet) : "없음")} 버릇 {q.FireHabit} 짝 {(q.Partner >= 0 ? "있음" : "-")} 하던 일 {q.Act}/{q.Why} 든 것 {string.Join(",", q.Carry.Select(c2 => ps.Craft.ItemName(c2.Item) + c2.Count))}");
+        if (Debug)
         {
             var ad = ps.All.Where(q => !q.Dead && q.Stage(w.Now) >= LifeStage.Adult).ToList();
             var cr = ps.Craft; int sp = cr.Rule("sparks")!.Index, cf = cr.Rule("campfire")!.Index;
@@ -243,7 +252,7 @@ public static class BuildBench
             var r = rows[i];
             Console.WriteLine($"시드 {r.Seed}: {r.Biome}({r.Temp:0.0}°C) 산 사람 {r.Alive}/{r.Ever} · 지은 것 {r.DoneByKind.Sum()} · 처음 " + string.Join(" ", r.FirstBuilt.Select(kv => $"{kv.Key}={kv.Value}")) + $" · 추위 {r.Deaths[3]} · {r.Seconds:0}초");
         });
-        PeopleSim.CrossHook = null; PeopleSim.WorkHook = null; PeopleSim.ItemHook = null; PeopleSim.WalkHook = null;
+        PeopleSim.CrossHook = null; PeopleSim.ActHook = null; PeopleSim.WorkHook = null; PeopleSim.ItemHook = null; PeopleSim.WalkHook = null;
         Console.WriteLine(Report(rows, seeds, people, years, where, cap, passion, sw.Elapsed));
         if (Debug && ActCount.Count > 0) { long tot = ActCount.Values.Sum(); foreach (var (k, n) in ActCount.OrderByDescending(x => x.Value).Take(30)) Console.WriteLine($"[낮] {k} {n * 100.0 / tot:0.0}% ({n})"); }
         if (outFile is not null) { File.WriteAllText(outFile, Report(rows, seeds, people, years, where, cap, passion, sw.Elapsed)); Console.WriteLine($"→ {outFile}"); }
@@ -273,9 +282,9 @@ public static class BuildBench
         long q0 = rows.Sum(r => r.Quality[0]), q1 = rows.Sum(r => r.Quality[1]), q2 = rows.Sum(r => r.Quality[2]), q3 = rows.Sum(r => r.Quality[3]);
         sb.AppendLine($"- 서 있는 건물의 품질(모든 시드 합): 나쁨 {q0} · 보통 {q1} · 좋음 {q2} · 훌륭함 {q3} · 낡음 중앙값 {M(r => r.Worn)}");
         sb.AppendLine($"- 만든 물건의 품질(모든 시드 합): 나쁨 {rows.Sum(r => r.St.Q0)} · 보통 {rows.Sum(r => r.St.Q1)} · 좋음 {rows.Sum(r => r.St.Q2)} · 훌륭함 {rows.Sum(r => r.St.Q3)} · 작업대에서 만든 번 중앙값 {M(r => r.St.BenchCrafts)} · 작업대 짓는 법을 알아냄 {M(r => r.St.BenchLearned)}");
-        sb.AppendLine($"- 잠: 움집 안에서 잔 번 {M(r => r.St.SleptHome)} · 바람막이 곁 {M(r => r.St.SleptWindbreak)} · 저녁 불을 챙김 {M(r => r.St.EveningFires)}");
+        sb.AppendLine($"- 잠: 집(움집 · 천막) 안에서 잔 번 {M(r => r.St.SleptHome)} · 바람막이 곁 {M(r => r.St.SleptWindbreak)} · 저녁 불을 챙김 {M(r => r.St.EveningFires)} · 불쏘시개를 챙김 {M(r => r.St.FireKits)} · 불씨를 담아 들고 떠남 {M(r => r.St.EmbersKept)}");
         if (rows.Any(r => r.SleepHours > 0))
-            sb.AppendLine($"- **잠든 시간 중 곁(6타일)에 켜진 불**: 중앙값 {M(r => r.SleepByFire * 100.0 / Math.Max(1, r.SleepHours)):0}% · 움집 안 {M(r => r.SleepInHouse * 100.0 / Math.Max(1, r.SleepHours)):0}% · 건물이 막아 준 자리(움집 · 바람막이 곁) {M(r => r.SleepSheltered * 100.0 / Math.Max(1, r.SleepHours)):0}%");
+            sb.AppendLine($"- **잠든 시간 중 곁(6타일)에 켜진 불**: 중앙값 {M(r => r.SleepByFire * 100.0 / Math.Max(1, r.SleepHours)):0}% · 집(움집 · 천막) 안 {M(r => r.SleepInHouse * 100.0 / Math.Max(1, r.SleepHours)):0}% · 건물이 막아 준 자리(움집 · 천막 · 바람막이 곁) {M(r => r.SleepSheltered * 100.0 / Math.Max(1, r.SleepHours)):0}%");
         sb.AppendLine($"- 무덤: 흙무덤 {M(r => r.St.BuriedEarth)} · 돌무더기 {M(r => r.St.BuriedCairn)} · 그대로 둠 {M(r => r.St.BodiesLeft)} (모든 시드 합 {rows.Sum(r => r.St.BuriedEarth)} · {rows.Sum(r => r.St.BuriedCairn)} · {rows.Sum(r => r.St.BodiesLeft)}, 죽음 {rows.Sum(r => r.Deaths.Sum())})");
         sb.AppendLine($"- 사연 있는 물건: 생김 {M(r => r.St.NamedMade)} · 물려받음 {M(r => r.St.NamedInherited)} · 잃음 {M(r => r.St.NamedLost)} · 다시 찾음 {M(r => r.St.NamedFound)} · 없어짐 {M(r => r.St.NamedGone)} (모든 시드 합 생김 {rows.Sum(r => r.St.NamedMade)})");
         sb.AppendLine($"- 모아 두기: 모아 둠 {M(r => r.St.Stored)} · 꺼내 먹음 {M(r => r.St.StashTaken)} · 쥐 · 벌레 {M(r => r.St.StashLost)} · 쥐 · 벌레가 먹은 몫 {M(r => r.St.StashLost * 100.0 / Math.Max(1, r.St.Stored)):0}%");
@@ -298,7 +307,7 @@ public static class BuildBench
         sb.AppendLine("| 무엇 | 사람 하루당 평균 | 가장 많은 사람(하루) | 문턱 | 문턱을 넘은 사람 · 날 |");
         sb.AppendLine("|---|---|---|---|---|");
         long pdays = rows.Sum(r => r.Rep.PersonDays);
-        for (int k = 0; k < 4; k++)
+        for (int k = 0; k < 5; k++)
             sb.AppendLine($"| {Repeat.Names[k]} | {rows.Sum(r => r.Rep.Sum[k]) / (double)Math.Max(1, pdays):0.000} | {rows.Max(r => r.Rep.Max[k])} | 하루 {Repeat.Thresholds[k]} | {rows.Sum(r => r.Rep.Over[k])} |");
         long pd = rows.Sum(r => r.PersonDays); double sec = rows.Sum(r => r.Seconds);
         sb.AppendLine();

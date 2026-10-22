@@ -71,7 +71,7 @@ public sealed class PeopleStats
         /// <summary>(E6) 건물: 자리를 정함 · 날라 온 재료 · 쌓은 일(분) · 다 지음 · 버려진 자리 · 무너짐 · 고침 · 집 안에서 잔 번 · 바람막이 곁에서 잔 번 · 작업대에서 만든 번 ·
         /// 작업대를 알아냄 · 묻음(흙 · 돌) · 그대로 둠 · 사연 있는 물건 · 물려받음 · 잃음 · 다시 찾음 · 저녁 불을 챙김 · 걷은 덤불.</summary>
         SitesStarted, BuildDelivered, BuildWorkMin, BuildingsDone, SitesAbandoned, BuildingsCollapsed, Repairs, SleptHome, SleptWindbreak, BenchCrafts,
-        BenchLearned, BuriedEarth, BuriedCairn, BodiesLeft, NamedMade, NamedInherited, NamedLost, NamedFound, NamedGone, EveningFires, ClearedBrush,
+        BenchLearned, BuriedEarth, BuriedCairn, BodiesLeft, NamedMade, NamedInherited, NamedLost, NamedFound, NamedGone, EveningFires, FireKits, EmbersKept, ClearedBrush,
         /// <summary>(E6) 만든 물건의 품질별 수(0 나쁨 ~ 3 훌륭함).</summary>
         Q0, Q1, Q2, Q3;
     /// <summary>(E5c 측정) 계획 · 재료 구하기를 바람마다(바람 × 2 + 아는 법이면 1).</summary>

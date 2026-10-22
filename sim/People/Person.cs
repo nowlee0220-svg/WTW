@@ -74,7 +74,7 @@ public enum Why : byte
     // (E5c) 밭일의 까닭
     WantFarming, FarmRipe, FarmSow, FarmTill, FarmWeed, FarmGuard, FarmStore, FarmSeed, FarmChase, SeedFood,
     // (E6) 건물 · 잠자리 · 저녁 불 · 작업대 · 무덤
-    WantShelter, WantStorage, BuildFetch, BuildDeliver, BuildWork, BuildRepair, Bury, Home, Windbreak, EveningFire, Workbench,
+    WantShelter, WantStorage, BuildFetch, BuildDeliver, BuildWork, BuildRepair, Bury, Home, Windbreak, EveningFire, Workbench, FireKit,
 }
 
 /// <summary>생김새(코드로 그리는 몸 — 부모를 닮는다). 값은 0~255.</summary>
@@ -295,6 +295,8 @@ public sealed class Person
     /// 마지막으로 저녁 불을 챙긴 때 · 마지막으로 건물을 둘러본(새로 지을까) 때 · 무덤을 지난 때 · 건물 재료 찾기에서 "둘레에 없었다"(열쇠 · 때).
     /// </summary>
     public int FireHabit;
+    /// <summary>(E6 툰드라) 마지막으로 불 피울 것(불쏘시개)을 챙긴 때.</summary>
+    public long LastFireKit = long.MinValue / 2;
     public long LastEveningFire = long.MinValue / 2, LastBuildLook = long.MinValue / 2, LastGraveLook = long.MinValue / 2;
     public long BuildMissKey, BuildMissTick = long.MinValue / 2;
     /// <summary>(E6 되풀이 감시로 고침) 마지막으로 구해 온 재료와 그때 — 짐을 덜 때 막 구해 온 것은 내려놓지 않는다(재료를 줍고 버리기를 되풀이했다).</summary>

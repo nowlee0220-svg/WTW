@@ -81,6 +81,11 @@ public class BuildTests
         var k = C.Judge(set, P("clay"), P("stone"), null, 1, 0, 0);
         Assert.True(k.Success); Assert.Equal("kiln", k.Rule!.Id);
         Assert.False(C.Judge(set, P("clay"), P("stone"), null, 0, 0, 0).Success); // 불 없이는 가마가 굳지 않는다
+        // (E6 툰드라) 뼈 기둥 + 가죽 덮개 → 가죽 천막(나무가 없는 땅에서도). 뼈에 풀을 덮으면 아무것도 아니다(뼈는 단단해 바람막이 기둥이 아니다)
+        var tent = C.Judge(raise, P("bone"), P("dried_hide"), null, 0, 0, 0);
+        Assert.True(tent.Success); Assert.Equal("tent", tent.Rule!.Id);
+        Assert.Equal("tent", C.Judge(raise, P("stick"), P("raw_hide"), null, 0, 0, 0).Rule?.Id);
+        Assert.False(C.Judge(raise, P("bone"), P("grass"), null, 0, 0, 0).Success);
     }
 
     /// <summary>"알아냈다"와 "지었다"는 다르다: 재료가 없는 자리는 쌓지 못하고(다 짓지 못한다), 재료 · 일을 채우면 선다.</summary>

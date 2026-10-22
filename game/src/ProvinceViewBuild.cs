@@ -123,6 +123,7 @@ public static partial class Art
         {
             "windbreak" => Make(128, 80, s => Windbreak(s, r, worn)),
             "hut" => Make(128, 120, s => Hut(s, r, worn, quality)),
+            "tent" => Make(128, 120, s => Tent(s, r, worn)),
             "storage_pit" => Make(64, 64, s => Pit(s, r, worn)),
             "rack" => Make(64, 88, s => Rack(s, r, worn)),
             "knap_spot" => Make(64, 64, s => Knap(s, r)),
@@ -157,6 +158,23 @@ public static partial class Art
         for (int k = 0; k < 9; k++) { float x = 14 + k * 12.5f; s.Line(x, 72, x + 10, 14 + r.R(-3, 3), 3f, Jit(wood, r)); }
         Thatch(s, r, 14, 116, 20, 70, worn, 34);
         s.Line(10, 22, 120, 18, 3f, wood.Darkened(0.2f)); // 가로 묶은 가지
+    }
+
+    /// <summary>(E6) 가죽 천막: 뼈 · 막대 기둥을 원뿔로 세우고 가죽을 이어 덮음.</summary>
+    private static void Tent(Sketch s, Rng r, bool worn)
+    {
+        s.Ellipse(64, 108, 54, 9, C(0, 0, 0, 70));
+        var hide = Aged(C(150, 112, 74), worn);
+        s.Polygon(new[] { new Vector2(64, 18), new Vector2(118, 106), new Vector2(10, 106) }, hide.Darkened(0.12f), 0.8f);
+        s.Polygon(new[] { new Vector2(64, 22), new Vector2(110, 102), new Vector2(18, 102) }, hide, 0.6f);
+        // 가죽 이음새 · 꿰맨 자리
+        for (int k = 0; k < 4; k++) { float x = 30 + k * 18 + r.R(-2, 2); s.Line(64, 26, x, 102, 1.4f, hide.Darkened(0.3f)); }
+        if (worn) for (int k = 0; k < 4; k++) s.Ellipse(36 + r.R(0, 56), 60 + r.R(0, 36), 5, 3, C(86, 70, 48, 200));
+        // 꼭대기로 삐져나온 기둥(뼈 · 막대)
+        var pole = Aged(C(222, 210, 180), worn);
+        s.Line(58, 24, 50, 6, 2.6f, pole); s.Line(70, 24, 78, 6, 2.6f, pole); s.Line(64, 22, 64, 4, 2.6f, pole);
+        // 문(걷어 올린 가죽)
+        s.Polygon(new[] { new Vector2(64, 66), new Vector2(78, 104), new Vector2(50, 104) }, C(40, 30, 22));
     }
 
     private static void Hut(Sketch s, Rng r, bool worn, int quality)

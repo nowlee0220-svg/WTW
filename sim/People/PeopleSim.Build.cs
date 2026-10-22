@@ -23,7 +23,7 @@ public sealed partial class PeopleSim
     private CraftRule?[] _buildRule = Array.Empty<CraftRule?>();
     private int[] _ruleBench = Array.Empty<int>();
     private int W_shelter = -1, W_storage = -1, A_raise = -1, A_set = -1;
-    private int B_windbreak, B_hut, B_pit, B_rack, B_firePit, B_grave, B_cairn, B_knap, B_hide, B_kiln;
+    private int B_windbreak, B_hut, B_tent, B_pit, B_rack, B_firePit, B_grave, B_cairn, B_knap, B_hide, B_kiln;
     private int H_sleptHome = -1, H_laidToRest = -1, H_remembered = -1, H_leftBody = -1, H_builtHome = -1, H_fineThing = -1;
 
     /// <summary>짓다 만 자리는 이만큼 아무도 손대지 않으면 버려진다.</summary>
@@ -39,7 +39,7 @@ public sealed partial class PeopleSim
         foreach (var w in Craft.Wishes) { if (w.Id == "shelter") W_shelter = w.Index; if (w.Id == "storage") W_storage = w.Index; }
         A_raise = Craft.ActionIndex("raise"); A_set = Craft.ActionIndex("set");
         int B(string id) { int i = Builds.Index(id); if (i < 0) throw new InvalidOperationException($"buildings.json 에 '{id}' 가 없습니다."); return i; }
-        B_windbreak = B("windbreak"); B_hut = B("hut"); B_pit = B("storage_pit"); B_rack = B("rack"); B_firePit = B("fire_pit"); B_grave = B("grave"); B_cairn = B("cairn");
+        B_windbreak = B("windbreak"); B_hut = B("hut"); B_tent = B("tent"); B_pit = B("storage_pit"); B_rack = B("rack"); B_firePit = B("fire_pit"); B_grave = B("grave"); B_cairn = B("cairn");
         B_knap = B("knap_spot"); B_hide = B("hide_frame"); B_kiln = B("kiln");
         _ruleBuild = new BuildingDef?[Craft.Rules.Count];
         _buildRule = new CraftRule?[Builds.Buildings.Count];
@@ -230,7 +230,7 @@ public sealed partial class PeopleSim
     private Building NewSite(Person p, ProvinceLife life, BuildingDef d, int anchor, int person = -1)
     {
         var b = new Building { Id = life.NextBuildingId++, Kind = d.Index, Tile = anchor, Stage = BuildStage.Site, Have = new int[d.Parts.Length], Founder = p.Id, Started = Now, Person = person, Lang = p.LangId };
-        if (d.IsShelter && d.Index == B_hut) b.Owner = p.Id;
+        if (d.IsShelter && IsHome(d.Index)) b.Owner = p.Id;
         for (int y = 0; y < d.H; y++) for (int x = 0; x < d.W; x++) if (life.ClearObject(anchor + y * S + x)) St.ClearedBrush++;
         life.AddBuilding(b, d.W, d.H);
         SetNextDue(life, b, Now);
@@ -376,6 +376,8 @@ public sealed partial class PeopleSim
         bool cold = life.Mean10 - life.Range10 / 2 < 120;
         bool wantShelter = cold || (W_shelter >= 0 && p.Wish[W_shelter] >= 20);
         if (wantShelter && KnowsBuilding(p, B_hut) && HomeHut(p, life) is null && v.Started[B_hut] < Math.Max(1, FamiliesIn(life))) return B_hut;
+        // (E6 툰드라) 가죽 천막 — 굵은 나무가 없는 땅에서도 뼈 · 막대와 가죽으로
+        if (wantShelter && B_tent >= 0 && KnowsBuilding(p, B_tent) && HomeHut(p, life) is null && v.Started[B_hut] + v.Started[B_tent] < Math.Max(1, FamiliesIn(life))) return B_tent;
         if (wantShelter && KnowsBuilding(p, B_windbreak) && v.Started[B_windbreak] < 2 && HomeHut(p, life) is null) return B_windbreak;
         if (life.Stash >= 0 && v.Started[B_pit] + v.Started[B_rack] == 0)
         {
@@ -405,13 +407,17 @@ public sealed partial class PeopleSim
     }
 
     /// <summary>p 의 집안(자기 · 짝 · 부모)이 주인인 다 지은 움집(같은 땅). 없으면 null.</summary>
+    /// <summary>(E6) 집안이 함께 자는 집 — 움집 · 가죽 천막.</summary>
+    internal bool IsHome(int kind) => kind >= 0 && (kind == B_hut || kind == B_tent);
+    private IEnumerable<Building> HomeKinds(BuildView v) { foreach (var b in v.OfKind[B_hut]) yield return b; if (B_tent >= 0) foreach (var b in v.OfKind[B_tent]) yield return b; }
+
     private Building? HomeHut(Person p, ProvinceLife life)
     {
         if (life.Buildings.Count == 0) return null;
         Building? best = null;
-        foreach (var b in BViewOf(life).OfKind[B_hut])
+        foreach (var b in HomeKinds(BViewOf(life)))
         {
-            if (b.Kind != B_hut || b.Owner < 0) continue;
+            if (!IsHome(b.Kind) || b.Owner < 0) continue;
             if (b.Owner == p.Id || b.Owner == p.Partner || (p.Stage(Now) <= LifeStage.Child || p.Partner < 0) && (b.Owner == p.Mother || b.Owner == p.Father)
                 || Get(b.Owner) is { } o && o.Partner == p.Id)
                 if (best is null || b.Done && !best.Done) best = b;
@@ -728,7 +734,7 @@ public sealed partial class PeopleSim
         if (ft < 0 && EmberFire(life, here, 25) is int ef && ef >= 0)
         {
             int fuel0 = BestCarried(p, Craft.P_burns, 3, I_ember);
-            if (fuel0 >= 0) { St.EveningFires++; return StartTend(p, ef, fuel0, Why.EveningFire); }
+            if (fuel0 >= 0) { St.EveningFires++; p.LastEveningFire = Now; return StartTend(p, ef, fuel0, Why.EveningFire); }
             if (StartMaterialFor(p, Craft.P_burns, 3, Why.EveningFire)) return true;
         }
         long tod = life.LocalTickOfDay(Now);
@@ -741,9 +747,10 @@ public sealed partial class PeopleSim
             {
                 int fuel = BestCarried(p, Craft.P_burns, 3, I_ember);
                 // 밤새 탈 만큼(땔감 셋 남짓) 모아서 넣는다
-                if (fuel >= 0 && (fuels >= 3 || f.Remaining(Now) < 2 * GameTime.TicksPerHour)) { St.EveningFires++; return StartTend(p, ft, fuel, Why.EveningFire); }
+                // (E6 고침 — 되풀이 감시) 한 저녁에 모아서 한 번 넣고 끝낸다 — 풀 같은 약한 땔감으로 밤새 탈 만큼 채우려 하루 수십 번 오갔다
+                if (fuel >= 0 && (fuels >= 3 || f.Remaining(Now) < 2 * GameTime.TicksPerHour)) { St.EveningFires++; p.LastEveningFire = Now; return StartTend(p, ft, fuel, Why.EveningFire); }
                 if (StartMaterialFor(p, Craft.P_burns, 3, Why.EveningFire)) return true;
-                if (fuel >= 0) { St.EveningFires++; return StartTend(p, ft, fuel, Why.EveningFire); }
+                if (fuel >= 0) { St.EveningFires++; p.LastEveningFire = Now; return StartTend(p, ft, fuel, Why.EveningFire); }
             }
             else if (fuels < 3 && StartMaterialFor(p, Craft.P_burns, 3, Why.EveningFire)) return true; // 밤에 다시 넣을 땔감
             p.LastEveningFire = Now;
@@ -756,6 +763,52 @@ public sealed partial class PeopleSim
         if (far >= 0) { int spot = Beside(p, far); if (WalkTo(p, spot)) { SetWhy(p, Act.TakeFire, Why.EveningFire); p.Target = far; return true; } }
         St.EveningFires++;
         return TryLightKnownFire(p);
+    }
+
+    // ───────── (E6 툰드라) 불 피울 것 챙기기 · 불씨 담아 들기 · 기름 남기기 ─────────
+
+    /// <summary>불쏘시개(잘 타는 마른 것 — 타는 정도 5)를 둘 넘게 들었나. 없으면 불버릇이 있는 사람은 낮에 챙긴다(풀을 말리거나 줍는다).</summary>
+    private int FireKitScore(Person p, ProvinceLife life)
+    {
+        if (p.FireHabit < 25 || R_campfire is null || p.Stage(Now) < LifeStage.Child || !p.Knows(R_campfire.Index)) return int.MinValue;
+        if (life.Mean10 - life.Range10 / 2 >= 120 || life.IsNight(Now) || Now - p.LastFireKit < 6 * GameTime.TicksPerHour) return int.MinValue;
+        if (TinderCount(p) >= 2) return int.MinValue;
+        return 13 + p.FireHabit / 10;
+    }
+
+    private int TinderCount(Person p) { int n = 0; foreach (var c in p.Carry) if (c.Item != I_ember && Prop(c.Item, Craft.P_burns) >= 5) n += c.Count; return n; }
+
+    private bool TryFireKit(Person p, ProvinceLife life)
+    {
+        p.LastFireKit = Now;
+        int here = p.Tile(Now);
+        // 든 풀이 있으면 말린다(아는 법이면 그대로 — 모르면 해 본다)
+        int grass = -1;
+        foreach (var c in p.Carry) if (Prop(c.Item, Craft.P_dries) >= 4 && Prop(c.Item, Craft.P_fibrous) >= 3 && Prop(c.Item, Craft.P_burns) < 5) { grass = c.Item; break; }
+        if (grass >= 0)
+        {
+            St.FireKits++;
+            p.PlanAction = A_dry; p.PlanInput = grass; p.PlanWith = p.PlanTool = -1; p.PlanWish = W_warmth;
+            p.PlanRule = R_dryGrass is { } rd && p.Knows(rd.Index) ? rd.Index : -1;
+            SetWhy(p, p.PlanRule >= 0 ? Act.Craft : Act.Experiment, Why.FireKit, W_warmth); p.Target = here; BeginWork(p);
+            return true;
+        }
+        if (StartMaterialFor(p, Craft.P_burns, 5, Why.FireKit)) { St.FireKits++; return true; }
+        if (StartMaterialFor(p, Craft.P_dries, 4, Why.FireKit)) { St.FireKits++; return true; }
+        return false;
+    }
+
+    /// <summary>담아 둔 불씨(버릇이 있고 담을 것 — 그릇 · 바구니 · 껍질 — 을 들었다): 재에 묻어 담으면 반나절 간다.</summary>
+    private bool KeptEmber(Person p) { if (p.FireHabit < 30) return false; foreach (var c in p.Carry) if (Prop(c.Item, Craft.P_holds) >= 1) return true; return false; }
+    private long EmberLifeOf(Person p) => KeptEmber(p) ? 12 * GameTime.TicksPerHour : EmberLife;
+    private bool NeedFireNow(Person p, ProvinceLife life) => life.LocalTickOfDay(Now) >= 16 * GameTime.TicksPerHour || FeltNow(p) < 110 || p.Wish[W_warmth] >= 25;
+
+    /// <summary>아침: 추운 땅에서 버릇이 있고 담을 것을 든 사람은 곁의 불에서 불씨를 담아 들고 떠난다.</summary>
+    private void KeepEmberOnWake(Person p, ProvinceLife life, int tile)
+    {
+        if (p.FireHabit < 30 || R_campfire is null || !p.Knows(R_campfire.Index) || life.Mean10 - life.Range10 / 2 >= 120) return;
+        if (p.CarryCount(I_ember) > 0 || !KeptEmber(p) || life.NearestFire(tile % S, tile / S, Now, 4) < 0) return;
+        p.AddCarry(I_ember, 1); p.EmberTick = Now; St.EmbersKept++;
     }
 
     /// <summary>(E6 속도) 같은 땅의 다른 사람이 지금 땔감을 나르거나 불에 넣는 중인가.</summary>

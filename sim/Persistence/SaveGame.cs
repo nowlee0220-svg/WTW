@@ -419,7 +419,7 @@ public static class SaveGame
         // (E5c)
         bw.Write(p.SproutSeen); bw.Write(p.LastSproutLook); bw.Write(p.Harvested); bw.Write(p.FirstSow); bw.Write(p.FarmMissKey); bw.Write(p.FarmMissTick);
         // (E6)
-        bw.Write(p.FireHabit); bw.Write(p.LastEveningFire); bw.Write(p.LastBuildLook); bw.Write(p.LastGraveLook); bw.Write(p.BuildMissKey); bw.Write(p.BuildMissTick);
+        bw.Write(p.FireHabit); bw.Write(p.LastFireKit); bw.Write(p.LastEveningFire); bw.Write(p.LastBuildLook); bw.Write(p.LastGraveLook); bw.Write(p.BuildMissKey); bw.Write(p.BuildMissTick);
         bw.Write(p.Burial); bw.Write(p.GraveId); bw.Write(p.WornQ); bw.Write(p.FeetQ);
         bw.Write(p.Quality.Count); foreach (var (it, q) in p.Quality) { bw.Write(it); bw.Write(q); }
         bw.Write(p.NamedHeld.Count); foreach (int id in p.NamedHeld) bw.Write(id);
@@ -697,7 +697,7 @@ public static class SaveGame
             if (version >= 12) { p.SproutSeen = br.ReadInt32(); p.LastSproutLook = br.ReadInt64(); p.Harvested = br.ReadInt32(); p.FirstSow = br.ReadInt64(); p.FarmMissKey = br.ReadInt64(); p.FarmMissTick = br.ReadInt64(); }
             if (version >= 13)
             {
-                p.FireHabit = br.ReadInt32(); p.LastEveningFire = br.ReadInt64(); p.LastBuildLook = br.ReadInt64(); p.LastGraveLook = br.ReadInt64(); p.BuildMissKey = br.ReadInt64(); p.BuildMissTick = br.ReadInt64();
+                p.FireHabit = br.ReadInt32(); p.LastFireKit = br.ReadInt64(); p.LastEveningFire = br.ReadInt64(); p.LastBuildLook = br.ReadInt64(); p.LastGraveLook = br.ReadInt64(); p.BuildMissKey = br.ReadInt64(); p.BuildMissTick = br.ReadInt64();
                 p.Burial = br.ReadByte(); p.GraveId = br.ReadInt32(); p.WornQ = br.ReadByte(); p.FeetQ = br.ReadByte();
                 int nq = br.ReadInt32(); for (int k = 0; k < nq; k++) p.Quality.Add((br.ReadInt32(), br.ReadByte()));
                 int nn = br.ReadInt32(); for (int k = 0; k < nn; k++) p.NamedHeld.Add(br.ReadInt32());

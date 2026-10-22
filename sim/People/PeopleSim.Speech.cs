@@ -274,7 +274,7 @@ public sealed partial class PeopleSim
         // (E5c)
         "sown_patch" => "seed", "field" => "field", "roasted_grain" or "flour" => "grain", "flatbread" => "bread", "stone_hoe" => "hoe", "cooked_beans" or "roasted_tuber" => "cooked",
         // (E6)
-        "windbreak" => "windbreak", "hut" => "house", "storage_pit" => "pit", "rack" => "rack", "knap_spot" or "hide_frame" => "workplace", "kiln" => "kiln",
+        "windbreak" => "windbreak", "hut" or "tent" => "house", "storage_pit" => "pit", "rack" => "rack", "knap_spot" or "hide_frame" => "workplace", "kiln" => "kiln",
         _ => null,
     };
 

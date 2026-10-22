@@ -187,6 +187,7 @@ public sealed partial class PeopleSim
         if (frs > bar && opts.Count >= 3) { int a1 = int.MinValue, a2 = int.MinValue, a3 = int.MinValue; foreach (var (sc, _) in opts) { if (sc > a1) { a3 = a2; a2 = a1; a1 = sc; } else if (sc > a2) { a3 = a2; a2 = sc; } else if (sc > a3) a3 = sc; } bar = a3; }
         int bsc = BuildScore(p, life, out var buildJob, out int buildTarget, bar); if (bsc > bar) Opt(19, bsc);
         int efs = EveningFireScore(p, life); if (efs > int.MinValue) Opt(20, efs);
+        int fks = FireKitScore(p, life); if (fks > int.MinValue) Opt(21, fks);
         opts.Sort((a, b) => b.Score != a.Score ? b.Score.CompareTo(a.Score) : a.Code.CompareTo(b.Code));
         for (int k = 0; k < Math.Min(3, opts.Count); k++)
         {
@@ -212,6 +213,7 @@ public sealed partial class PeopleSim
                 18 => TryFarm(p, farmJob, farmTile),
                 19 => TryBuild(p, buildJob, buildTarget),
                 20 => TryEveningFire(p, life),
+                21 => TryFireKit(p, life),
                 _ => false,
             };
             if (ok && p.ActUntil > Now) return;
@@ -392,7 +394,7 @@ public sealed partial class PeopleSim
         p.SleptCold = false;
         p.SleepShelter = life.Shelter[tile];
         if (life.Warm is { } bw && bw[tile] >= 30 && p.SleepShelter < 2) p.SleepShelter = 2; // (E6) 움집 안 · 바람막이 곁도 그늘처럼 잘 잔다
-        if (life.BuildingAt(tile) != 0 && life.BuildingOn(tile) is { Done: true } sb) { if (sb.Kind == B_hut) St.SleptHome++; else if (sb.Kind == B_windbreak) St.SleptWindbreak++; }
+        if (life.BuildingAt(tile) != 0 && life.BuildingOn(tile) is { Done: true } sb) { if (IsHome(sb.Kind)) St.SleptHome++; else if (sb.Kind == B_windbreak) St.SleptWindbreak++; }
         else if (life.Warm is { } bw2 && bw2[tile] > 0) St.SleptWindbreak++;
         p.Huddle = false;
         foreach (var q in life.People)
@@ -425,7 +427,8 @@ public sealed partial class PeopleSim
         var wl = Life(p.Cell);
         bool fireNear = wl.NearestFire(tile % S, tile / S, Now, 4) >= 0;
         FireHabitOnWake(p, wl, fireNear); // (E6) 추운 밤을 겪으면 자기 전에 불을 챙기는 버릇이 는다
-        bool homeSlept = wl.BuildingOn(tile) is { Done: true } hb && hb.Kind == B_hut;
+        KeepEmberOnWake(p, wl, tile); // (E6 툰드라) 아침에 불씨를 담아 들고 떠난다
+        bool homeSlept = wl.BuildingOn(tile) is { Done: true } hb && IsHome(hb.Kind);
         if (homeSlept) AddThought(p, H_sleptHome);
         // (E6) 바람 · 추위를 막을 곳이 없어 떨거나 한데서 잤다 → 머물 곳이 있었으면(짓는 법을 알아내는 실험으로 이어진다)
         // (E6) 비 오는 밤을 지붕 없이(움집 · 동굴 밖에서) 보냈다 → 비를 막을 곳이 있었으면

@@ -114,6 +114,7 @@
 
     { "id": "windbreak",     "name": "바람막이",    "kind": "building" },
     { "id": "hut",           "name": "움집",        "kind": "building" },
+    { "id": "tent",          "name": "가죽 천막",   "kind": "building" },
     { "id": "storage_pit",   "name": "저장 구덩이", "kind": "building" },
     { "id": "rack",          "name": "시렁",        "kind": "building" },
     { "id": "knap_spot",     "name": "돌 깨는 자리", "kind": "building" },

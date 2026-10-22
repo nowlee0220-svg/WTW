@@ -40,7 +40,8 @@ public sealed partial class PeopleSim
     private int W_warmth, W_sharp, W_hardTool, W_container, W_cooking, W_carry, W_shiny;
     private int I_ember, I_campfire, I_hearth, I_charcoal, I_coconut, I_crackedCoconut, I_dryGrass, I_twigs, I_wood, I_splitWood, I_stone;
     private int A_strike, A_break, A_grind, A_cut, A_twist, A_weave, A_shape, A_dry, A_roast, A_burn, A_melt, A_boil, A_pile, A_tear;
-    private CraftRule? R_campfire, R_hearth, R_crack;
+    private CraftRule? R_campfire, R_hearth, R_crack, R_dryGrass;
+    private int I_fat = -1;
 
     private void InitCraft()
     {
@@ -52,7 +53,7 @@ public sealed partial class PeopleSim
         A_strike = Craft.ActionIndex("strike"); A_break = Craft.ActionIndex("break"); A_grind = Craft.ActionIndex("grind"); A_cut = Craft.ActionIndex("cut"); A_twist = Craft.ActionIndex("twist");
         A_weave = Craft.ActionIndex("weave"); A_shape = Craft.ActionIndex("shape"); A_dry = Craft.ActionIndex("dry"); A_roast = Craft.ActionIndex("roast"); A_burn = Craft.ActionIndex("burn");
         A_melt = Craft.ActionIndex("melt"); A_boil = Craft.ActionIndex("boil"); A_pile = Craft.ActionIndex("pile"); A_tear = Craft.ActionIndex("tear");
-        R_campfire = Craft.Rule("campfire"); R_hearth = Craft.Rule("hearth"); R_crack = Craft.Rule("crack_coconut");
+        R_campfire = Craft.Rule("campfire"); R_hearth = Craft.Rule("hearth"); R_crack = Craft.Rule("crack_coconut"); R_dryGrass = Craft.Rule("dry_grass"); I_fat = Craft.ItemIndex("fat");
         if (Craft.Wishes.Count > Person.WishSlots) throw new InvalidOperationException($"바람은 {Person.WishSlots}가지까지(Person.Wish 배열).");
     }
 
@@ -673,7 +674,7 @@ public sealed partial class PeopleSim
         if (action == A_sew) return new[] { c.P_fibrous, c.P_toughness };
         if (action == A_boil) return new[] { c.P_holds, c.P_waterproof };
         if (action == A_burn) return new[] { c.P_warm };
-        if (action == A_raise) return wish == W_storage ? new[] { c.P_fibrous, c.P_toughness } : new[] { c.P_tears, c.P_bends }; // (E6) 덮을 것 · 묶을 것
+        if (action == A_raise) return wish == W_storage ? new[] { c.P_fibrous, c.P_toughness } : new[] { c.P_tears, c.P_bends, c.P_covers }; // (E6) 덮을 것(풀 · 잎 · 가죽) · 묶을 것
         if (action == A_dig && wish == W_shelter) return new[] { c.P_tears, c.P_bends };
         return Array.Empty<int>();
     }
@@ -923,7 +924,10 @@ public sealed partial class PeopleSim
         {
             int it = Craft.ItemIndex(y.Id);
             if (it < 0) continue;
-            p.AddCarry(it, use.Action.Id == "cut" ? 2 : 1);
+            // (E6 고침 — 되풀이 감시 "땔감 나르기") 땔감을 구하러 왔으면 가벼운 땔감(잔가지 · 마른 풀 · 이끼)은 한 아름(셋) 안고 간다 —
+            // 하나에 한 시간도 못 타는 것을 하나씩 날라 밤새 불을 지키려 하루 수십 번 오갔다
+            bool armful = (p.Why == Why.Fuel || p.Why == Why.EveningFire) && Prop(it, Craft.P_burns) >= 2 && Prop(it, Craft.P_weight) <= 1;
+            p.AddCarry(it, use.Action.Id == "cut" ? 2 : armful ? 3 : 1);
         }
         if (use.Action.Id == "cut") WearTool(p, BestTool(p, Craft.P_sharp, 2), rng);
     }
@@ -1357,10 +1361,11 @@ public sealed partial class PeopleSim
         // 불씨를 들고 있다 → 땔감이 있으면 피우고, 없으면 땔감부터
         if (p.CarryCount(I_ember) > 0)
         {
-            if (Now - p.EmberTick > EmberLife) { p.RemoveCarry(I_ember, 1); p.EmberTick = -1; AddThought(p, H_fireDied); }
+            if (Now - p.EmberTick > EmberLifeOf(p)) { p.RemoveCarry(I_ember, 1); p.EmberTick = -1; AddThought(p, H_fireDied); }
             else
             {
                 if (BestCarried(p, Craft.P_burns, 3, I_ember) < 0) { if (StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel)) return true; }
+                else if (KeptEmber(p) && !NeedFireNow(p, life)) { } // (E6 툰드라) 담아 둔 불씨는 저녁 · 추울 때까지 아껴 든다
                 else if (life.NearestFire(here % S, here / S, Now, 4) < 0 || !life.Walk[here]) { if (TryLightWithEmber(p, here, rng)) { Decide(p); return true; } }
                 else
                 {
@@ -1433,6 +1438,9 @@ public sealed partial class PeopleSim
         if (ft < 0 || life.Fires[ft].Remaining(Now) > keep) return false;
         int fuel = BestCarried(p, Craft.P_burns, 3, I_ember);
         if (fuel < 0) return StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel);
+        // (E6) 버릇으로 미리 넣는 것이면(아직 한 시간 넘게 탄다) 땔감을 셋은 모아 한 번에
+        if (p.FireHabit >= 30 && life.Fires[ft].Remaining(Now) > GameTime.TicksPerHour && CountCarried(p, Craft.P_burns, 3, Craft.P_burns, 3) - p.CarryCount(I_ember) < 3
+            && StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel)) return true;
         return StartTend(p, ft, fuel, Why.Fuel);
     }
 
@@ -1466,9 +1474,10 @@ public sealed partial class PeopleSim
         long add = FuelTicks(p.PlanItem);
         if (f.Kind == 2) add = add * 3 / 2; // (E4) 가둔 불은 땔감이 오래 간다
         // (E6) 저녁 불: 아침(7시)까지 탈 만큼 든 땔감을 다 넣는다
-        if (p.Why == Why.EveningFire && f.Lit(Now))
+        // (E6 고침 — 되풀이 감시) 불을 지킬 때(버릇)도 든 땔감을 한꺼번에 — 풀 하나(36분)씩 넣고 또 구하러 가기를 끝없이 했다
+        if ((p.Why == Why.EveningFire || p.Why == Why.Fuel && p.FireHabit >= 30) && f.Lit(Now))
         {
-            long need = (31 * GameTime.TicksPerHour - life.LocalTickOfDay(Now)) % GameTime.TicksPerDay;
+            long need = p.Why == Why.Fuel ? 6 * GameTime.TicksPerHour : (31 * GameTime.TicksPerHour - life.LocalTickOfDay(Now)) % GameTime.TicksPerDay;
             for (int guard = 0; guard < 6 && f.Remaining(Now) + add < need; guard++)
             {
                 int more = BestCarried(p, Craft.P_burns, 3, I_ember);
@@ -1618,6 +1627,7 @@ public sealed partial class PeopleSim
         {
             int e = Prop(c.Item, Craft.P_edible), poison = Prop(c.Item, Craft.P_poison);
             if (e <= 0 || (!desperate && e < 2 && poison > 0)) continue;
+            if (c.Item == I_fat && !desperate && p.FireHabit >= 30 && c.Count <= 2) continue; // (E6 툰드라) 기름 둘은 땔감으로 남겨 둔다
             int s = e * 10 - poison * (desperate ? 2 : 12) + (c.Item == I_coconut && !HasHardTool(p) ? -30 : 0);
             if (s > bs) { bs = s; best = c.Item; }
         }
