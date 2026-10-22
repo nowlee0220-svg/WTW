@@ -1416,6 +1416,9 @@ public sealed partial class PeopleSim
         if (R_campfire is null || !p.Knows(R_campfire.Index)) return false;
         int here = p.Tile(Now);
         int ft = life.NearestFire(here % S, here / S, Now, 40);
+        // (E6 고침 — 속도) 이미 다른 사람이 땔감을 나르거나 넣는 중이면 맡긴다 — 버릇이 있는 사람 여럿이 땔감 하나씩 날라 넣기를 끝없이 되풀이했다
+        // (쌀쌀한 땅에서 사람 하루당 계산이 E5c 의 3배)
+        if (FireTended(life, p)) return false;
         // (E6) 버릇이 있으면 막 꺼진 불(재 속 불씨)도 되살린다
         if (ft < 0 && p.FireHabit >= 30 && EmberFire(life, here, 40) is int ef && ef >= 0)
         {
@@ -1423,7 +1426,10 @@ public sealed partial class PeopleSim
             return f0 >= 0 ? StartTend(p, ef, f0, Why.Fuel) : StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel);
         }
         // (E6) 불을 지키는 버릇이 있으면(추운 땅에서 떨며 자 본 사람) 꺼지기 훨씬 전에(6시간) 넣는다 — 꺼지면 다시 피우기 어렵다
-        long keep = (p.FireHabit >= 30 ? 6 : 3) * GameTime.TicksPerHour;
+        // (E6 고침) 6시간은 저녁 · 밤에만(그 땅 15시 ~ 7시) — 낮에도 6시간을 채우려 땔감을 하나씩 끝없이 날랐다
+        long tod = life.LocalTickOfDay(Now);
+        bool evening = tod >= 15 * GameTime.TicksPerHour || tod < 7 * GameTime.TicksPerHour;
+        long keep = (p.FireHabit >= 30 && evening ? 6 : 3) * GameTime.TicksPerHour;
         if (ft < 0 || life.Fires[ft].Remaining(Now) > keep) return false;
         int fuel = BestCarried(p, Craft.P_burns, 3, I_ember);
         if (fuel < 0) return StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel);

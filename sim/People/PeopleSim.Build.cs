@@ -712,6 +712,7 @@ public sealed partial class PeopleSim
         if (life.Mean10 - life.Range10 / 2 >= 120) return int.MinValue;
         long tod = life.LocalTickOfDay(Now);
         if (tod < 16 * GameTime.TicksPerHour || tod >= 21 * GameTime.TicksPerHour || Now - p.LastEveningFire < 10 * GameTime.TicksPerHour) return int.MinValue;
+        if (FireTended(life, p)) return int.MinValue; // (E6 속도) 누가 이미 챙기는 중
         return 18 + p.FireHabit / 4;
     }
 
@@ -755,6 +756,14 @@ public sealed partial class PeopleSim
         if (far >= 0) { int spot = Beside(p, far); if (WalkTo(p, spot)) { SetWhy(p, Act.TakeFire, Why.EveningFire); p.Target = far; return true; } }
         St.EveningFires++;
         return TryLightKnownFire(p);
+    }
+
+    /// <summary>(E6 속도) 같은 땅의 다른 사람이 지금 땔감을 나르거나 불에 넣는 중인가.</summary>
+    private static bool FireTended(ProvinceLife life, Person p)
+    {
+        foreach (var q in life.People)
+            if (!q.Dead && q.Id != p.Id && (q.Act == Act.TendFire || q.Act == Act.Material) && (q.Why == Why.Fuel || q.Why == Why.EveningFire)) return true;
+        return false;
     }
 
     /// <summary>r 타일 안의 막 꺼진 불(꺼진 지 네 시간 안 — 불씨가 남았다). 없으면 −1.</summary>
