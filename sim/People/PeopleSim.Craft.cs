@@ -68,9 +68,13 @@ public sealed partial class PeopleSim
     private int StrongestWish(Person p)
     {
         int best = -1, bv = 0;
-        for (int w = 0; w < Craft.Wishes.Count; w++) if (p.Wish[w] > bv) { bv = p.Wish[w]; best = w; }
+        for (int w = 0; w < Craft.Wishes.Count; w++) if (WishRank(p, w) > bv) { bv = WishRank(p, w); best = w; }
         return best;
     }
+
+    /// <summary>(E6) 바람의 세기를 견줄 때 머물 곳 · 모아 둘 곳은 절반으로 친다 — 몸에 걸칠 것 · 불 · 먹을 것이 먼저다
+    /// (툰드라에서 머물 곳 바람이 옷 짓기 · 불 피우기 실험을 밀어내 E5c 보다 더 얼어 죽었다).</summary>
+    private int WishRank(Person p, int w) => w == W_shelter || w == W_storage ? p.Wish[w] / 2 : p.Wish[w];
 
     public int WishStrength(Person p, string id) { foreach (var w in Craft.Wishes) if (w.Id == id) return p.Wish[w.Index]; return 0; }
 
@@ -134,8 +138,10 @@ public sealed partial class PeopleSim
         if (tool < 0 || !IsMade(tool)) return;
         int tough = Prop(tool, Craft.P_toughness);
         // (E6) 품질이 좋으면 덜 닳는다 · 이름이 붙은 물건은 더 아낀다
-        int pct = WearPct(QualityOf(p, tool)) * (IsNamedHeld(p, tool) ? 1 : 3);
-        if (rng.NextInt(300 * (8 + tough * 10)) < 100 * pct) p.RemoveCarry(tool, 1);
+        // (E6 고침) 보통 품질은 E5c 와 똑같이(100/(8+질김×10) %) — 처음 식은 정수 나눗셈을 빼먹어 질긴 도구(뼈바늘 등)가 1.7배 빨리 닳아,
+        // 툰드라에서 뼈바늘이 다 닳아 털옷을 못 짓고 얼어 죽었다
+        int pct = WearPct(QualityOf(p, tool)) / (IsNamedHeld(p, tool) ? 3 : 1);
+        if (rng.NextInt(10_000) < 100 / (8 + tough * 10) * pct) p.RemoveCarry(tool, 1);
     }
 
     // ───────── 판단에서 ─────────
@@ -171,9 +177,9 @@ public sealed partial class PeopleSim
         var rng = Rng(p.Cell);
         // 바람은 세기에 비례해 고른다(가장 센 것만 붙들지 않게)
         int total = 0;
-        for (int w = 0; w < Craft.Wishes.Count; w++) total += p.Wish[w];
+        for (int w = 0; w < Craft.Wishes.Count; w++) total += WishRank(p, w);
         int wish = -1;
-        if (total > 0) { int r = rng.NextInt(total); for (int w = 0; w < Craft.Wishes.Count; w++) { r -= p.Wish[w]; if (r < 0) { wish = w; break; } } }
+        if (total > 0) { int r = rng.NextInt(total); for (int w = 0; w < Craft.Wishes.Count; w++) { r -= WishRank(p, w); if (r < 0) { wish = w; break; } } }
         if (wish < 0) { wish = rng.NextInt(Craft.Wishes.Count); if (wish == W_record) wish = W_warmth; } // 호기심: 아무 바람이나 — (E5 고침) "남겨 두기"는 남길 까닭이 있을 때만
         if (Plan(p, wish, known: false, rng)) return true;
         p.LastCraftFail = Now;
@@ -191,7 +197,7 @@ public sealed partial class PeopleSim
     {
         var rng = Rng(p.Cell);
         // 바람 센 순서로 아는 법을 찾는다
-        var order = Enumerable.Range(0, Craft.Wishes.Count).Where(w => p.Wish[w] > 0).OrderByDescending(w => p.Wish[w]).ThenBy(w => w).Take(2).ToList(); // 가장 센 바람 둘만
+        var order = Enumerable.Range(0, Craft.Wishes.Count).Where(w => p.Wish[w] > 0).OrderByDescending(w => WishRank(p, w)).ThenBy(w => w).Take(2).ToList(); // 가장 센 바람 둘만
         foreach (int w in order) if (Plan(p, w, known: true, rng)) return true;
         p.LastCraftFail = Now;
         return false;
@@ -769,6 +775,11 @@ public sealed partial class PeopleSim
     {
         if ((uint)p.PlanWish < 16) St.MatByWish[p.PlanWish * 2 + (why == Why.KnowHow ? 1 : 0)]++;
         var life = Life(p.Cell);
+        // (E6 고침 — 되풀이 감시) 찾는 것을 이미 다섯 넘게(또는 짐의 절반 넘게) 들고 있으면 더 줍지 않는다 — 툰드라에서 뼈 · 부싯돌 · 철광석을
+        // 짐이 찰 때까지 줍고, 짐을 비우려 바로 그것을 내려놓고, 다시 주우러 가기를 하루 수십 번 되풀이했다
+        int have = 0, haveW = 0;
+        foreach (var c in p.Carry) if (itemOk(c.Item)) { have += c.Count; haveW += Math.Max(1, Prop(c.Item, Craft.P_weight)) * c.Count; }
+        if (have >= 5 || (have > 0 && haveW * 2 > CarryCapOf(p))) return false;
         if (CarryWeight(p) + 3 > CarryCapOf(p)) { AddWish(p, W_carry, 8); MakeRoom(p, prop, 3); if (CarryWeight(p) + 1 > CarryCapOf(p)) return false; }
         p.Position(Now, out int px, out int py);
         int hx = px / 1000, hy = py / 1000;

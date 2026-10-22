@@ -331,7 +331,6 @@ public sealed partial class PeopleSim
             int ft0 = life.NearestFire(hx, hy, Now, (int)FireSleepRange);
             if (ft0 >= 0 && TendBeforeSleep(p, life, ft0)) return;
             if (ft0 >= 0) { int b0 = Beside(p, ft0, 1); if (b0 == ft0) b0 = Beside(p, ft0, 2); if (b0 != ft0 && life.Paths.Reachable(here, b0)) { spot = b0; reason = Why.FireNear; } }
-            else if (home >= 0 && life.Paths.Reachable(here, home)) { spot = home; reason = homeWhy; }
         }
         if (spot < 0 && Get(p.Partner) is { Dead: false } mate && mate.Cell == p.Cell && (mate.Asleep || mate.Act == Act.Sleep))
         {
@@ -350,14 +349,19 @@ public sealed partial class PeopleSim
             if (ft >= 0 && TendBeforeSleep(p, life, ft)) return;
             if (ft >= 0) { int b1 = Beside(p, ft, 1); if (b1 == ft) b1 = Beside(p, ft, 2); if (b1 != ft && life.Paths.Reachable(here, b1)) { spot = b1; reason = Why.FireNear; } }
         }
-        if (spot < 0 && home >= 0 && life.Paths.Reachable(here, home)) { spot = home; reason = homeWhy; } // (E6) 바람막이 곁
         if (spot < 0 && coldNight)
         {
-            // 추운 밤에는 동굴이 가장 따뜻하다(늘 연평균 근처) — 가까운 동굴이 있으면 그리로, 없으면 바위 그늘
+            // 추운 밤에는 동굴이 가장 따뜻하다(늘 연평균 근처) — 가까운 동굴이 있으면 그리로, 없으면 (E6) 바람막이 곁, 그것도 없으면 바위 그늘
+            // (E6 고침) 바람막이(+3.5°C)를 동굴보다 먼저 골라 툰드라에서 동굴 대신 바람막이 곁에서 얼어 죽었다
             int sh = life.NearestShelter(hx, hy, 60, caveOnly: true);
-            if (sh < 0 || !life.Paths.Reachable(here, sh)) sh = life.NearestShelter(hx, hy, 60, caveOnly: false);
-            if (sh >= 0 && life.Shelter[sh] > life.Shelter[here]) { spot = Beside(p, sh, 0 + 1); if (life.Shelter[spot] < 2) spot = sh; reason = Why.Cold; }
+            if (sh < 0 || !life.Paths.Reachable(here, sh))
+            {
+                if (home >= 0 && life.Paths.Reachable(here, home)) { spot = home; reason = homeWhy; }
+                else sh = life.NearestShelter(hx, hy, 60, caveOnly: false);
+            }
+            if (spot < 0 && sh >= 0 && life.Shelter[sh] > life.Shelter[here]) { spot = Beside(p, sh, 0 + 1); if (life.Shelter[spot] < 2) spot = sh; reason = Why.Cold; }
         }
+        if (spot < 0 && home >= 0 && life.Paths.Reachable(here, home)) { spot = home; reason = homeWhy; } // (E6) 바람막이 곁
         if (spot < 0)
         {
             // 잠든 가족 · 친구 곁
@@ -424,7 +428,9 @@ public sealed partial class PeopleSim
         // (E6) 바람 · 추위를 막을 곳이 없어 떨거나 한데서 잤다 → 머물 곳이 있었으면(짓는 법을 알아내는 실험으로 이어진다)
         // (E6) 비 오는 밤을 지붕 없이(움집 · 동굴 밖에서) 보냈다 → 비를 막을 곳이 있었으면
         else if (W_shelter >= 0 && wl.RainDay >= Now / GameTime.TicksPerDay - 1 && wl.Shelter[tile] < 3) AddWish(p, W_shelter, 8);
-        else if (W_shelter >= 0 && (p.SleptCold || p.SleepShelter == 0 && !p.Huddle) && (wl.Warm is null || wl.Warm[tile] == 0) && wl.Shelter[tile] < 3) AddWish(p, W_shelter, p.SleptCold ? 12 : p.Huddle ? 2 : 5);
+        // (E6 고침) 추운 땅에서 옷이 닳아 가면(반 넘게) 추위는 옷 탓이다 — 집보다 옷이 먼저 아쉽다(툰드라에서 머물 곳 바람이 옷 짓기를 밀어내 더 얼어 죽었다)
+        else if (W_shelter >= 0 && (p.SleptCold || p.SleepShelter == 0 && !p.Huddle) && (wl.Warm is null || wl.Warm[tile] == 0) && wl.Shelter[tile] < 3
+                 && !(ColdLand(wl) && (p.Worn < 0 || p.WornWear < 500))) AddWish(p, W_shelter, p.SleptCold ? 8 : p.Huddle ? 2 : 5);
         if (fireNear) AddThought(p, H_firelight);
         else if (p.SleepShelter == 0 && !p.Huddle && Ability(p, PeopleData.Nerve) <= 3) { AddThought(p, H_dark); AddWish(p, W_warmth, 12); } // 어둠이 무서웠다 → 밝고 따뜻한 것이 있었으면
         else if (p.SleptCold) AddWish(p, W_warmth, 15);

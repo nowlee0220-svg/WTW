@@ -81,6 +81,7 @@ public static class SceneBench
         if (!onlyArtisan) CopperScene(outDir, seed, index);
         if (!onlyArtisan) TundraScene(outDir, seed, index);
         if (!onlyArtisan) FarmScene(outDir, seed, index);
+        if (!onlyArtisan) BuildScene(outDir, seed, index);
         // (E5) 마지막 장인이 늙음: 세계에서 그 법을 아는 사람이 셋 이하이고 모두 40살 넘은 때 가운데 가장 "끊기기 쉬운" 때
         // (아는 사람이 적을수록 · 가장 젊은 아는 사람도 늙었을수록). 200년 안. 결정론이라 늘 같은 장면.
         // (E5c) 150년 · 45살로는 찾지 못해(지식이 더 널리 퍼졌다) 200년 · 40살로 넓혔다.

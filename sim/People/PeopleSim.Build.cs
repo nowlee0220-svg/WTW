@@ -302,6 +302,8 @@ public sealed partial class PeopleSim
     {
         job = BuildJob.None; target = -1;
         if (p.AgeYears(Now) < 10 || life.IsNight(Now)) return int.MinValue;
+        // (E6 고침) 몸이 식어 가는 사람은 짓지 않는다 — 몸부터 데운다(툰드라에서 짓기 · 재료 찾기에 나섰다가 얼어 죽었다)
+        if (p.Hypothermia > 0) return int.MinValue;
         int skill = p.SkillLevel(PeopleData.Building);
         if (bar >= 30 + skill) return int.MinValue;
         var v = BViewOf(life);
@@ -902,11 +904,12 @@ public sealed partial class PeopleSim
         return null;
     }
 
-    /// <summary>30타일 안의 비어 있는(쓰는 사람이 없는) 그 종류의 작업대. 없으면 null.</summary>
+    /// <summary>12타일 안의 비어 있는(쓰는 사람이 없는) 그 종류의 작업대. 없으면 null.
+    /// (E6 고침) 처음엔 30타일 — 툰드라에서 멀리 있는 작업대까지 오가느라 불 · 무리 곁을 떠나 얼었다.</summary>
     private Building? FreeBench(ProvinceLife life, int bench, int here, Person p)
     {
         if (bench < 0 || life.Buildings.Count == 0) return null;
-        Building? best = null; int bd = 31;
+        Building? best = null; int bd = 13;
         foreach (var (_, b) in life.Buildings)
         {
             if (!b.Done || b.Kind != bench || (b.User >= 0 && b.User != p.Id && b.UserUntil > Now)) continue;

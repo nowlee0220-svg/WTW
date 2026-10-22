@@ -64,6 +64,7 @@ public static class BuildBench
 
     public static string Know = "";
     public static bool Debug = Environment.GetEnvironmentVariable("WTW_REPEAT_DEBUG") == "1";
+    private static readonly Dictionary<string, long> ActCount = new();
 
     public static Row Simulate(ulong seed, int people, int years, string where, int cap, bool passion)
     {
@@ -97,6 +98,8 @@ public static class BuildBench
                             var lit = l.Fires.Items.Where(f => f.Value.Lit(w.Now)).ToList();
                             Console.WriteLine($"[밤] {w.Now / GameTime.TicksPerDay}일 칸 {c}: 산 {l.People.Count(q => !q.Dead)} · 켜진 불 {lit.Count}(남은 {string.Join(",", lit.Select(f => f.Value.Remaining(w.Now) / GameTime.TicksPerHour))}h) · 불 자리 {l.Fires.Count} · 버릇 {string.Join(",", l.People.Where(q => !q.Dead).Select(q => q.FireHabit))} · 하는 일 {string.Join(",", l.People.Where(q => !q.Dead).Select(q => q.Act + "/" + q.Why))} · 땔감 든 수 {string.Join(",", l.People.Where(q => !q.Dead).Select(q => q.Carry.Where(c2 => w.People.Craft.Prop(c2.Item, w.People.Craft.P_burns) >= 3).Sum(c2 => c2.Count)))}");
                         }
+                        if (Debug && h >= 7 && h < 19)
+                            foreach (var q in l.People) if (!q.Dead && q.Stage(w.Now) >= LifeStage.Adult) lock (ActCount) { string k = q.Act + "/" + q.Why; ActCount[k] = ActCount.GetValueOrDefault(k) + 1; }
                         if (h < 20 && h >= 5) continue;
                         foreach (var q in l.People)
                         {
@@ -160,8 +163,8 @@ public static class BuildBench
             lock (r.Rep)
             {
                 if (!r.Rep.Dropped.TryGetValue(p.Id, out var set)) r.Rep.Dropped[p.Id] = set = new HashSet<int>();
-                if (!picked) set.Add(item);
-                else if (set.Remove(item)) { int c = ++r.Rep.T(p.Id)[2]; if (Debug && c == 10) Console.WriteLine($"[되풀이] 사람 {p.Id} 물건 {s.Craft.ItemName(item)} 하는 일 {p.Act}/{p.Why} 바람 {p.PlanWish} 짐 {s.CarryWeight(p)}/{s.CarryCapOf(p)} 든 것 {string.Join(",", p.Carry.Select(c2 => s.Craft.ItemName(c2.Item) + c2.Count))}"); }
+                if (!picked) { set.Add(item); if (Debug && r.Rep.T(p.Id)[2] >= 5) Console.WriteLine($"[버림] 사람 {p.Id} {s.Craft.ItemName(item)} 찾는 것 {(p.PlanItem >= 0 ? s.Craft.ItemName(p.PlanItem) : "-")} 법 {(p.PlanRule >= 0 ? s.Craft.ItemName(s.Craft.Rules[p.PlanRule].Result) : "-")} 짐 {s.CarryWeight(p)}/{s.CarryCapOf(p)} 든 것 {string.Join(",", p.Carry.Select(c2 => s.Craft.ItemName(c2.Item) + c2.Count))}"); }
+                else if (set.Remove(item)) { int c = ++r.Rep.T(p.Id)[2]; if (Debug && c == 10) Console.WriteLine($"[되풀이] 사람 {p.Id} 물건 {s.Craft.ItemName(item)} 하는 일 {p.Act}/{p.Why} 바람 {p.PlanWish} 법 {(p.PlanRule >= 0 ? s.Craft.ItemName(s.Craft.Rules[p.PlanRule].Result) : "-")} 찾는 것 {(p.PlanItem >= 0 ? s.Craft.ItemName(p.PlanItem) : "-")} 짐 {s.CarryWeight(p)}/{s.CarryCapOf(p)} 든 것 {string.Join(",", p.Carry.Select(c2 => s.Craft.ItemName(c2.Item) + c2.Count))}"); }
             }
         };
         PeopleSim.WalkHook = (s, p, goal) =>
@@ -213,7 +216,7 @@ public static class BuildBench
             var ad = ps.All.Where(q => !q.Dead && q.Stage(w.Now) >= LifeStage.Adult).ToList();
             var cr = ps.Craft; int sp = cr.Rule("sparks")!.Index, cf = cr.Rule("campfire")!.Index;
             Console.WriteLine($"[불] 시드 {row.Seed}: 불 피움 {row.St.FiresLit} · 불씨 얻음(불 곁) {row.St.FiresTaken} · 부싯돌 불씨 성공 {row.St.RuleDone[sp]} 실패 {row.St.RuleFail[sp]} · 모닥불 성공 {row.St.RuleDone[cf]} · 계획 막힘 " + string.Join(",", row.St.PlanWhy.Take(20)) + $" · 저녁 불 {row.St.EveningFires} · 버릇 평균 {ps.All.Where(q => q.Stage(w.Now) >= LifeStage.Child).DefaultIfEmpty().Average(q => q?.FireHabit ?? 0):0}");
-                        Console.WriteLine($"[건물] 시드 {row.Seed}: 어른 {ad.Count} · 머물 곳 바람 평균 {ad.Average(q => q.Wish[12]):0.0} · 최대 {ad.Max(q => q.Wish[12])} · 모아 둘 곳 {ad.Average(q => q.Wish[13]):0.0} · 잠자리 그늘 " + string.Join(",", ad.Select(q => q.SleepShelter)) + " · 껴안음 " + ad.Count(q => q.Huddle));
+            if (ad.Count > 0) Console.WriteLine($"[건물] 시드 {row.Seed}: 어른 {ad.Count} · 머물 곳 바람 평균 {ad.Average(q => q.Wish[12]):0.0} · 최대 {ad.Max(q => q.Wish[12])} · 모아 둘 곳 {ad.Average(q => q.Wish[13]):0.0} · 잠자리 그늘 " + string.Join(",", ad.Select(q => q.SleepShelter)) + " · 껴안음 " + ad.Count(q => q.Huddle));
         }
         // 열정: 열정이 있는 사람과 없는 사람(어른)의 가장 높은 기술 · 기분
         var withP = new List<double>(); var noP = new List<double>(); var mP = new List<double>(); var mN = new List<double>();
@@ -242,6 +245,7 @@ public static class BuildBench
         });
         PeopleSim.CrossHook = null; PeopleSim.WorkHook = null; PeopleSim.ItemHook = null; PeopleSim.WalkHook = null;
         Console.WriteLine(Report(rows, seeds, people, years, where, cap, passion, sw.Elapsed));
+        if (Debug && ActCount.Count > 0) { long tot = ActCount.Values.Sum(); foreach (var (k, n) in ActCount.OrderByDescending(x => x.Value).Take(30)) Console.WriteLine($"[낮] {k} {n * 100.0 / tot:0.0}% ({n})"); }
         if (outFile is not null) { File.WriteAllText(outFile, Report(rows, seeds, people, years, where, cap, passion, sw.Elapsed)); Console.WriteLine($"→ {outFile}"); }
     }
 
