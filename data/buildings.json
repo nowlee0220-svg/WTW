@@ -1,0 +1,34 @@
+{
+  "_설명": [
+    "건물 (E6, 기획서 10절). 건물은 타일 단위 크기(w × h)와 들어가는 재료(parts)를 가진다. 재료는 아이템 이름이 아니라 속성으로 적는다(props = 최소값, max = 넘으면 안 되는 값) — 그 속성이 맞는 것이면 무엇이든 된다.",
+    "짓는 법은 crafting.json 의 규칙(item = 그 규칙의 결과)으로 알아낸다. 알아냈다고 서는 것이 아니라, 아는 사람이 자리를 고르고 · 재료를 날라 · 쌓아야(work_hours, 기술 '건설') 선다.",
+    "serves: 이 건물이 채워 주는 바람(crafting.json 의 wishes) — shelter 머물 곳 · storage 모아 둘 곳. bench: 작업대의 일(stone 돌 깨기 · hide 가죽 일 · pottery 토기 굽기). grave: 무덤(1 흙무덤 · 2 돌무더기) — 짓는 법을 알아낼 필요 없이 무리의 버릇으로 묻는다.",
+    "warm_in: 안에서 자면 더해지는 따뜻함(0.1°C, 품질 보통 기준 — 밤에 다 · 낮에 절반) · warm_near: 바로 곁(1타일). rain: 곁의 불이 비에 꺼지지 않는다. hold: 모아 둔 것을 지키는 정도(바구니 3 · 토기 4 와 같은 눈금 — 높을수록 쥐 · 벌레가 덜 먹는다). sleeps: 안에서 잘 수 있는 사람 수.",
+    "decay_days: 품질 보통일 때 다 낡아 무너지기까지의 날(1년 40일). 품질이 낮으면 빨리, 높으면 늦게 낡는다. 0 = 낡지 않는다(무덤)."
+  ],
+  "buildings": [
+    { "id": "windbreak", "name": "바람막이", "item": "windbreak", "w": 2, "h": 1, "serves": "shelter", "work_hours": 3, "warm_in": 35, "warm_near": 25, "rain": true, "sleeps": 4, "decay_days": 120,
+      "parts": [ { "role": "기둥이 된다", "props": { "toughness": 2, "weight": 1 }, "max": { "hardness": 2, "edible": 0, "sharp": 1 }, "count": 3 },
+                 { "role": "덮는다 · 바람을 막는다", "props": { "tears": 3, "bends": 3 }, "max": { "edible": 0 }, "count": 4 } ] },
+    { "id": "hut", "name": "움집", "item": "hut", "w": 2, "h": 2, "serves": "shelter", "work_hours": 10, "warm_in": 80, "warm_near": 15, "rain": true, "sleeps": 6, "decay_days": 400,
+      "parts": [ { "role": "기둥이 된다(굵은 나무)", "props": { "toughness": 4, "weight": 2 }, "max": { "hardness": 2, "edible": 0, "sharp": 1 }, "count": 4 },
+                 { "role": "지붕을 덮는다", "props": { "tears": 3, "bends": 3 }, "max": { "edible": 0 }, "count": 8 } ] },
+    { "id": "storage_pit", "name": "저장 구덩이", "item": "storage_pit", "w": 1, "h": 1, "serves": "storage", "work_hours": 4, "hold": 5, "decay_days": 240,
+      "parts": [ { "role": "깔고 덮는다", "props": { "tears": 3, "bends": 3 }, "max": { "edible": 0 }, "count": 3 } ] },
+    { "id": "rack", "name": "시렁", "item": "rack", "w": 1, "h": 1, "serves": "storage", "work_hours": 3, "hold": 4, "decay_days": 200,
+      "parts": [ { "role": "기둥이 된다", "props": { "toughness": 3, "weight": 1 }, "max": { "hardness": 2, "edible": 0, "sharp": 1 }, "count": 3 },
+                 { "role": "묶는다", "props": { "fibrous": 4, "toughness": 3 }, "count": 2 } ] },
+    { "id": "knap_spot", "name": "돌 깨는 자리", "item": "knap_spot", "w": 1, "h": 1, "bench": "stone", "work_hours": 1, "decay_days": 800,
+      "parts": [ { "role": "받침 돌", "props": { "hardness": 3, "weight": 3 }, "max": { "edible": 0, "sharp": 0 }, "count": 1 } ] },
+    { "id": "hide_frame", "name": "가죽 일 자리", "item": "hide_frame", "w": 1, "h": 1, "bench": "hide", "work_hours": 2, "decay_days": 200,
+      "parts": [ { "role": "틀이 된다", "props": { "toughness": 3, "weight": 1 }, "max": { "hardness": 2, "edible": 0, "sharp": 1 }, "count": 3 },
+                 { "role": "묶는다", "props": { "fibrous": 4, "toughness": 3 }, "count": 2 } ] },
+    { "id": "kiln", "name": "가마", "item": "kiln", "w": 1, "h": 1, "bench": "pottery", "work_hours": 5, "decay_days": 500,
+      "parts": [ { "role": "둘러 쌓는다", "props": { "hardness": 3, "weight": 3 }, "max": { "edible": 0 }, "count": 4 },
+                 { "role": "빚어 덮는다", "props": { "moldable": 4 }, "count": 3 } ] },
+    { "id": "fire_pit", "name": "불자리", "item": "hearth", "w": 1, "h": 1, "serves": "warmth", "work_hours": 0, "rain": true, "decay_days": 300, "parts": [] },
+    { "id": "grave", "name": "무덤", "w": 1, "h": 1, "grave": 1, "work_hours": 2, "decay_days": 0, "parts": [] },
+    { "id": "cairn", "name": "돌무더기 무덤", "w": 1, "h": 1, "grave": 2, "work_hours": 1, "decay_days": 0,
+      "parts": [ { "role": "덮는 돌", "props": { "hardness": 3, "weight": 2 }, "max": { "edible": 0, "sharp": 0 }, "count": 4 } ] }
+  ]
+}

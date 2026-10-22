@@ -122,7 +122,24 @@ public sealed partial class PeopleSim
             Act.Fish => w ? "물고기를 잡으러 물가로 가는 중" : (WeaponPower(p) >= 3 ? "물가에서 창으로 물고기를 찌르는 중" : "물가에서 손으로 물고기를 더듬는 중"),
             // (E5c)
             Act.Farm => FarmText(p, life, w),
+            // (E6)
+            Act.Build => BuildText(p, life, w),
             _ => "둘러보는 중",
+        };
+    }
+
+    private string BuildText(Person p, ProvinceLife life, bool w)
+    {
+        string what = life.Buildings.TryGetValue(p.Target, out var b) ? BDef(b).Name : "건물";
+        bool grave = b is not null && BDef(b).Grave > 0;
+        string dead = grave ? NameOf(b!.Person) : "";
+        return (BuildJob)p.TargetB switch
+        {
+            BuildJob.Deliver => w ? $"{what} 자리로 재료를 나르는 중" : $"{what} 자리에 재료를 내려놓는 중",
+            BuildJob.Work when grave => w ? $"{Hangul.Eul(dead)} 묻으러 가는 중" : b!.Kind == B_cairn ? $"{dead} 위에 돌을 쌓아 덮는 중" : (BestTool(p, P_digs, 1) >= 0 ? $"땅을 파고 {Hangul.Eul(dead)} 묻는 중" : $"손으로 땅을 파고 {Hangul.Eul(dead)} 묻는 중"),
+            BuildJob.Work => w ? $"{Hangul.Eul(what)} 지으러 가는 중" : $"{Hangul.Eul(what)} 짓는 중 (기둥을 세우고 엮어 덮는다)",
+            BuildJob.Repair => w ? $"낡은 {Hangul.Eul(what)} 고치러 가는 중" : $"낡은 {Hangul.Eul(what)} 고치는 중",
+            _ => $"{what} 일을 하는 중",
         };
     }
 
@@ -139,6 +156,15 @@ public sealed partial class PeopleSim
             FarmJob.FetchSeed => w ? "심을 씨를 가지러 모아 둔 자리로 가는 중" : "모아 둔 자리에서 심을 씨를 챙기는 중",
             _ => "밭일 하는 중",
         };
+    }
+
+    private string BuildName(int kind) => (uint)kind < (uint)Builds.Buildings.Count ? Builds.Buildings[kind].Name : "건물";
+
+    /// <summary>"기둥이 된다 2/3 · 덮는다 0/4".</summary>
+    public string BuildNeedText(Building b)
+    {
+        var d = BDef(b);
+        return d.Parts.Length == 0 ? "재료 없음" : string.Join(" · ", d.Parts.Select((pt, i) => $"{pt.Role} {b.Have[i]}/{pt.Count}"));
     }
 
     private string AnimalName(int species) => (uint)species < (uint)Fauna.Animals.Count ? Fauna.Animals[species].Name : "짐승";
@@ -312,6 +338,18 @@ public sealed partial class PeopleSim
             Why.FarmStore => "거둔 것을 무리가 함께 먹게 모아 둔다(들고 다니면 무겁다)",
             Why.FarmSeed => "심을 씨가 없어서 — 들의 낟알 · 콩 · 덩이뿌리를 모은다",
             Why.SeedFood => $"딸 열매가 없어서 — 낟알 · 콩 · 덩이뿌리라도 (배부름 {p.Food / 1000}%)",
+            // (E6)
+            Why.WantShelter => $"바람 · 추위를 막을 곳이 있었으면 — 한데서 떨며 자서 (바람 {WishStrength(p, "shelter")}): {TryReason(p, "shelter")}",
+            Why.WantStorage => $"모아 둔 것을 쥐 · 벌레가 먹어서 — 더 잘 지킬 곳이 있었으면 (바람 {WishStrength(p, "storage")}): {TryReason(p, "storage")}",
+            Why.BuildFetch => p.WhyArg >= 0 && Life(p.Cell).Buildings.TryGetValue(p.WhyArg, out var fb) ? $"{BDef(fb).Name}에 들어갈 재료를 구한다 — {BuildNeedText(fb)}" : "지을 재료를 구한다",
+            Why.BuildDeliver => "구해 온 재료를 짓는 자리에 놓는다 — 여럿이 함께 나르면 빨리 선다",
+            Why.BuildWork => $"재료가 다 모였다 — 짓는 법을 알아서 쌓는다(건설 솜씨 {p.SkillLevel(PeopleData.Building)})",
+            Why.BuildRepair => "낡아서 바람 · 비가 새기 시작했다 — 고치지 않으면 무너진다",
+            Why.Bury => p.Act == Act.Build && Life(p.Cell).Buildings.TryGetValue(p.Target, out var gb) && BDef(gb).Grave > 0 ? $"{Hangul.I(NameOf(gb.Person))} 죽어서 — 가까운 이를 그대로 둘 수 없다(무리가 해 오던 대로)" : "가까운 이가 죽어서",
+            Why.Home => "우리 집안의 움집에서 잔다 — 안은 바람이 막혀 덜 춥다",
+            Why.Windbreak => "추운 밤이라 바람막이 곁에서 잔다",
+            Why.EveningFire => $"해가 진다 — 자기 전에 불을 피워 두고 땔감을 챙긴다(추운 밤을 겪어 생긴 버릇 {p.FireHabit})",
+            Why.Workbench => "아는 법대로 만드는데 그 일을 하는 자리(작업대)가 있어서 — 거기서 하면 더 잘 되고 빨리 된다",
             Why.Butchering => HasSharpTool(p) ? "날 선 도구가 있어 고기 · 가죽 · 뼈 · 힘줄을 가른다" : "날 선 도구가 없어 고기만 조금 뜯어낸다",
             _ => "",
         } + HowText(p);
@@ -543,6 +581,16 @@ public sealed partial class PeopleSim
         BioKind.Harvested => $"심은 것을 거두었다({b.Param}개)",
         BioKind.FieldEaten => $"{Hangul.I(AnimalName(b.Other))} 심어 둔 밭을 뜯어 먹었다",
         BioKind.AteSeeds => $"굶주려 남겨 둔 씨앗({ItemName(b.Other)})까지 먹었다",
+        // (E6)
+        BioKind.Built => b.Param < 0 ? $"{Hangul.Eul(BuildName(b.Other))} 지을 자리를 정했다" : $"함께 {Hangul.Eul(BuildName(b.Other))} 다 지었다(품질 {QualityName(b.Param)})",
+        BioKind.Repaired => $"낡은 {Hangul.Eul(BuildName(b.Other))} 고쳤다",
+        BioKind.Buried => $"{Hangul.I(NameOf(b.Other))} {(b.Param == B_cairn ? "돌을 쌓아 덮어 주었다" : "땅에 묻어 주었다")}",
+        BioKind.BuriedSomeone => $"{Hangul.Eul(NameOf(b.Other))} {(b.Param == B_cairn ? "돌무더기로 덮어 주었다" : "땅에 묻었다")}",
+        BioKind.LeftBody => $"죽은 {Hangul.Eul(NameOf(b.Other))} 묻지 않고 그대로 두었다(무리가 해 오던 대로)",
+        BioKind.NamedThing => Named.TryGetValue(b.Other, out var nm) ? $"지닌 {ItemName(nm.Item)}에 '{nm.Name}'({NamedMeaning(nm)})이라는 이름이 붙었다" : "지닌 물건에 이름이 붙었다",
+        BioKind.Inherited => Named.TryGetValue(b.Other, out var ni) ? $"{NameOf(b.Param)}의 '{ni.Name}'({NamedMeaning(ni)})을 물려받았다" : "물건을 물려받았다",
+        BioKind.FoundThing => Named.TryGetValue(b.Other, out var nf) ? $"잃어버렸던 '{nf.Name}'({NamedMeaning(nf)})을 찾아 들었다" : "잃어버린 물건을 찾았다",
+        BioKind.MadeFine => $"훌륭한 {Hangul.Eul(ItemName(b.Param))} 만들었다",
         _ => "",
     };
 

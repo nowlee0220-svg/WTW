@@ -273,6 +273,8 @@ public sealed partial class PeopleSim
         "stone_spear" => "spear", "bone_needle" => "needle", "fur_coat" or "fur_boots" => "coat",
         // (E5c)
         "sown_patch" => "seed", "field" => "field", "roasted_grain" or "flour" => "grain", "flatbread" => "bread", "stone_hoe" => "hoe", "cooked_beans" or "roasted_tuber" => "cooked",
+        // (E6)
+        "windbreak" => "windbreak", "hut" => "house", "storage_pit" => "pit", "rack" => "rack", "knap_spot" or "hide_frame" => "workplace", "kiln" => "kiln",
         _ => null,
     };
 
@@ -330,7 +332,7 @@ public sealed partial class PeopleSim
     {
         if (p.Nickname.Length > 0 || !Languages.TryGetValue(p.LangId, out var lang)) return;
         string? cid = ConceptForItem(Craft.Catalog.Items[rule.Result].Id);
-        if (cid is not ("fire" or "pot" or "copper" or "axe" or "knife" or "field" or "seed")) return; // (E5c) 처음 씨를 묻은 · 밭을 일군 사람
+        if (cid is not ("fire" or "pot" or "copper" or "axe" or "knife" or "field" or "seed" or "house")) return; // (E5c) 처음 씨를 묻은 · 밭을 일군 사람 · (E6) 집 짓는 법을 처음 알아낸 사람
         int c = C(cid), maker = C("maker"), first = C("first");
         if (c < 0 || maker < 0) return;
         if (!lang.Known.Contains(c)) { lang.Known.Add(c); lang.Origins[c] = (-1, Now); lang.Version++; }
@@ -338,7 +340,7 @@ public sealed partial class PeopleSim
         var concepts = new[] { c, maker };
         p.Nickname = Words.Name(lang, p.Accent, concepts.Select(k => Lang.Concepts[k]).ToList(), Lang);
         p.NicknameConcepts = concepts;
-        p.NicknameReason = cid == "field" ? "밭을 처음 일군 사람" : cid == "seed" ? "씨를 처음 땅에 묻은 사람" : $"{Hangul.Eul(Craft.ItemName(rule.Result))} 처음 {(cid == "fire" ? "피운" : "만든")} 사람";
+        p.NicknameReason = cid == "house" ? "움집 짓는 법을 처음 알아낸 사람" : cid == "field" ? "밭을 처음 일군 사람" : cid == "seed" ? "씨를 처음 땅에 묻은 사람" : $"{Hangul.Eul(Craft.ItemName(rule.Result))} 처음 {(cid == "fire" ? "피운" : "만든")} 사람";
         AddBio(p, BioKind.Nicknamed, -1, rule.Index);
     }
 

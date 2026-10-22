@@ -202,6 +202,9 @@ public sealed partial class PeopleSim
                 case PendingOp.Kinds.Farm:
                     ApplyFarmOp(op);
                     break;
+                case PendingOp.Kinds.Build:
+                    if (op.A == 4) ApplyNamedOp(op); else ApplyBuildOp(op);
+                    break;
                 default:
                     throw new InvalidOperationException($"모르는 미룬 일: {op.Kind}");
             }

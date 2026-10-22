@@ -62,6 +62,7 @@ public partial class SkipPanel : PanelContainer
         Row(v, "땅과 말", B("새 땅으로 옮김", SkipGoals.NewLand), B("땅 이름", SkipGoals.LandNamed), B("말 갈라짐", SkipGoals.LanguageSplit));
         Row(v, "짐승", B("큰 짐승을 처음 잡음", SkipGoals.BigHunt), B("짐승에게 덮쳐짐", SkipGoals.BeastAttack), B("새끼가 따라다님", SkipGoals.Tamed));
         Row(v, "농사", B("처음 심음", SkipGoals.FirstSow), B("처음 밭", SkipGoals.FirstField), B("흉년", SkipGoals.BadHarvest), B("씨앗까지 먹음", SkipGoals.SeedsEaten));
+        Row(v, "건물", B("처음 집", SkipGoals.FirstHouse), B("처음 무덤", SkipGoals.FirstGrave));
         _pop = Spin(100, 5, 3000);
         Row(v, "인구", _pop, PeopleUi.L("명", UiTheme.FontSizeSmall + 1, UiTheme.Text), B("이 될 때까지", () => SkipGoals.Population((int)_pop.Value)));
 

@@ -213,13 +213,15 @@ public sealed partial class PeopleSim
             PurgeThoughts(p);
             BodyDaily(p, rng);
             CraftDaily(p);
+            FireHabitDaily(p); // (E6)
             MoveIntent(p, rng);
             // 안아 줄 사람이 없는 아기
             if (p.Carrier >= 0 && Get(p.Carrier) is not { Dead: false }) ReassignCarrier(p);
         }
         if (Now / GameTime.TicksPerDay % GameTime.DaysPerYear == 0) LanguageYear();
         NameLands();
-        foreach (var (cell, life) in Provinces.ToList()) { FiresDaily(cell, life); AnimalsDaily(life); RotGround(life, Rng(cell)); FarmDaily(cell, life); }
+        foreach (var (cell, life) in Provinces.ToList()) { FiresDaily(cell, life); AnimalsDaily(life); RotGround(life, Rng(cell)); FarmDaily(cell, life); BuildDaily(life); }
+        NamedDaily(); // (E6) 사연 있는 물건이 아직 있나
         CheckLostDiscoveries();
         GroupKnowledgeDaily();
         SleepEmptyProvinces();
@@ -324,6 +326,9 @@ public sealed partial class PeopleSim
         if (InProvince) L.AliveDelta--; else AliveCount--;
         St.Deaths[(int)cause]++;
         int deathTile = (y / 1000) * S + x / 1000;
+        // (E6) 사연 있는 물건은 곁의 가족이 물려받는다(없으면 그 자리에 남는다) · 시신이 생겼다(묻을 사람이 본다)
+        if ((uint)deathTile < HexFrame.TileCount) PassOnNamed(p, Life(p.Cell), deathTile);
+        Life(p.Cell).BuildVersion++;
         // (E4) 들고 있던 것은 그 자리에 남는다
         if (p.Carry.Count > 0 && (uint)deathTile < HexFrame.TileCount)
         {

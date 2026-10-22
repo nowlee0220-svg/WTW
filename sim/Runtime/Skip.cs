@@ -20,6 +20,7 @@ public static class EventLevels
         WorldEventKind.Discovery or WorldEventKind.DiscoveryLost or WorldEventKind.Language or WorldEventKind.HuntFirst => World,
         WorldEventKind.DiscoveryGroup or WorldEventKind.Rediscovered or WorldEventKind.Moved or WorldEventKind.LandNamed or WorldEventKind.HuntGroup
             or WorldEventKind.BadHarvest or WorldEventKind.SeedsEaten or WorldEventKind.HarvestFirst => Group, // (E5c) 흉년 · 씨앗까지 먹음 · 무리에서 처음 거둠
+        WorldEventKind.BuiltFirst or WorldEventKind.GraveFirst or WorldEventKind.NamedThing => Group, // (E6) 무리에서 처음 지은 것 · 첫 무덤 · 사연 있는 물건
         // (E5 고침) 무리 단위 끊김 · 되찾음은 ★(그 지방을 볼 때만) — [지식의 행방] 창에는 다 남는다
         _ => Person,
     };
@@ -48,6 +49,12 @@ public static class EventLevels
         WorldEventKind.SeedsEaten => "씨앗까지 먹어 버림",
         WorldEventKind.HarvestFirst => "무리에서 처음 거둠",
         WorldEventKind.FieldEaten => "짐승이 밭을 먹음",
+        WorldEventKind.BuiltFirst => "무리에서 처음 지은 것",
+        WorldEventKind.Built => "다 지음",
+        WorldEventKind.Collapsed => "낡아 무너짐",
+        WorldEventKind.GraveFirst => "무리의 첫 무덤",
+        WorldEventKind.Buried => "묻음",
+        WorldEventKind.NamedThing => "사연 있는 물건",
         _ => k.ToString(),
     };
 }
@@ -112,6 +119,10 @@ public static class SkipGoals
     public static SkipGoal LandNamed() => new EventGoal(WorldEventKind.LandNamed, "땅에 이름이 붙을 때까지");
     /// <summary>말이 갈라질 때까지.</summary>
     public static SkipGoal LanguageSplit() => new EventGoal(WorldEventKind.Language, "말이 갈라질 때까지");
+    /// <summary>(E6) 처음 집(움집 · 바람막이)이 설 때까지 — 어느 무리든.</summary>
+    public static SkipGoal FirstHouse() => new HouseGoal();
+    /// <summary>(E6) 처음 무덤이 생길 때까지 — 어느 무리든.</summary>
+    public static SkipGoal FirstGrave() => new KindsGoal(new[] { WorldEventKind.GraveFirst }, "처음 무덤이 생길 때까지");
     /// <summary>(E5) 지식이 세계에서 사라질 때까지(마지막으로 아는 사람이 죽거나 잊음).</summary>
     public static SkipGoal KnowledgeLost() => new KindsGoal(new[] { WorldEventKind.DiscoveryLost }, "지식이 세계에서 사라질 때까지");
     /// <summary>(E5) 한 무리에서 지식이 끊길 때까지.</summary>
@@ -207,6 +218,14 @@ public static class SkipGoals
         public override bool Reached(GameWorld w, IReadOnlyList<WorldEvent> events) => events.Any(e => kinds.Contains(e.Kind));
     }
 
+    /// <summary>(E6) 무리에서 처음 지은 움집 · 바람막이(작업대 · 구덩이 · 불자리는 아니다).</summary>
+    private sealed class HouseGoal : SkipGoal
+    {
+        public override string Name => "처음 집(움집 · 바람막이)이 설 때까지";
+        public override bool Reached(GameWorld w, IReadOnlyList<WorldEvent> events) =>
+            events.Any(e => e.Kind == WorldEventKind.BuiltFirst && (uint)e.Other < (uint)w.People.Builds.Buildings.Count && w.People.Builds.Buildings[e.Other].IsShelter);
+    }
+
     private sealed class PopulationGoal(int n) : SkipGoal
     {
         public override string Name => $"인구 {n}명까지";
@@ -271,13 +290,13 @@ public sealed class SkipRun
         // (E5) 사람 목록의 "지금까지 죽은 사람"과 헷갈리지 않게 — 넘기는 동안의 수와 지금까지의 수를 함께
         lines.Add($"인구 {_startPop}명 → {w.People.AliveCount}명 — 넘기는 동안 태어남 {births} · 죽음 {deaths} (세계에서 지금까지 죽은 사람 모두 {deadAll}명)");
         foreach (var k in new[] { WorldEventKind.Discovery, WorldEventKind.Rediscovered, WorldEventKind.DiscoveryLost, WorldEventKind.Language, WorldEventKind.GroupLost, WorldEventKind.GroupRefound, WorldEventKind.Moved, WorldEventKind.LandNamed, WorldEventKind.DiscoveryGroup, WorldEventKind.HuntFirst, WorldEventKind.HuntGroup, WorldEventKind.BeastAttack, WorldEventKind.Tamed,
-            WorldEventKind.HarvestFirst, WorldEventKind.BadHarvest, WorldEventKind.SeedsEaten })
+            WorldEventKind.HarvestFirst, WorldEventKind.BadHarvest, WorldEventKind.SeedsEaten, WorldEventKind.BuiltFirst, WorldEventKind.GraveFirst, WorldEventKind.NamedThing, WorldEventKind.Collapsed })
         {
             var es = _all.Where(e => e.Kind == k).ToList();
             if (es.Count == 0) continue;
             lines.Add($"{EventLevels.Stars(EventLevels.Of(k))} {EventLevels.KindName(k)} {es.Count}번");
             if (EventLevels.Of(k) >= EventLevels.Group)
-                foreach (var e in es.Take(k is WorldEventKind.DiscoveryGroup or WorldEventKind.HuntGroup or WorldEventKind.HarvestFirst or WorldEventKind.BadHarvest ? 3 : 6)) lines.Add($"   · {GameTime.Format(e.Tick)} — {e.Text}");
+                foreach (var e in es.Take(k is WorldEventKind.DiscoveryGroup or WorldEventKind.HuntGroup or WorldEventKind.HarvestFirst or WorldEventKind.BadHarvest or WorldEventKind.BuiltFirst ? 3 : 6)) lines.Add($"   · {GameTime.Format(e.Tick)} — {e.Text}");
         }
         // (E5c) 밭: 지금 깨어 있는 지방의 밭 · 모아 둔 것
         int tilled = 0, patches = 0, groups = 0, food = 0, seeds = 0;
@@ -288,6 +307,18 @@ public sealed class SkipRun
             if (fc.Tilled + fc.Patches > 0) groups++;
         }
         if (tilled + patches > 0) lines.Add($"밭: {groups}무리 · 일군 밭 {tilled}칸 · 씨를 묻은 자리 {patches}곳 · 모아 둔 먹을 것 {food} · 씨 {seeds}");
+        // (E6) 건물: 지금 깨어 있는 지방의 다 지은 것(종류별) · 짓는 중 · 낡음
+        var bd = w.People.Builds.Buildings;
+        var done = new int[bd.Count]; int sites = 0, worn = 0, places = 0;
+        foreach (var (_, life) in w.People.Provinces)
+        {
+            var bc = w.People.BuildCounts(life);
+            for (int i = 0; i < done.Length; i++) done[i] += bc.Done[i];
+            sites += bc.Sites; worn += bc.Worn;
+            if (bc.Done.Sum() > 0) places++;
+        }
+        if (done.Sum() + sites > 0)
+            lines.Add($"건물: {places}곳에 " + string.Join(" · ", bd.Where(b => done[b.Index] > 0).Select(b => $"{b.Name} {done[b.Index]}")) + (sites > 0 ? $" · 짓는 중 {sites}" : "") + (worn > 0 ? $" · 낡음 {worn}" : ""));
         return lines;
     }
 

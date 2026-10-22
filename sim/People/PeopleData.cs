@@ -26,7 +26,7 @@ public sealed class PeopleData
     public const string File = "people.json";
     public const int AbilityCount = 5, SkillCount = 10;
     public const int Str = 0, Dex = 1, Int = 2, Soc = 3, Nerve = 4;
-    public const int Hunting = 0, Gathering = 1, Farming = 2, Cooking = 3, Crafting = 5, Research = 6, Teaching = 7;
+    public const int Hunting = 0, Gathering = 1, Farming = 2, Cooking = 3, Building = 4, Crafting = 5, Research = 6, Teaching = 7;
 
     public IReadOnlyList<NamedDef> Abilities { get; private init; } = Array.Empty<NamedDef>();
     public IReadOnlyList<NamedDef> Skills { get; private init; } = Array.Empty<NamedDef>();

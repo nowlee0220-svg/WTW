@@ -43,7 +43,9 @@ public sealed class PendingOp
 {
     public enum Kinds : byte { Notify = 1, Learned = 2, Partial = 3, Painting = 4, History = 5, Hunt = 6,
         /// <summary>(E5c) A = 1 무리에서 처음 거둠 · 2 씨앗까지 먹음.</summary>
-        Farm = 7 }
+        Farm = 7,
+        /// <summary>(E6) A = 1 다 지음(B 사람 · C 종류 · D 품질) · 2 묻는 버릇(C 0 흙 · 1 돌 · 2 그대로) · 3 묻음(C 죽은 사람 · D 종류) · 4 사연 있는 물건(B 사람 · C 아이템 · D 까닭 · E 짐승/규칙).</summary>
+        Build = 8 }
     public Kinds Kind;
     public long Tick;
     public int Cell;
