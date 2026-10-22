@@ -300,6 +300,9 @@ public sealed class Person
     /// <summary>(E6 되풀이 감시로 고침) 마지막으로 구해 온 재료와 그때 — 짐을 덜 때 막 구해 온 것은 내려놓지 않는다(재료를 줍고 버리기를 되풀이했다).</summary>
     public int LastPickItem = -1;
     public long LastPickTick = long.MinValue / 2;
+    /// <summary>(E6 고침) 그 앞에 주운 것 — 짐이 찼을 때 둘을 번갈아 줍고 버리던 것(부싯돌 ↔ 힘줄)을 막는다.</summary>
+    public int PrevPickItem = -1;
+    public long PrevPickTick = long.MinValue / 2;
     /// <summary>(E6) 묻혔나(0 아니 · 1 무덤 · 2 그대로 둠) · 묻힌 건물 번호(지방 안).</summary>
     public byte Burial;
     public int GraveId = -1;

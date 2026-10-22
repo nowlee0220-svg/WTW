@@ -423,7 +423,7 @@ public static class SaveGame
         bw.Write(p.Burial); bw.Write(p.GraveId); bw.Write(p.WornQ); bw.Write(p.FeetQ);
         bw.Write(p.Quality.Count); foreach (var (it, q) in p.Quality) { bw.Write(it); bw.Write(q); }
         bw.Write(p.NamedHeld.Count); foreach (int id in p.NamedHeld) bw.Write(id);
-        bw.Write(p.LastPickItem); bw.Write(p.LastPickTick);
+        bw.Write(p.LastPickItem); bw.Write(p.LastPickTick); bw.Write(p.PrevPickItem); bw.Write(p.PrevPickTick);
     }
 
     private static void ReadPeople(BinaryReader br, GameWorld w, int version)
@@ -701,7 +701,7 @@ public static class SaveGame
                 p.Burial = br.ReadByte(); p.GraveId = br.ReadInt32(); p.WornQ = br.ReadByte(); p.FeetQ = br.ReadByte();
                 int nq = br.ReadInt32(); for (int k = 0; k < nq; k++) p.Quality.Add((br.ReadInt32(), br.ReadByte()));
                 int nn = br.ReadInt32(); for (int k = 0; k < nn; k++) p.NamedHeld.Add(br.ReadInt32());
-                p.LastPickItem = br.ReadInt32(); p.LastPickTick = br.ReadInt64();
+                p.LastPickItem = br.ReadInt32(); p.LastPickTick = br.ReadInt64(); p.PrevPickItem = br.ReadInt32(); p.PrevPickTick = br.ReadInt64();
             }
         }
         else

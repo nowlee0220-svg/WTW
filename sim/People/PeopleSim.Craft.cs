@@ -513,7 +513,7 @@ public sealed partial class PeopleSim
                 if (c.Item == I_ember) continue;
                 // (E5b 고침) 그릇 · 바구니(담는 것)는 마지막까지 든다 — 뼈 · 힘줄 · 기름에 밀려 바구니를 내려놓고 다시 엮기를 끝없이 되풀이했다
                 // (E5c 고침) 단단한 날붙이(갈아 만든 돌날 등)도 끝까지 든다 — 바구니 재료를 들려고 돌날을 내려놓고, 돌날이 없어 다시 그것을 주우러 가기를 되풀이했다
-                int sc = (IsNamedHeld(p, c.Item) ? 500 : 0) + (c.Item == p.LastPickItem && Now - p.LastPickTick < 6 * GameTime.TicksPerHour ? 300 : 0) + (IsMade(c.Item) ? 40 : Craft.IsAnimal(c.Item) ? 10 : 0) + (Prop(c.Item, Craft.P_holds) > 0 ? 60 : 0) + (IsMade(c.Item) && Prop(c.Item, Craft.P_hardness) >= 4 && Prop(c.Item, Craft.P_sharp) >= 2 ? 50 : 0) + Prop(c.Item, wantProp) * 10 + Prop(c.Item, Craft.P_edible) * 6 - Prop(c.Item, Craft.P_weight) * 3 - (c.Count > 2 ? 15 : 0);
+                int sc = (IsNamedHeld(p, c.Item) ? 500 : 0) + (c.Item == p.LastPickItem && Now - p.LastPickTick < 6 * GameTime.TicksPerHour || c.Item == p.PrevPickItem && Now - p.PrevPickTick < 6 * GameTime.TicksPerHour ? 300 : 0) + (IsMade(c.Item) ? 40 : Craft.IsAnimal(c.Item) ? 10 : 0) + (Prop(c.Item, Craft.P_holds) > 0 ? 60 : 0) + (IsMade(c.Item) && Prop(c.Item, Craft.P_hardness) >= 4 && Prop(c.Item, Craft.P_sharp) >= 2 ? 50 : 0) + Prop(c.Item, wantProp) * 10 + Prop(c.Item, Craft.P_edible) * 6 - Prop(c.Item, Craft.P_weight) * 3 - (c.Count > 2 ? 15 : 0);
                 if (sc < ws) { ws = sc; worst = c.Item; }
             }
             if (worst < 0) break;
@@ -879,7 +879,7 @@ public sealed partial class PeopleSim
     {
         int w0 = CarryWeight(p), n0 = p.Carry.Sum(c => c.Count);
         FinishMaterialInner(p);
-        if (p.PlanItem >= 0 && p.Carry.Sum(c => c.Count) > n0) { p.LastPickItem = p.PlanItem; p.LastPickTick = Now; ItemHook?.Invoke(this, p, p.PlanItem, true); }
+        if (p.PlanItem >= 0 && p.Carry.Sum(c => c.Count) > n0) { if (p.LastPickItem != p.PlanItem) { p.PrevPickItem = p.LastPickItem; p.PrevPickTick = p.LastPickTick; } p.LastPickItem = p.PlanItem; p.LastPickTick = Now; ItemHook?.Invoke(this, p, p.PlanItem, true); }
         St.PlanWhy[p.Carry.Sum(c => c.Count) > n0 ? 10 : 11]++;
         _ = w0;
     }
