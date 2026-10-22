@@ -642,6 +642,7 @@ public sealed partial class PeopleSim
         foreach (int t in tiles)
         {
             if (!life.Items.TryGetValue(t, out var list)) { life.PerishTiles.Remove(t); continue; }
+            if (t == life.Stash) continue; // (E5c 고침) 모아 둔 자리는 따로(StashDaily — 담는 것에 따라) — 전에는 두 규칙을 다 받아 두 번 사라졌다
             bool any = false;
             for (int k = list.Count - 1; k >= 0; k--)
             {

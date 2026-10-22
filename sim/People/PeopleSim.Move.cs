@@ -27,13 +27,17 @@ public sealed partial class PeopleSim
         var life = Life(p.Cell);
         // 가족 따라: 짝 · (아이면) 부모가 바로 이웃 땅에 있다
         foreach (int id in st == LifeStage.Child ? new[] { p.Mother, p.Father, p.Partner } : new[] { p.Partner })
-            if (id >= 0 && Get(id) is { Dead: false } f && f.Cell != p.Cell && life.Map.SlotOf(f.Cell) >= 0 && f.Act != Act.Cross)
+            // (E5c 고침) 이웃 땅에 잠깐 먹을 것 · 물을 찾으러 간 가족은 따라가지 않는다(그 땅에 반나절 넘게 머문 가족만) — 전에는 짝 · 부모가
+            // 이웃 땅에 다녀오는 사이에 하루 경계에서 따라 넘어가고, 그 가족은 다시 돌아와 서로 오가기를 되풀이했다(작은 행성에서 "떠남"의 3분의 2)
+            if (id >= 0 && Get(id) is { Dead: false } f && f.Cell != p.Cell && life.Map.SlotOf(f.Cell) >= 0 && f.Act != Act.Cross && Now - f.ArrivedTick >= GameTime.TicksPerDay / 2)
             {
                 if (st == LifeStage.Child || rng.NextInt(100) < 50) { p.MoveWhy = Why.FollowFamily; p.MoveTo = f.Cell; return; }
             }
         if (st == LifeStage.Child) { p.MoveWhy = Why.None; return; }
         // 아이는 어른 따라, 아이 둔 부모는 아이를 데리고만
-        if (p.Scarcity >= ScarcityToMove)
+        // (E5c) 밭이 있는 무리는 쉽게 떠나지 않는다 — 모아 둔 먹을 것이 있거나 밭이 자라는 동안은 세 배를 견딘다
+        bool farm = FarmTies(p, life);
+        if (p.Scarcity >= ScarcityToMove * (farm ? 3 : 1))
         {
             if (p.MoveWhy != Why.Scarce && GameScarce(life)) St.LeftForGame++; // (E5b) 측정: 짐승도 줄어 있었다
             p.MoveWhy = Why.Scarce; p.MoveTo = -1; return;
@@ -49,7 +53,7 @@ public sealed partial class PeopleSim
         int age = p.AgeYears(Now);
         if (p.Partner < 0 && age is >= 17 and <= 45 && here > 20 * GameTime.TicksPerDay && !HasMateCandidate(p, life) && rng.NextInt(1000) < 15)
         { p.MoveWhy = Why.SeekMate; p.MoveTo = -1; return; }
-        if (p.HasTrait(T_curious) && rng.NextInt(1000) < 5 && !HasLittleChild(p)) { p.MoveWhy = Why.Explore; p.MoveTo = -1; return; }
+        if (p.HasTrait(T_curious) && rng.NextInt(1000) < (farm ? 1 : 5) && !HasLittleChild(p)) { p.MoveWhy = Why.Explore; p.MoveTo = -1; return; }
     }
 
     private bool HasMateCandidate(Person p, ProvinceLife life)
@@ -100,6 +104,9 @@ public sealed partial class PeopleSim
         if (gi < 0 || !StartCross(p, b, gi, why)) return false;
         p.LastMove = Now;
         St.MoveWhy[(int)why]++;
+        // (E5c) 측정: 떠나기 전에 이 땅에 머문 날(밭이 있는 무리 · 없는 무리)
+        if (FarmTies(p, life)) { St.StayFarmDays += (Now - p.ArrivedTick) / GameTime.TicksPerDay; St.StayFarmN++; }
+        else { St.StayOtherDays += (Now - p.ArrivedTick) / GameTime.TicksPerDay; St.StayOtherN++; }
         if (why == Why.Scarce)
         {
             p.Scarcity = 0;

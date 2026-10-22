@@ -87,7 +87,18 @@ public sealed partial class PeopleSim
     private int Prop(int item, int prop) => Craft.Prop(item, prop);
     private bool IsMade(int item) => (uint)item < (uint)Craft.Catalog.Items.Count && Craft.Catalog.Items[item].Kind == "made";
 
-    public int CarryWeight(Person p) { int w = 0; foreach (var c in p.Carry) w += Math.Max(1, Prop(c.Item, Craft.P_weight)) * c.Count; return w; } // 가벼운 것도 하나에 1(손이 둘뿐)
+    public int CarryWeight(Person p)
+    {
+        int w = 0;
+        foreach (var c in p.Carry)
+        {
+            int wt = Prop(c.Item, Craft.P_weight);
+            // 가벼운 것도 하나에 1(손이 둘뿐) — (E5c) 다만 무게 0 인 씨(낟알 · 콩 한 줌)는 다섯 줌에 1(주머니 하나에 담긴다): 씨를 들면 짐이 금세 차서
+            // 애써 구한 돌을 내려놓고 다시 구하러 가기를 끝없이 되풀이했다
+            w += wt == 0 && P_sprouts >= 0 && Prop(c.Item, P_sprouts) > 0 ? (c.Count + 4) / 5 : Math.Max(1, wt) * c.Count;
+        }
+        return w;
+    }
     public int CarryCapOf(Person p) { int cap = CarryCap; foreach (var c in p.Carry) { if (Prop(c.Item, Craft.P_holds) >= 3) cap += 8; } return cap + Ability(p, PeopleData.Str) / 2; }
 
     /// <summary>들고 있는 것 중 속성 prop 이 가장 높은 것(min 이상). except 두 개는 빼고. 없으면 −1.</summary>
@@ -188,6 +199,7 @@ public sealed partial class PeopleSim
     {
         if (r.Result < 0) return false;
         if (w.Index == W_hunting) return Prop(r.Result, Craft.P_weight) >= 1 && (Prop(r.Result, Craft.P_pierces) >= 1 || Prop(r.Result, Craft.P_sharp) >= 3); // (E5b) 바늘은 무기가 아니다
+        if (w.Index == W_farming) return Prop(r.Result, P_digs) >= 2 || Prop(r.Result, P_sprouts) > 0 && Craft.Catalog.Items[r.Result].Kind == "place"; // (E5c) 밭일: 밭을 일굴 만한 도구(파는 힘 2 이상)나 밭 — 나무 막대(1)는 아니다
         foreach (int pr in w.Props) if (Prop(r.Result, pr) > 0) return true;
         if (w.Index == W_warmth && (r.Result == I_ember || r.Result == I_campfire || r.Result == I_hearth)) return true;
         if (w.Index == W_record) return r.Result == I_painting;
@@ -202,6 +214,7 @@ public sealed partial class PeopleSim
     internal bool Plan(Person p, int wish, bool known, Pcg32 rng, CraftRule? force = null)
     {
         St.PlanWhy[0]++;
+        if ((uint)wish < 16) St.PlanByWish[wish * 2 + (known ? 1 : 0)]++;
         bool r = PlanInner(p, wish, known, rng, force);
         if (r) St.PlanWhy[7]++;
         return r;
@@ -227,6 +240,7 @@ public sealed partial class PeopleSim
             {
                 var r = Craft.Rules[k.Rule];
                 if (!ServesWish(r, wd) || r.Result == I_ember && !NeedsFire(p, life)) continue;
+                if (r.Result == I_field || r.Result == I_sownPatch) continue; // (E5c) 심기는 밭일로(머무는 곳 곁에) — 아무 데서나 하지 않는다
                 bool more = wish == W_clothing && Craft.WearSlot(r.Result) == 1 && Prop(r.Result, Craft.P_covers) < 5 && p.CarryCount(r.Result) < 3; // (E5b) 가죽은 셋까지 모은다(옷 한 벌)
                 if ((p.CarryCount(r.Result) > 0 && !more) || AlreadyCovered(p, wish, r.Result)) continue; // 이미 들고 있거나 그만한 것이 있으면 또 만들지 않는다
                 if (r.Result == I_hearth && life.Fires.TryGetValue(NearestFireAny(life, here), out var hf) && hf.Kind == 2) continue;
@@ -239,6 +253,7 @@ public sealed partial class PeopleSim
             }
             if (best is null) return false;
             rule = best; action = rule.Action;
+            St.PlanKnownRule[rule.Index]++;
         }
         else
         {
@@ -351,7 +366,7 @@ public sealed partial class PeopleSim
         {
             // 재료가 없다 → 그 속성이 높은 것을 얻으러
             St.PlanWhy[2]++;
-            if (rule is not null) { if (StartMaterialFor(p, rule.Input, Why.KnowHow)) return true; St.PlanWhy[3]++; return false; }
+            if (rule is not null) { if (StartMaterialFor(p, rule.Input, Why.KnowHow, rule.Result)) return true; St.PlanWhy[3]++; return false; }
             foreach (int pr in inPref) if (StartMaterialFor(p, pr, 2, WishWhy(wish))) return true;
             St.PlanWhy[3]++;
             return false;
@@ -378,6 +393,7 @@ public sealed partial class PeopleSim
         // (E5b) 긁기는 날 선 것으로 · 꿰매기는 뾰족한 것으로 · 묶기(사냥 도구)는 끈으로
         else if (action == A_scrape) tool = BestCarried(p, Craft.P_sharp, 2, input, with);
         else if (action == A_sew) tool = BestCarried(p, Craft.P_pierces, 2, input, with);
+        else if (action == A_dig) tool = BestCarried(p, P_digs, 1, input, with); // (E5c) 땅 파는 것
         else if (action == A_twist && wish == W_hunting) tool = BestCarried(p, Craft.P_fibrous, 4, input, with);
         // 같은 돌이 둘 있으면 하나로 다른 하나를 친다
         if (tool < 0 && (action == A_strike || action == A_break) && p.CarryCount(input) >= 2 && Prop(input, Craft.P_hardness) >= 3 && Prop(input, Craft.P_edible) == 0) tool = input;
@@ -439,12 +455,13 @@ public sealed partial class PeopleSim
     private int[] GoalProps(int wish) =>
         wish == W_warmth ? new[] { Craft.P_warm } : wish == W_sharp ? new[] { Craft.P_sharp } : wish == W_hardTool ? new[] { Craft.P_hardness, Craft.P_sharp } :
         wish == W_container ? new[] { Craft.P_holds, Craft.P_waterproof } : wish == W_cooking ? new[] { Craft.P_edible } : wish == W_carry ? new[] { Craft.P_holds } : wish == W_record ? new[] { Craft.PropIndex("stains") } :
-        wish == W_food ? new[] { Craft.P_edible } : wish == W_hunting ? new[] { Craft.P_pierces } : wish == W_clothing ? new[] { Craft.P_covers, Craft.P_warm } : new[] { Craft.P_malleable };
+        wish == W_food ? new[] { Craft.P_edible } : wish == W_hunting ? new[] { Craft.P_pierces } : wish == W_clothing ? new[] { Craft.P_covers, Craft.P_warm } : wish == W_farming ? new[] { P_digs } : new[] { Craft.P_malleable };
 
     /// <summary>들고 있는 만든 물건 중 result 만큼 쓸모가 있는(바람의 속성이 모두 같거나 높은) 것이 있나.</summary>
     private bool AlreadyCovered(Person p, int wish, int result)
     {
         if (wish == W_cooking || wish == W_warmth || wish == W_record || wish == W_food) return false; // 먹을 것 · 불은 쓰면 없어진다, 그림은 들고 다니지 않는다
+        if (wish == W_farming) { foreach (var c in p.Carry) if (Prop(c.Item, P_digs) >= 2) return true; return false; } // (E5c) 땅 파는 도구가 이미 있으면 더 만들지 않는다(돌괭이를 만들려 귀한 돌을 끝없이 찾아다니던 것)
         if (wish == W_clothing) // (E5b) 이미 그만한 옷을 입었거나 남는 옷이 있다(가죽 같은 중간 것은 따지지 않는다)
         {
             if (WornCovers(p, result)) return true;
@@ -474,12 +491,14 @@ public sealed partial class PeopleSim
             {
                 if (c.Item == I_ember) continue;
                 // (E5b 고침) 그릇 · 바구니(담는 것)는 마지막까지 든다 — 뼈 · 힘줄 · 기름에 밀려 바구니를 내려놓고 다시 엮기를 끝없이 되풀이했다
-                int sc = (IsMade(c.Item) ? 40 : Craft.IsAnimal(c.Item) ? 10 : 0) + (Prop(c.Item, Craft.P_holds) > 0 ? 60 : 0) + Prop(c.Item, wantProp) * 10 + Prop(c.Item, Craft.P_edible) * 6 - Prop(c.Item, Craft.P_weight) * 3 - (c.Count > 2 ? 15 : 0);
+                // (E5c 고침) 단단한 날붙이(갈아 만든 돌날 등)도 끝까지 든다 — 바구니 재료를 들려고 돌날을 내려놓고, 돌날이 없어 다시 그것을 주우러 가기를 되풀이했다
+                int sc = (IsMade(c.Item) ? 40 : Craft.IsAnimal(c.Item) ? 10 : 0) + (Prop(c.Item, Craft.P_holds) > 0 ? 60 : 0) + (IsMade(c.Item) && Prop(c.Item, Craft.P_hardness) >= 4 && Prop(c.Item, Craft.P_sharp) >= 2 ? 50 : 0) + Prop(c.Item, wantProp) * 10 + Prop(c.Item, Craft.P_edible) * 6 - Prop(c.Item, Craft.P_weight) * 3 - (c.Count > 2 ? 15 : 0);
                 if (sc < ws) { ws = sc; worst = c.Item; }
             }
             if (worst < 0) break;
             int n = Math.Max(1, p.CarryCount(worst) - 1);
             p.RemoveCarry(worst, n);
+            SpillSeed(p, worst, Rng(p.Cell)); // (E5c) 버린 씨
             if (life.Walk[here] && (IsMade(worst) || Craft.IsAnimal(worst))) life.Drop(here, worst, n); // 만든 것만 내려놓는다 — 흔한 돌 · 가지 · 풀은 그냥 버린다(자연으로)
         }
     }
@@ -613,6 +632,7 @@ public sealed partial class PeopleSim
         if (action == A_scrape) return new[] { c.P_covers, c.P_rots };
         if (action == A_smoke) return wish == W_clothing ? new[] { c.P_covers, c.P_toughness } : new[] { c.P_meat, c.P_edible };
         if (action == A_sew) return new[] { c.P_covers, c.P_toughness };
+        if (action == A_dig || action == A_bury) return new[] { P_sprouts, c.P_edible }; // (E5c) 땅에 묻을 씨
         return new[] { c.P_edible };
     }
 
@@ -681,7 +701,7 @@ public sealed partial class PeopleSim
 
     private Why WishWhy(int wish) =>
         wish == W_record ? Why.WantRecord : wish == W_warmth ? Why.WantWarmth : wish == W_sharp ? Why.WantSharp : wish == W_hardTool ? Why.WantHardTool : wish == W_container ? Why.WantContainer :
-        wish == W_cooking ? Why.WantCooking : wish == W_carry ? Why.WantCarry : wish == W_food ? Why.WantFood : wish == W_hunting ? Why.WantHunting : wish == W_clothing ? Why.WantClothing : Why.WantShiny;
+        wish == W_cooking ? Why.WantCooking : wish == W_carry ? Why.WantCarry : wish == W_food ? Why.WantFood : wish == W_hunting ? Why.WantHunting : wish == W_clothing ? Why.WantClothing : wish == W_farming ? Why.WantFarming : Why.WantShiny;
 
     /// <summary>제자리에서 일을 시작한다(걸리는 시간 = 규칙의 시간 또는 실험 45~75분, 손재주 · 근면에 따라).</summary>
     private void BeginWork(Person p)
@@ -708,19 +728,21 @@ public sealed partial class PeopleSim
     private const long MissMemory = 12 * GameTime.TicksPerHour;
 
     /// <summary>조건(속성 → 최소값)을 모두 맞는 재료를 얻으러 간다.</summary>
-    private bool StartMaterialFor(Person p, Conds conds, Why why)
+    /// <param name="notItem">(E5c 고침) 재료로 줍지 않을 것 — 만들 것 그 자체(땅에 놓인 돌날을 "단단한 돌"로 주워 돌날을 또 갈려던 것)</param>
+    private bool StartMaterialFor(Person p, Conds conds, Why why, int notItem = -1)
     {
         if (conds.Count == 0) return false;
-        long key = 1000;
+        long key = 1000 + notItem;
         foreach (var (pr, mn) in conds) key = key * 131 + pr * 16 + mn;
         if (p.MissKey == key && Now - p.MissTick < MissMemory) return false;
-        if (StartMaterialFor(p, it => { foreach (var (pr, mn) in conds) if (Prop(it, pr) < mn) return false; return true; }, conds.Keys.First(), why)) return true;
+        if (StartMaterialFor(p, it => { if (it == notItem) return false; foreach (var (pr, mn) in conds) if (Prop(it, pr) < mn) return false; return true; }, conds.Keys.First(), why)) return true;
         p.MissKey = key; p.MissTick = Now;
         return false;
     }
 
     private bool StartMaterialFor(Person p, Func<int, bool> itemOk, int prop, Why why)
     {
+        if ((uint)p.PlanWish < 16) St.MatByWish[p.PlanWish * 2 + (why == Why.KnowHow ? 1 : 0)]++;
         var life = Life(p.Cell);
         if (CarryWeight(p) + 3 > CarryCapOf(p)) { AddWish(p, W_carry, 8); MakeRoom(p, prop, 3); if (CarryWeight(p) + 1 > CarryCapOf(p)) return false; }
         p.Position(Now, out int px, out int py);
@@ -1033,6 +1055,24 @@ public sealed partial class PeopleSim
         if (res == I_painting)
         {
             MakePainting(p, here, rng);
+            return;
+        }
+        if (res == I_field || res == I_sownPatch)
+        {
+            // (E5c) 그 자리(또는 바로 곁)에 씨를 묻었다 — 일군 밭이면 Tilled
+            int t = FreeForPlot(life, here) ? here : -1;
+            for (int k = 0; k < 8 && t < 0; k++) { int x = here % S + DX8[k], y = here / S + DY8[k]; if ((uint)x < S && (uint)y < S && FreeForPlot(life, y * S + x)) t = y * S + x; }
+            int seed = p.PlanInput;
+            if (t >= 0 && seed >= 0 && IsSeed(seed))
+            {
+                var q = new Plot { Tile = t, Tilled = res == I_field, Stage = PlotStage.Sown, Crop = seed, Stamp = Now, LastTend = Now, Planter = p.Id };
+                q.Due = Now + SproutDays * GameTime.TicksPerDay;
+                life.AddPlot(q);
+                if (q.Tilled) St.Tilled++;
+                St.Sown++;
+                if (life.FarmSince < 0) life.FarmSince = Now;
+                if (life.Stash < 0) life.Stash = ChooseStash(life, here);
+            }
             return;
         }
         if (res == I_charcoal && p.Target >= 0 && life.Fires.TryGetValue(p.Target, out var hf) && hf.Kind == 2)
@@ -1487,6 +1527,7 @@ public sealed partial class PeopleSim
         p.Water = Clamp(p.Water + (long)want * (item == I_crackedCoconut ? 25_000 : 2_000));
         var rng = Rng(p.Cell);
         if (IsMade(item) && poison == 0 && e >= 4) { AddThought(p, H_cookedMeal); St.CookedMeals++; }
+        SpillSeed(p, item, rng); // (E5c) 먹다 흘린 씨
         if (poison > 0 && rng.NextInt(100) < poison * 8) BadStomach(p, item);
         if (item == I_coconut && !HasHardTool(p)) AddWish(p, W_hardTool, 20);
         if (p.Food >= 85_000) AddThought(p, H_ate);
@@ -1539,6 +1580,7 @@ public sealed partial class PeopleSim
             int n = p.CarryCount(raw);
             p.RemoveCarry(raw, n);
             p.AddCarry(outcome.Rule.Result, n);
+            SpillSeed(p, raw, rng); // (E5c) 불가에서 볶다 흘린 씨
             cooked = outcome.Rule.Result;
             if (!p.Knows(outcome.Rule.Index)) Learn(p, outcome.Rule, W_cooking, raw, -1, -1);
             else UseKnowledge(p, outcome.Rule.Index);

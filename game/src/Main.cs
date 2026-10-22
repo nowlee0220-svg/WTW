@@ -376,6 +376,26 @@ public partial class Main : Node
                 "강 · 호수 · 늪의 물고기(행성의 '물고기' 자원). 손 · 뾰족한 막대 · 돌창으로 잡는다. 잡으면 줄고, 다시 는다."));
             facts = list;
         }
+        // (E5c) 밭 · 모아 둔 것
+        if (_snap is not null && (_snap.Plots.ContainsKey(m.Cell) || _snap.Stashes.ContainsKey(m.Cell)))
+        {
+            var plots = _snap.Plots.GetValueOrDefault(m.Cell) ?? Array.Empty<PlotView>();
+            int tilled = plots.Count(q => q.Tilled), patch = plots.Count(q => !q.Tilled && !q.Wild), wild = plots.Count(q => q.Wild);
+            int growing = plots.Count(q => q.Stage is Wtw.Sim.People.PlotStage.Sown or Wtw.Sim.People.PlotStage.Sprout or Wtw.Sim.People.PlotStage.Growing), ripe = plots.Count(q => q.Stage == Wtw.Sim.People.PlotStage.Ripe);
+            var list = facts.ToList();
+            list.Add(new ProvinceFact("밭", $"일군 밭 {tilled}칸 · 묻은 자리 {patch} · 저절로 난 싹 {wild} (자라는 중 {growing} · 익음 {ripe})",
+                "씨를 묻은 자리와 일군 밭. 이 행성엔 계절이 없어 자라는 빠르기는 그 땅의 기온 · 비 · 흙으로 정해진다(좋은 땅 16일, 나쁠수록 오래 — 사막 · 툰드라는 거의 안 난다). 잡풀 · 짐승 · 그해 날씨에 따라 덜 거둔다."));
+            var cat = Wtw.Sim.Data.ObjectCatalog.Default;
+            string stash = "없음";
+            if (_snap.Stashes.TryGetValue(m.Cell, out int st))
+            {
+                var here = (_snap.GroundItems.GetValueOrDefault(m.Cell) ?? Array.Empty<(int, int, int)>()).Where(g => g.Item1 == st).ToList();
+                stash = here.Count == 0 ? "비어 있음" : string.Join(" · ", here.Select(g => $"{cat.Items[g.Item2].Name} {g.Item3}"));
+            }
+            list.Add(new ProvinceFact("모아 둔 것", stash,
+                "무리가 머무는 곳 곁에 쌓아 두고 나눠 먹는 것(거둔 낟알 · 말린 고기 …). 다음에 심을 씨도 여기 남겨 둔다 — 굶주리면 씨까지 먹어 버리기도 한다. 쥐 · 벌레가 조금씩 먹는다(바구니 · 토기가 있으면 덜)."));
+            facts = list;
+        }
         _info.Show($"지방 정보 — {_snap?.LandLabel(m.Cell) ?? TileDescriber.ProvinceName(p, m.Cell)}", facts); // 이름이 있으면 이름만(위 막대와 겹치지 않게)
     }
 
@@ -439,7 +459,46 @@ public partial class Main : Node
         var p = _globe.Planet;
         var m = cell >= 0 ? _province.MapOf(cell) : null;
         if (p is null || m is null) { _card.Visible = false; return; }
-        _card.ShowAt(PaintingReport(cell, x, y) ?? TileDescriber.Describe(p, m, x, y), GetViewport().GetMousePosition());
+        _card.ShowAt(PaintingReport(cell, x, y) ?? PlotReport(cell, x, y) ?? TileDescriber.Describe(p, m, x, y), GetViewport().GetMousePosition());
+    }
+
+    /// <summary>(E5c) 밭 · 모아 둔 자리에 마우스를 올리면: 무엇이 · 어느 단계 · 잡풀 · 짐승 · 이 땅이 자라기 좋은 정도.</summary>
+    private TileReport? PlotReport(int cell, int x, int y)
+    {
+        if (_snap is null) return null;
+        int t = y * HexFrame.Size + x;
+        var cat = Wtw.Sim.Data.ObjectCatalog.Default;
+        if (_snap.Stashes.TryGetValue(cell, out int st) && st == t)
+        {
+            var here = (_snap.GroundItems.GetValueOrDefault(cell) ?? Array.Empty<(int, int, int)>()).Where(g => g.Item1 == t).ToList();
+            return new TileReport("모아 둔 자리", "무리가 거둔 것 · 말린 고기를 쌓아 두고 나눠 먹는 곳",
+                "다음에 심을 씨도 여기 남겨 둔다. 쥐 · 벌레가 조금씩 먹는다(바구니 · 토기가 있으면 덜).",
+                new List<(string, string)> { ("놓인 것", here.Count == 0 ? "비어 있음" : string.Join(" · ", here.Select(g => $"{cat.Items[g.Item2].Name} {g.Item3}"))) });
+        }
+        if (!_snap.Plots.TryGetValue(cell, out var plots)) return null;
+        var q = plots.FirstOrDefault(v => v.Tile == t);
+        if (q.Tile != t || plots.Length == 0) return null;
+        string crop = (uint)q.Crop < (uint)cat.Items.Count ? cat.Items[q.Crop].Name : "";
+        string stage = q.Stage switch
+        {
+            Wtw.Sim.People.PlotStage.Empty => "비어 있음 — 심을 씨를 기다린다(오래 두면 잡풀이 다시 덮는다)",
+            Wtw.Sim.People.PlotStage.Sown => $"{crop} 씨를 묻었다 — 싹이 나기를 기다린다",
+            Wtw.Sim.People.PlotStage.Sprout => $"{crop} 싹이 났다",
+            Wtw.Sim.People.PlotStage.Growing => $"{crop} 자라는 중({q.Progress * 100:0}%)",
+            _ => $"{crop} 익었다 — 거둘 때(오래 두면 떨어져 버려진다)",
+        };
+        string kind = q.Wild ? "저절로 난 싹" : q.Tilled ? "밭(일군 땅)" : "씨를 묻은 자리";
+        string why = q.Wild ? "사람들이 먹다 흘린 씨에서 싹이 났다 — 이것을 본 사람이 \"씨를 묻으면 난다\"를 알아내기도 한다." :
+            q.Tilled ? "풀 · 덤불을 걷고 땅을 파서 일군 밭. 잡풀이 적고 많이 거둔다." : "땅을 일구지 않고 씨만 묻었다 — 잡풀이 덮어 덜 거둔다.";
+        var facts = new List<(string, string)>
+        {
+            ("지금", stage),
+            ("잡풀", q.Wild ? "들풀 속에 났다" : !q.Tilled ? $"{q.Weeds} — 일구지 않은 땅이라 금세 덮인다" : q.Weeds >= 50 ? $"많다({q.Weeds}) — 김을 매야 한다" : $"{q.Weeds}"),
+            ("짐승", q.Damage > 0 ? $"뜯어 먹혔다({q.Damage}%)" : "멀쩡하다"),
+            ("이 땅", $"자라기 좋은 정도 {q.Grow}/100 — 익는 데 약 {Wtw.Sim.People.PeopleSim.GrowDays(q.Grow)}일(기온 · 비 · 흙으로)"),
+        };
+        facts.Add(("까닭", why));
+        return new TileReport(kind + (crop.Length > 0 ? $" — {crop}" : ""), stage, why, facts);
     }
 
     private void OnTileClicked(int cell, int x, int y)
@@ -448,7 +507,7 @@ public partial class Main : Node
         var m = _province.MapOf(cell);
         if (p is null || m is null) return;
         CloseCard();
-        _panel.ShowTile(PaintingReport(cell, x, y) ?? TileDescriber.Describe(p, m, x, y));
+        _panel.ShowTile(PaintingReport(cell, x, y) ?? PlotReport(cell, x, y) ?? TileDescriber.Describe(p, m, x, y));
     }
 
     /// <summary>(E5b) 짐승 무리의 작은 카드: 종 · 마릿수 · 하는 일 · 왜 · 크기 · 사나움 · 나오는 것 · 이 땅에 몇 마리(살 수 있는 수).</summary>
@@ -470,6 +529,7 @@ public partial class Main : Node
             Wtw.Sim.People.HerdState.Rest => "쉬는 중",
             Wtw.Sim.People.HerdState.Follow => $"{NameOf(h.Owner)} 곁을 따라다니는 중",
             Wtw.Sim.People.HerdState.Stalk => h.TargetKind == 1 ? $"{NameOf(h.Target)} 쪽으로 몰래 다가가는 중" : "사냥감을 쫓는 중",
+            _ when h.TargetKind == 3 => "사람이 심은 밭으로 가 뜯어 먹는 중",
             _ => a.Predator ? "어슬렁거리는 중" : a.Flies ? "땅을 쪼며 옮겨 가는 중" : "풀을 뜯으며 옮겨 가는 중",
         };
         string why = h.State switch
@@ -478,6 +538,7 @@ public partial class Main : Node
             Wtw.Sim.People.HerdState.Sleep => "밤이라서 — 해가 뜨면 다시 풀을 뜯는다",
             Wtw.Sim.People.HerdState.Follow => $"어미를 잃고 사람 곁에 남았다 — 친해진 정도 {h.Bond}/100 (친해지면 사냥을 조금 돕고, 곁의 사람을 포식자가 덜 노린다)",
             Wtw.Sim.People.HerdState.Stalk => h.TargetKind == 1 ? "배가 고파서 — 혼자 자는 사람 · 어른 없이 있는 아이를 노린다(불이 타면 다가오지 않는다)" : "배가 고파서 — 잡을 수 있는 짐승을 노린다",
+            _ when h.TargetKind == 3 => "자라는 밭 곁에 지키는 사람도 불도 없어서 — 사람이 가까이 오면 달아난다",
             _ => a.Predator ? "배가 부르다 — 배가 고파지면 사냥한다" : "배를 채우며 사는 곳 둘레를 돈다",
         } + (hunters > 0 ? $" · 사냥꾼 {hunters}명이 노리고 있다" : "");
         int here = 0; foreach (var q in herds) if (q.Species == h.Species && q.Owner < 0) here += q.Count;

@@ -143,8 +143,8 @@ public class ProvinceTests : IClassFixture<ProvinceFixture>
     {
         var pins = new (string Kind, int Cell, ulong Fp)[]
         {
-            ("forest", 179, 0xA89BB5F4755512B0UL), ("river", 399, 0xBAECA3BECFA5CCDEUL),
-            ("coast", 40, 0xCB1A930AE967AA2AUL), ("pentagon", 1, 0x7F60FB1A649D48DEUL), // E3b: 작은 물(개울 · 샘 · 웅덩이)로 일부러 바뀜
+            ("forest", 179, 0x418EE2DD498081E2UL), ("river", 399, 0xDD323C7559515D30UL),
+            ("coast", 40, 0x10490B9E998B9D99UL), ("pentagon", 1, 0x7F60FB1A649D48DEUL), // E3b: 작은 물(개울 · 샘 · 웅덩이)로 일부러 바뀜 · E5c: 씨를 맺는 들풀 셋(낟알 풀 · 들콩 · 덩이뿌리)이 더해져 바뀜
         };
         foreach (var (kind, _, _) in pins)
             _out.WriteLine($"{kind} {Find(kind)} 0x{ProvinceGenerator.Generate(_p, Find(kind)).Fingerprint:X16}UL");

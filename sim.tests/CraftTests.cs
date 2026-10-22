@@ -35,7 +35,7 @@ public class CraftTests
     [Fact]
     public void DataIsComplete()
     {
-        Assert.InRange(C.Catalog.Items.Count(i => i.Kind is "made" or "place"), 40, 50); // (E5b) 고기 · 가죽 · 옷 · 창 · 바늘 11개를 더함
+        Assert.InRange(C.Catalog.Items.Count(i => i.Kind is "made" or "place"), 40, 60); // (E5b) 고기 · 가죽 · 옷 · 창 · 바늘 11개를 더함 · (E5c) 볶은 낟알 · 가루 · 빵 · 괭이 · 밭 8개
         Assert.True(C.Properties.Count >= 22);
         foreach (var id in new[] { "strike", "break", "grind", "cut", "tear", "twist", "weave", "shape", "dry", "roast", "burn", "melt", "mix", "soak", "boil", "bury" })
             Assert.True(A(id) >= 0, id);

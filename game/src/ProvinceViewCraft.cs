@@ -21,6 +21,7 @@ public partial class ProvinceView
     private void ReadyCraft()
     {
         _addMat = new CanvasItemMaterial { BlendMode = CanvasItemMaterial.BlendModeEnum.Add };
+        ReadyFarm(); // (E5c) 밭은 땅의 물건보다 먼저(같은 층에서 밑에) 그린다
         _itemRoot = new Node2D { ZIndex = 2 };
         AddChild(_itemRoot);
         _glowRoot = new Node2D { ZIndex = 2 };
@@ -89,6 +90,7 @@ public partial class ProvinceView
                     s.Visible = true;
                 }
         }
+        UpdateFarm(snap);
         for (int k = np; k < _paintSprites.Count; k++) _paintSprites[k].Visible = false;
         for (int k = nf; k < _fireSprites.Count; k++) _fireSprites[k].Visible = false;
         for (int k = ng; k < _glowSprites.Count; k++) _glowSprites[k].Visible = false;
@@ -101,6 +103,7 @@ public partial class ProvinceView
         foreach (var s in _glowSprites) s.Visible = false;
         foreach (var s in _itemSprites) s.Visible = false;
         foreach (var s in _paintSprites) s.Visible = false;
+        HideFarm();
     }
 
     private static Vector2 TileWorld(Shown sh, int tile)

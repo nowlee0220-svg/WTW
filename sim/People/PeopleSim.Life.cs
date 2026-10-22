@@ -219,7 +219,7 @@ public sealed partial class PeopleSim
         }
         if (Now / GameTime.TicksPerDay % GameTime.DaysPerYear == 0) LanguageYear();
         NameLands();
-        foreach (var (cell, life) in Provinces.ToList()) { FiresDaily(cell, life); AnimalsDaily(life); RotGround(life, Rng(cell)); }
+        foreach (var (cell, life) in Provinces.ToList()) { FiresDaily(cell, life); AnimalsDaily(life); RotGround(life, Rng(cell)); FarmDaily(cell, life); }
         CheckLostDiscoveries();
         GroupKnowledgeDaily();
         SleepEmptyProvinces();
@@ -231,8 +231,9 @@ public sealed partial class PeopleSim
     {
         if (woman.Conceived >= 0 || man.Dead || man.Cell != woman.Cell) return;
         int wa = woman.AgeYears(Now), ma = man.AgeYears(Now);
-        if (wa < 16 || wa > 45 || ma < 16 || woman.Malnutrition > 20_000 || woman.IllUntil > Now) return;
+        if (wa < 16 || wa > 45 || ma < 16 || woman.IllUntil > Now) return;
         if (CapUsed(woman) >= _w.Config.PeopleCap) return; // 상한(안전장치)
+        if (woman.Malnutrition > 20_000) { St.ConceiveHungry++; return; }
         int ch = 50; // 1,000 분의 (한 밤)
         foreach (int cid in woman.Children)
             if (Get(cid) is { } c && c.Cell == woman.Cell && c.AgeTicks(Now) < GameTime.TicksPerYear * 3 / 2 && !c.Dead) { ch /= 3; break; } // (S1) 젖먹이는 늘 같은 지방에 안겨 있다

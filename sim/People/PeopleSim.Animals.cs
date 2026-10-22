@@ -144,6 +144,8 @@ public sealed partial class PeopleSim
         }
         bool night = life.IsNight(Now);
         if (a.Predator && Now - h.LastMeal > a.HuntDays * GameTime.TicksPerDay && (night || rng.NextInt(100) < 40) && TryStalk(life, h, a, rng)) return;
+        // (E5c) 지키는 사람이 없는 자라는 밭이 가까우면 뜯어 먹으러 간다
+        if (!a.Predator && life.Plots.Count > 0 && !night && HerdToField(life, h, a, rng)) return;
         // (E5b 고침) 둘레 20타일 안에 아무도 없는 풀 뜯는 무리는 그 자리에서 풀을 뜯으며 오래 머문다(걷기 · 길 보기 없이 — 계산을 덜)
         if (!a.Predator && nearest > 20 && !night)
         {

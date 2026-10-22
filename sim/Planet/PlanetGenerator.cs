@@ -27,9 +27,12 @@ public static class PlanetGenerator
     private const int OrientationCandidates = 3000;
     private static readonly int[] OrientationLands = { 2_000, 8_000, 16_000, 24_000 };
 
+    /// <summary>(E5c 측정) 측정 도구만: 땅 50칸부터 — 땅이 다 차는 작은 행성에서 굶주린 세계를 재려고. 게임 화면 · 저장 파일은 여전히 1,000칸부터.</summary>
+    public static bool AllowTinyForBench;
+
     public static Planet Generate(ulong seed, PlanetSettings settings, Action<double, string>? progress = null)
     {
-        if (settings.LandCells < PlanetSettings.MinLand || settings.LandCells > PlanetSettings.MaxLand)
+        if ((settings.LandCells < PlanetSettings.MinLand && !(AllowTinyForBench && settings.LandCells >= 50)) || settings.LandCells > PlanetSettings.MaxLand)
             throw new ArgumentOutOfRangeException(nameof(settings), $"땅 칸 수는 {PlanetSettings.MinLand:N0} ~ {PlanetSettings.MaxLand:N0}");
         var sw = Stopwatch.StartNew();
         progress?.Invoke(0.02, "격자 준비");

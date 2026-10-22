@@ -18,7 +18,8 @@ public static class EventLevels
     public static int Of(WorldEventKind k) => k switch
     {
         WorldEventKind.Discovery or WorldEventKind.DiscoveryLost or WorldEventKind.Language or WorldEventKind.HuntFirst => World,
-        WorldEventKind.DiscoveryGroup or WorldEventKind.Rediscovered or WorldEventKind.Moved or WorldEventKind.LandNamed or WorldEventKind.HuntGroup => Group,
+        WorldEventKind.DiscoveryGroup or WorldEventKind.Rediscovered or WorldEventKind.Moved or WorldEventKind.LandNamed or WorldEventKind.HuntGroup
+            or WorldEventKind.BadHarvest or WorldEventKind.SeedsEaten or WorldEventKind.HarvestFirst => Group, // (E5c) 흉년 · 씨앗까지 먹음 · 무리에서 처음 거둠
         // (E5 고침) 무리 단위 끊김 · 되찾음은 ★(그 지방을 볼 때만) — [지식의 행방] 창에는 다 남는다
         _ => Person,
     };
@@ -43,6 +44,10 @@ public static class EventLevels
         WorldEventKind.HuntGroup => "무리에서 처음 잡은 큰 짐승",
         WorldEventKind.BeastAttack => "짐승에게 덮쳐짐",
         WorldEventKind.Tamed => "따라다니는 새끼 짐승",
+        WorldEventKind.BadHarvest => "흉년",
+        WorldEventKind.SeedsEaten => "씨앗까지 먹어 버림",
+        WorldEventKind.HarvestFirst => "무리에서 처음 거둠",
+        WorldEventKind.FieldEaten => "짐승이 밭을 먹음",
         _ => k.ToString(),
     };
 }
@@ -119,6 +124,24 @@ public static class SkipGoals
     public static SkipGoal BigHunt() => new KindsGoal(new[] { WorldEventKind.HuntFirst, WorldEventKind.HuntGroup }, "큰 짐승을 처음 잡을 때까지");
     public static SkipGoal BeastAttack() => new EventGoal(WorldEventKind.BeastAttack, "짐승에게 덮쳐질 때까지");
     public static SkipGoal Tamed() => new EventGoal(WorldEventKind.Tamed, "새끼 짐승이 사람을 따를 때까지");
+    /// <summary>(E5c) 어느 무리든 처음 씨를 묻을 때 · 처음 밭을 일굴 때 · 흉년 · 씨앗까지 먹어 버릴 때.</summary>
+    public static SkipGoal FirstSow() => new GroupDiscoveryGoal("sown_patch", "어느 무리든 처음 씨를 묻을 때까지");
+    public static SkipGoal FirstField() => new GroupDiscoveryGoal("field", "어느 무리든 처음 밭을 일굴 때까지");
+    public static SkipGoal BadHarvest() => new EventGoal(WorldEventKind.BadHarvest, "흉년(거둠이 반 아래)이 들 때까지");
+    public static SkipGoal SeedsEaten() => new EventGoal(WorldEventKind.SeedsEaten, "씨앗까지 먹어 버릴 때까지");
+
+    private sealed class GroupDiscoveryGoal(string itemId, string name) : SkipGoal
+    {
+        public override string Name => name;
+        public override bool Reached(GameWorld w, IReadOnlyList<WorldEvent> events)
+        {
+            var c = w.People.Craft;
+            foreach (var e in events)
+                if (e.Kind is WorldEventKind.Discovery or WorldEventKind.DiscoveryGroup or WorldEventKind.Rediscovered
+                    && (uint)e.Other < c.Rules.Count && c.Catalog.Items[c.Rules[e.Other].Result].Id == itemId) return true;
+            return false;
+        }
+    }
 
     private sealed class TimeGoal(int years) : SkipGoal
     {
@@ -247,14 +270,24 @@ public sealed class SkipRun
         int deadAll = 0; foreach (var p in w.People.All) if (p.Dead) deadAll++;
         // (E5) 사람 목록의 "지금까지 죽은 사람"과 헷갈리지 않게 — 넘기는 동안의 수와 지금까지의 수를 함께
         lines.Add($"인구 {_startPop}명 → {w.People.AliveCount}명 — 넘기는 동안 태어남 {births} · 죽음 {deaths} (세계에서 지금까지 죽은 사람 모두 {deadAll}명)");
-        foreach (var k in new[] { WorldEventKind.Discovery, WorldEventKind.Rediscovered, WorldEventKind.DiscoveryLost, WorldEventKind.Language, WorldEventKind.GroupLost, WorldEventKind.GroupRefound, WorldEventKind.Moved, WorldEventKind.LandNamed, WorldEventKind.DiscoveryGroup, WorldEventKind.HuntFirst, WorldEventKind.HuntGroup, WorldEventKind.BeastAttack, WorldEventKind.Tamed })
+        foreach (var k in new[] { WorldEventKind.Discovery, WorldEventKind.Rediscovered, WorldEventKind.DiscoveryLost, WorldEventKind.Language, WorldEventKind.GroupLost, WorldEventKind.GroupRefound, WorldEventKind.Moved, WorldEventKind.LandNamed, WorldEventKind.DiscoveryGroup, WorldEventKind.HuntFirst, WorldEventKind.HuntGroup, WorldEventKind.BeastAttack, WorldEventKind.Tamed,
+            WorldEventKind.HarvestFirst, WorldEventKind.BadHarvest, WorldEventKind.SeedsEaten })
         {
             var es = _all.Where(e => e.Kind == k).ToList();
             if (es.Count == 0) continue;
             lines.Add($"{EventLevels.Stars(EventLevels.Of(k))} {EventLevels.KindName(k)} {es.Count}번");
             if (EventLevels.Of(k) >= EventLevels.Group)
-                foreach (var e in es.Take(k is WorldEventKind.DiscoveryGroup or WorldEventKind.HuntGroup ? 3 : 6)) lines.Add($"   · {GameTime.Format(e.Tick)} — {e.Text}");
+                foreach (var e in es.Take(k is WorldEventKind.DiscoveryGroup or WorldEventKind.HuntGroup or WorldEventKind.HarvestFirst or WorldEventKind.BadHarvest ? 3 : 6)) lines.Add($"   · {GameTime.Format(e.Tick)} — {e.Text}");
         }
+        // (E5c) 밭: 지금 깨어 있는 지방의 밭 · 모아 둔 것
+        int tilled = 0, patches = 0, groups = 0, food = 0, seeds = 0;
+        foreach (var (_, life) in w.People.Provinces)
+        {
+            var fc = w.People.FarmCounts(life);
+            tilled += fc.Tilled; patches += fc.Patches; food += fc.StashFood; seeds += fc.StashSeeds;
+            if (fc.Tilled + fc.Patches > 0) groups++;
+        }
+        if (tilled + patches > 0) lines.Add($"밭: {groups}무리 · 일군 밭 {tilled}칸 · 씨를 묻은 자리 {patches}곳 · 모아 둔 먹을 것 {food} · 씨 {seeds}");
         return lines;
     }
 

@@ -224,6 +224,29 @@ public static partial class Art
                 }
                 break;
             }
+            // (E5c) 씨 · 낟알로 만든 것 · 괭이
+            case "grain": case "roasted_grain": case "flour":
+            {
+                var c = id switch { "grain" => C(214, 180, 96), "roasted_grain" => C(164, 112, 52), _ => C(238, 230, 210) };
+                if (id == "flour") { s.Ellipse(24, 32, 15, 8, ink); s.Ellipse(24, 31, 13.5f, 6.5f, c, 1); break; }
+                for (int k = 0; k < 7; k++) { float x = 14 + (k % 4) * 6 + (k / 4) * 3, y = 24 + (k / 4) * 7; s.Ellipse(x, y, 4, 2.6f, ink, 0, 0.5f); s.Ellipse(x, y, 3, 1.8f, c, 0.6f, 0.5f); }
+                break;
+            }
+            case "beans": case "cooked_beans":
+                for (int k = 0; k < 5; k++) { float x = 14 + k * 5, y = 28 + (k % 2) * 4; s.Ellipse(x, y, 4.4f, 3.2f, ink); s.Ellipse(x, y, 3.4f, 2.4f, id == "beans" ? C(150, 110, 70) : C(120, 80, 50), 0.8f); }
+                break;
+            case "tuber": case "roasted_tuber":
+                s.Ellipse(24, 28, 14, 9, ink, 0, 0.3f); s.Ellipse(24, 28, 12.5f, 7.5f, id == "tuber" ? C(160, 110, 80) : C(120, 72, 40), 1.2f, 0.3f);
+                s.Circle(18, 26, 1.5f, C(90, 60, 40)); s.Circle(28, 30, 1.5f, C(90, 60, 40));
+                break;
+            case "flatbread":
+                s.Ellipse(24, 28, 16, 9, ink); s.Ellipse(24, 28, 14.5f, 7.5f, C(214, 170, 110), 1.2f);
+                for (int k = 0; k < 4; k++) s.Circle(16 + k * 5, 27 + (k % 2) * 2, 1.6f, C(150, 100, 50));
+                break;
+            case "stone_hoe":
+                s.Line(12, 42, 30, 10, 5, ink); s.Line(12, 42, 30, 10, 3.4f, wood);
+                s.Polygon(new[] { new Vector2(26, 8), new Vector2(40, 12), new Vector2(38, 20), new Vector2(28, 16) }, C(120, 116, 110), 1.2f);
+                break;
             default:
                 // 자원: 둥근 돌 · 열매
                 s.Ellipse(24, 28, 11, 9, ink);

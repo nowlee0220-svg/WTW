@@ -7,7 +7,8 @@
     "cluster: 소금 바닥처럼 몇 군데에 뭉쳐 난다 — 뭉치 수 = 자원 단계 × cluster.count, 뭉치 하나 = cluster.size 타일 안팎.",
     "rocks: 그 타일의 바위 종류(rocks.json)마다 곱하는 값(없으면 1, \"*\" = 나머지). volcano: true 면 화산 칸 · 화산과 맞닿은 둘레에만 난다.",
     "resource_floor: 행성 자원이 없음이어도 이만큼은 난다(0~1, 평야에도 잔돌 · 부싯돌이 조금씩 — 석기 시대의 시작).",
-    "바위 · 광맥은 오브젝트가 아니라 타일이다(rocks.json). kind: 그리는 순서·쓰임 분류(tree 나무 · bush 덤불 · plant 풀 · rock 돌 · ground 바닥). art: 그림 이름(game/src/Art.cs)."
+    "바위 · 광맥은 오브젝트가 아니라 타일이다(rocks.json). kind: 그리는 순서·쓰임 분류(tree 나무 · bush 덤불 · plant 풀 · rock 돌 · ground 바닥). art: 그림 이름(game/src/Art.cs).",
+    "(E5c) 씨를 맺는 들풀 셋(낟알 풀 · 들콩 덩굴 · 덩이뿌리 풀) — 땅마다 다르다. 씨는 줍거나(gather) 캐서(dig) 얻는다."
   ],
   "actions": [
     { "id": "pick",   "name": "따기" },
@@ -101,6 +102,15 @@
     { "id": "salt_crust", "name": "소금 바닥", "kind": "ground", "art": "salt", "resource": "salt", "density": 0,
       "biomes": { "*": 1 }, "grounds": { "sand": 1, "soil": 0.6, "mud": 0.6, "rock": 0.3 },
       "cluster": { "count": 3, "size": 8 },
-      "uses": [ { "action": "scrape", "yields": ["salt"] } ] }
+      "uses": [ { "action": "scrape", "yields": ["salt"] } ] },
+    { "id": "wild_grain", "name": "낟알 풀", "kind": "plant", "art": "grass_grain", "density": 0.03,
+      "biomes": { "grassland": 1, "savanna": 0.7, "temperate": 0.4, "wetland": 0.2, "alpine": 0.1 }, "grounds": { "grass": 1, "soil": 0.6 },
+      "uses": [ { "action": "gather", "yields": ["grain"] }, { "action": "cut", "yields": ["grass"] } ] },
+    { "id": "wild_beans", "name": "들콩 덩굴", "kind": "plant", "art": "beans", "density": 0.015,
+      "biomes": { "temperate": 1, "grassland": 0.5, "wetland": 0.4, "rainforest": 0.3, "savanna": 0.3 }, "grounds": { "grass": 1, "soil": 1 },
+      "uses": [ { "action": "gather", "yields": ["beans"] } ] },
+    { "id": "wild_tuber", "name": "덩이뿌리 풀", "kind": "plant", "art": "tuber", "density": 0.015,
+      "biomes": { "rainforest": 1, "savanna": 0.6, "wetland": 0.5, "temperate": 0.2 }, "grounds": { "soil": 1, "grass": 0.7, "mud": 0.5 },
+      "uses": [ { "action": "dig", "yields": ["tuber"] } ] }
   ]
 }

@@ -73,6 +73,11 @@ public sealed class WorldSnapshot
     public Dictionary<int, AnimalView[]> Animals = new();
     /// <summary>깨어 있는 지방마다 종별로 살 수 있는 마릿수 · 물고기 몫 · 물고기 한도.</summary>
     public Dictionary<int, (int[] Caps, int Fish, int FishCap)> AnimalLand = new();
+    // ── (E5c) 농사 ──
+    /// <summary>깨어 있는 지방의 밭 · 심은 자리(칸 → 밭들, 타일 순) · 모아 둔 자리(칸 → 타일). 밭이 바뀌거나 한 시간이 지나면 새로.</summary>
+    public Dictionary<int, PlotView[]> Plots = new();
+    public Dictionary<int, int> Stashes = new();
+    private long _plotSig = -1;
 
     public PaintingView? PaintingById(int id) { foreach (var (_, l) in Paintings) foreach (var g in l) if (g.Id == id) return g; return null; }
 
@@ -208,6 +213,7 @@ public sealed class WorldSnapshot
         CellLanguages = cl.ToArray();
         FillCraft(w);
         FillAnimals(w);
+        FillFarm(w);
         long sig = live.Count;
         foreach (var (id, n) in live) if (ps.Languages.TryGetValue(id, out var l)) sig = sig * 1_000_003 + id * 7919 + l.Version * 31 + n;
         if (sig != _langSig)
@@ -248,6 +254,31 @@ public sealed class WorldSnapshot
             foreach (var (_, h) in life.Herds) arr[k++].Fill(h);
             if (!AnimalLand.TryGetValue(cell, out var land) || land.Caps != life.AnimalCap || land.Fish != life.FishStock) AnimalLand[cell] = (life.AnimalCap, life.FishStock, life.FishCap);
         }
+    }
+
+    private void FillFarm(GameWorld w)
+    {
+        var ps = w.People;
+        long sig = w.Now / Time.GameTime.TicksPerHour;
+        foreach (var (cell, life) in ps.Provinces) sig = sig * 31 + cell * 7 + life.FarmVersion * 13 + life.Stash;
+        if (sig == _plotSig) return;
+        _plotSig = sig;
+        var plots = new Dictionary<int, PlotView[]>();
+        var stashes = new Dictionary<int, int>();
+        foreach (var (cell, life) in ps.Provinces)
+        {
+            if (life.Stash >= 0) stashes[cell] = life.Stash;
+            if (life.Plots.Count == 0) continue;
+            var arr = new PlotView[life.Plots.Count];
+            int k = 0;
+            foreach (var (t, q) in life.Plots)
+            {
+                float prog = q.Due > q.Stamp ? Math.Clamp((float)(w.Now - q.Stamp) / (q.Due - q.Stamp), 0, 1) : 0;
+                arr[k++] = new PlotView(t, q.Stage, q.Tilled, q.Wild, q.Crop, q.Damage, ps.WeedsOf(q, w.Now), prog, ps.GrowAt(life, t));
+            }
+            plots[cell] = arr;
+        }
+        Plots = plots; Stashes = stashes;
     }
 
     private void FillCraft(GameWorld w)
@@ -357,6 +388,9 @@ public sealed class WorldSnapshot
 }
 
 /// <summary>(E4) 땅 위의 불 하나(화면용): 타일 · 종류(1 모닥불 · 2 돌 화덕) · 켜졌나 · 남은 시간 · 숯을 넣었나.</summary>
+/// <summary>(E5c) 화면용 밭 한 칸: 단계 · 일군 땅인가 · 저절로 났나 · 자라는 것 · 짐승이 먹은 정도 · 잡풀 · 이 단계에서 얼마나 지났나(0~1) · 자라기 좋은 정도.</summary>
+public readonly record struct PlotView(int Tile, Wtw.Sim.People.PlotStage Stage, bool Tilled, bool Wild, int Crop, int Damage, int Weeds, float Progress, int Grow);
+
 public readonly record struct FireView(int Tile, byte Kind, bool Lit, float HoursLeft, bool Charcoal);
 
 /// <summary>(E4) 발견 목록 한 줄(화면용). (E5) 지식의 행방: 아는 사람(무리 · 아는 정도) · 칸마다 아는 사람 수 · 남은 그림 · 역사 · 아는 무리 수 · 끊긴 무리 수 · 낱말의 출처 · 다른 말의 낱말.</summary>
@@ -444,6 +478,8 @@ public sealed class PersonView
     public string Say = "", SayMeaning = "";
     public LifeStage Stage;
     public Act Act;
+    /// <summary>(E5c) 그 일을 하는 까닭(화면이 밭일 종류를 가리는 데).</summary>
+    public Why Why;
     public Appearance Look;
     public int MotionCount;
     public readonly Motion[] Motions = { new(), new(), new(), new() }; // k = 0 이 가장 최근
@@ -455,7 +491,7 @@ public sealed class PersonView
         Dead = p.Dead; Female = p.Female; Asleep = p.Asleep; Walking = p.Walking; Eaten = p.Eaten;
         long at = p.Dead ? p.DeathTick : now;
         AgeYears = p.AgeYears(at); Stage = p.Stage(at);
-        Act = p.Act; Look = p.Look;
+        Act = p.Act; Look = p.Look; Why = p.Why;
         Breaking = p.Act is Act.BreakArgue or Act.BreakLeave or Act.BreakWander;
         Talking = (p.Act == Act.Talk || p.Act == Act.BreakArgue) && !p.Walking;
         MotionCount = p.MotionCount;
@@ -474,7 +510,13 @@ public sealed class PersonView
             int v = craft.Prop(item, craft.P_holds);
             if (v > bv) { bv = v; Vessel = item; }
         }
-        Working = !p.Walking && p.Act is Act.Experiment or Act.Craft or Act.Mine or Act.Cook or Act.TendFire;
+        // (E5c) 밭일 중에는 땅 파는 것(괭이 · 뾰족한 막대)을 든다
+        if (p.Act == Act.Farm)
+        {
+            int digs = craft.PropIndex("digs"), bd = 0;
+            foreach (var (item, _) in p.Carry) { int d = craft.Prop(item, digs); if (d > bd) { bd = d; Tool = item; } }
+        }
+        Working = !p.Walking && p.Act is Act.Experiment or Act.Craft or Act.Mine or Act.Cook or Act.TendFire or Act.Farm;
         Teaching = !p.Walking && p.Act == Act.Teach; Learning = p.Act == Act.Learn; Studying = !p.Walking && p.Act == Act.Study;
         Painting = !p.Walking && p.Act is Act.Experiment or Act.Craft && p.PlanAction == Data.CraftData.Default.ActionIndex("draw");
         Nickname = p.Nickname;

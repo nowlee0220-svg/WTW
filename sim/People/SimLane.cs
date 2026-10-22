@@ -41,7 +41,9 @@ internal sealed class SimLane
 /// </summary>
 public sealed class PendingOp
 {
-    public enum Kinds : byte { Notify = 1, Learned = 2, Partial = 3, Painting = 4, History = 5, Hunt = 6 }
+    public enum Kinds : byte { Notify = 1, Learned = 2, Partial = 3, Painting = 4, History = 5, Hunt = 6,
+        /// <summary>(E5c) A = 1 무리에서 처음 거둠 · 2 씨앗까지 먹음.</summary>
+        Farm = 7 }
     public Kinds Kind;
     public long Tick;
     public int Cell;
