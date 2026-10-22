@@ -35,7 +35,7 @@ public static class SceneBench
             File.WriteAllLines(Path.Combine(outDir, "index.txt"), index);
             return;
         }
-        if (onlyArtisan) index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("last-artisan")));
+        if (onlyArtisan) index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("last-artisan") && !l.StartsWith("first-pot")));
         if (onlyCopper)
         {
             index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("copper-village")));
@@ -74,8 +74,12 @@ public static class SceneBench
         if (!onlyArtisan) {
         long fire = FirstTick("campfire", 200); // (E5c 고침) 장면 시드에서 첫 불이 100년 뒤로 밀려 200년까지 찾는다
         if (fire > 0) Save("first-fire.wtw", "첫 불 직전", "따뜻한 숲의 세 가족 — 이틀 뒤에 누군가 처음으로 모닥불을 피운다. 1배속으로 지켜보세요", fire - 2 * GameTime.TicksPerDay);
-        long pot = FirstTick("pot", 150);
+        }
+        { // (E6) 토기가 150년 뒤로 밀려 200년까지 찾는다(--artisan 으로도 다시 만든다)
+        long pot = FirstTick("pot", 200);
         if (pot > 0) Save("first-pot.wtw", "첫 토기 직전", "이틀 뒤에 누군가 처음으로 진흙 그릇을 불에 구워 토기를 만든다", pot - 2 * GameTime.TicksPerDay);
+        }
+        if (!onlyArtisan) {
         Save("village-50y.wtw", "50년 뒤 마을", "세 가족이 50년을 산 뒤의 마을 — 가르치고 · 배우는 모습. [지식의 행방] 창과 카드의 [지식]을 보세요", 50 * GameTime.TicksPerYear);
         }
         if (!onlyArtisan) CopperScene(outDir, seed, index);
@@ -99,7 +103,7 @@ public static class SceneBench
                     var knowers = w.People.All.Where(q => !q.Dead && q.Knows(rule)).ToList();
                     if (knowers.Count == 0 || knowers.Count > 3) continue;
                     int young = knowers.Min(q => q.AgeYears(w.Now));
-                    if (young < 40) continue;
+                    if (young < 35) continue; // (E6) 40살로는 200년 안에 찾지 못해 35살로
                     int score = young - knowers.Count * 8;
                     if (score <= bestScore) continue;
                     var oldest = knowers.OrderByDescending(q => q.AgeYears(w.Now)).First();
