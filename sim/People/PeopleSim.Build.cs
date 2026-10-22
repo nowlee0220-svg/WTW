@@ -216,13 +216,13 @@ public sealed partial class PeopleSim
             {
                 int t = y * S + x;
                 if (!life.Walk[t] || life.Region[t] != reg || HexFrame.BorderDistance(t) < 4 || GroundInfo.IsWater(life.Map.Ground[t]) || life.Shelter[t] == 3) return false;
-                if (life.PlotAt[t] is not null || life.Fires.ContainsKey(t) || t == life.Stash || life.HasItems(t) || life.BuildingAt[t] != 0 || !life.Clearable(t)) return false;
+                if (life.PlotAt[t] is not null || life.Fires.ContainsKey(t) || t == life.Stash || life.HasItems(t) || life.BuildingAt(t) != 0 || !life.Clearable(t)) return false;
                 if (life.IsVolcanoFire(t)) return false;
             }
         if (d.IsShelter || d.IsBench)
             for (int y = ay - 1; y <= ay + d.H; y++)
                 for (int x = ax - 1; x <= ax + d.W; x++)
-                    if ((uint)x < S && (uint)y < S && life.BuildingAt[y * S + x] != 0) return false;
+                    if ((uint)x < S && (uint)y < S && life.BuildingAt(y * S + x) != 0) return false;
         return true;
     }
 
@@ -249,6 +249,8 @@ public sealed partial class PeopleSim
         /// <summary>묻히지 않은 시신(번호 순).</summary>
         public readonly List<Person> Bodies = new();
         public int NonGraveSites;
+        /// <summary>(E6 속도) 종류마다 건물(번호 순) — 무덤이 쌓여도 움집 · 작업대 찾기가 모든 건물을 훑지 않게.</summary>
+        public readonly List<Building>[] OfKind = Enumerable.Range(0, 16).Select(_ => new List<Building>()).ToArray();
     }
 
     private BuildView BViewOf(ProvinceLife life)
@@ -257,8 +259,10 @@ public sealed partial class PeopleSim
         if (v.Version == life.BuildVersion) return v;
         v.Version = life.BuildVersion;
         v.Sites.Clear(); v.Worn.Clear(); v.Bodies.Clear(); Array.Clear(v.Done); Array.Clear(v.Started); v.NonGraveSites = 0;
+        foreach (var l in v.OfKind) l.Clear();
         foreach (var (_, b) in life.Buildings)
         {
+            if (b.Kind < v.OfKind.Length) v.OfKind[b.Kind].Add(b);
             if (b.Kind < v.Done.Length) { v.Started[b.Kind]++; if (b.Done) v.Done[b.Kind]++; }
             if (!b.Done) { v.Sites.Add(b); if (BDef(b).Grave == 0) v.NonGraveSites++; }
             else if (BDef(b).DecayDays > 0 && Condition(b, Now) < WornCond) v.Worn.Add(b);
@@ -355,7 +359,7 @@ public sealed partial class PeopleSim
 
     private Building? GraveSiteOf(ProvinceLife life, int person)
     {
-        foreach (var (_, b) in life.Buildings) if (b.Person == person) return b;
+        foreach (var b in BViewOf(life).Sites) if (b.Person == person) return b; // 다 지은 무덤의 시신은 이미 묻혔다
         return null;
     }
 
@@ -405,7 +409,7 @@ public sealed partial class PeopleSim
     {
         if (life.Buildings.Count == 0) return null;
         Building? best = null;
-        foreach (var (_, b) in life.Buildings)
+        foreach (var b in BViewOf(life).OfKind[B_hut])
         {
             if (b.Kind != B_hut || b.Owner < 0) continue;
             if (b.Owner == p.Id || b.Owner == p.Partner || (p.Stage(Now) <= LifeStage.Child || p.Partner < 0) && (b.Owner == p.Mother || b.Owner == p.Father)
@@ -640,7 +644,7 @@ public sealed partial class PeopleSim
     /// <summary>돌 화덕을 쌓았다: 그 불 자리가 무리의 불자리(건물 — 누가 · 언제 · 품질, 낡으면 돌이 무너져 맨불 자리로).</summary>
     private void FirePitAt(Person p, ProvinceLife life, int ft)
     {
-        if (life.BuildingAt[ft] != 0) return;
+        if (life.BuildingAt(ft) != 0) return;
         var d = Builds.Buildings[B_firePit];
         var rng = Rng(p.Cell);
         int score = p.SkillLevel(PeopleData.Building) * 8 + (Ability(p, PeopleData.Dex) - 5) * 3 + rng.NextInt(50);
@@ -660,11 +664,14 @@ public sealed partial class PeopleSim
     /// 잘 곳: 우리 집안의 움집(다 지은 것) 안 → 추운 밤이면 바람막이 곁(불 가까이면 더 좋다). 없으면 −1.
     /// 사람마다 다른 타일(번호로) — 여럿이 한 타일에 겹치지 않게.
     /// </summary>
+    /// <summary>(E6 속도) 집(움집)에 자러 가는 거리 — 처음엔 80타일: 밤마다 먼 집까지 오가는 길 찾기가 계산의 5% 를 먹었다.</summary>
+    private const int HomeRange = 30;
+
     private int ShelterSpot(Person p, ProvinceLife life, int here, bool coldNight, out Why why)
     {
         why = Why.None;
         if (life.Buildings.Count == 0) return -1;
-        if (HomeHut(p, life) is { Done: true } hut && life.Paths.Reachable(here, hut.Tile) && Cheb(hut.Tile, here) <= 80)
+        if (HomeHut(p, life) is { Done: true } hut && Cheb(hut.Tile, here) <= HomeRange && life.Paths.Reachable(here, hut.Tile))
         {
             var d = BDef(hut);
             int k = (int)(StableHash.Mix((ulong)p.Id) % (ulong)(d.W * d.H));
@@ -674,7 +681,7 @@ public sealed partial class PeopleSim
         }
         if (!coldNight) return -1;
         Building? wb = null; long bd = long.MaxValue;
-        foreach (var (_, b) in life.Buildings)
+        foreach (var b in BViewOf(life).OfKind[B_windbreak])
         {
             if (!b.Done || b.Kind != B_windbreak || Cheb(b.Tile, here) > 40 || !life.Paths.Reachable(here, b.Tile)) continue;
             long dd = ProvinceLife.D2(b.Tile, here % S, here / S);
@@ -880,11 +887,13 @@ public sealed partial class PeopleSim
     {
         if (life.Buildings.Count == 0 || Now - p.LastGraveLook < GameTime.TicksPerDay || p.Stage(Now) < LifeStage.Child) return;
         p.LastGraveLook = Now;
-        foreach (var (_, b) in life.Buildings)
-        {
-            if (!b.Done || b.Person < 0 || Cheb(b.Tile, here) > 5) continue;
-            if (Get(b.Person) is { } dead && CaresFor(p, dead)) { AddThought(p, H_remembered, dead.Id); return; }
-        }
+        var v = BViewOf(life);
+        foreach (int kind in new[] { B_grave, B_cairn })
+            foreach (var b in v.OfKind[kind])
+            {
+                if (!b.Done || b.Person < 0 || Cheb(b.Tile, here) > 5) continue;
+                if (Get(b.Person) is { } dead && CaresFor(p, dead)) { AddThought(p, H_remembered, dead.Id); return; }
+            }
     }
 
     // ───────── 작업대 ─────────
@@ -910,7 +919,7 @@ public sealed partial class PeopleSim
     {
         if (bench < 0 || life.Buildings.Count == 0) return null;
         Building? best = null; int bd = 13;
-        foreach (var (_, b) in life.Buildings)
+        foreach (var b in BViewOf(life).OfKind[bench])
         {
             if (!b.Done || b.Kind != bench || (b.User >= 0 && b.User != p.Id && b.UserUntil > Now)) continue;
             int d = Cheb(b.Tile, here);

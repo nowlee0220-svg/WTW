@@ -390,7 +390,7 @@ public sealed partial class PeopleSim
         p.SleptCold = false;
         p.SleepShelter = life.Shelter[tile];
         if (life.Warm is { } bw && bw[tile] >= 30 && p.SleepShelter < 2) p.SleepShelter = 2; // (E6) 움집 안 · 바람막이 곁도 그늘처럼 잘 잔다
-        if (life.BuildingAt[tile] != 0 && life.BuildingOn(tile) is { Done: true } sb) { if (sb.Kind == B_hut) St.SleptHome++; else if (sb.Kind == B_windbreak) St.SleptWindbreak++; }
+        if (life.BuildingAt(tile) != 0 && life.BuildingOn(tile) is { Done: true } sb) { if (sb.Kind == B_hut) St.SleptHome++; else if (sb.Kind == B_windbreak) St.SleptWindbreak++; }
         else if (life.Warm is { } bw2 && bw2[tile] > 0) St.SleptWindbreak++;
         p.Huddle = false;
         foreach (var q in life.People)

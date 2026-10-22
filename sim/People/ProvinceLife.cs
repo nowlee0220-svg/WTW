@@ -218,7 +218,8 @@ public sealed class ProvinceLife
     public int NextBuildingId = 1;
     public readonly SortedSet<(long Due, int Id)> BuildDue = new();
     /// <summary>(E6) 타일 → 그 타일을 차지한 건물 번호(0 = 없음) · 타일마다 건물이 주는 따뜻함(0.1°C, 밤 기준). 건물로 다시 만든다(저장 안 함).</summary>
-    public readonly int[] BuildingAt = new int[HexFrame.TileCount];
+    private int[]? _buildingAt; // (E6 속도) 건물이 처음 설 때 만든다 — 지방마다 9만 바이트를 미리 잡지 않게
+    public int BuildingAt(int tile) => _buildingAt is null ? 0 : _buildingAt[tile];
     public short[]? Warm;
     /// <summary>(E6) 건물이 바뀔 때마다 오른다(건물 일 찾기의 기억 · 화면 — 저장 안 함).</summary>
     public int BuildVersion;
@@ -230,7 +231,7 @@ public sealed class ProvinceLife
     /// <summary>(E6) 이 땅에 놓인 사연 있는 물건(번호 순 — 세계 목록으로 다시 만든다, 저장 안 함).</summary>
     public readonly SortedSet<int> NamedGround = new();
 
-    public Building? BuildingOn(int tile) => (uint)tile < HexFrame.TileCount && BuildingAt[tile] != 0 && Buildings.TryGetValue(BuildingAt[tile], out var b) ? b : null;
+    public Building? BuildingOn(int tile) => (uint)tile < HexFrame.TileCount && BuildingAt(tile) != 0 && Buildings.TryGetValue(_buildingAt![tile], out var b) ? b : null;
 
     public void SetBuildDue(Building b, long due)
     {
@@ -244,7 +245,7 @@ public sealed class ProvinceLife
     {
         Buildings[b.Id] = b;
         if (b.Id >= NextBuildingId) NextBuildingId = b.Id + 1;
-        for (int dy = 0; dy < h; dy++) for (int dx = 0; dx < w; dx++) { int t = b.Tile + dy * HexFrame.Size + dx; if ((uint)t < HexFrame.TileCount) BuildingAt[t] = b.Id; }
+        for (int dy = 0; dy < h; dy++) for (int dx = 0; dx < w; dx++) { int t = b.Tile + dy * HexFrame.Size + dx; if ((uint)t < HexFrame.TileCount) (_buildingAt ??= new int[HexFrame.TileCount])[t] = b.Id; }
         if (b.Due > 0) BuildDue.Add((b.Due, b.Id));
         BuildVersion++;
     }
@@ -253,7 +254,7 @@ public sealed class ProvinceLife
     {
         if (!Buildings.Remove(id, out var b)) return;
         if (b.Due > 0) BuildDue.Remove((b.Due, b.Id));
-        for (int dy = 0; dy < h; dy++) for (int dx = 0; dx < w; dx++) { int t = b.Tile + dy * HexFrame.Size + dx; if ((uint)t < HexFrame.TileCount && BuildingAt[t] == id) BuildingAt[t] = 0; }
+        for (int dy = 0; dy < h; dy++) for (int dx = 0; dx < w; dx++) { int t = b.Tile + dy * HexFrame.Size + dx; if ((uint)t < HexFrame.TileCount && _buildingAt is not null && _buildingAt[t] == id) _buildingAt[t] = 0; }
         BuildVersion++;
     }
 

@@ -210,7 +210,7 @@ public sealed partial class PeopleSim
 
     private bool FreeForPlot(ProvinceLife life, int t) =>
         (uint)t < HexFrame.TileCount && life.Walk[t] && !GroundInfo.IsWater(life.Map.Ground[t]) && GrowAt(life, t) > 0 && life.PlotAt[t] is null
-        && !life.Fires.ContainsKey(t) && t != life.Stash && !life.HasItems(t) && HexFrame.BorderDistance(t) >= 3 && life.BuildingAt[t] == 0;
+        && !life.Fires.ContainsKey(t) && t != life.Stash && !life.HasItems(t) && HexFrame.BorderDistance(t) >= 3 && life.BuildingAt(t) == 0;
 
     /// <summary>
     /// 판단할 때(하루에 한 번까지 — 둘러보기): 심는 법을 모르는 사람이 둘레 8타일의 싹 · 자라는 것을 보면, 낮은 확률로 "씨를 묻으면 난다"를 알아낸다.
@@ -441,7 +441,7 @@ public sealed partial class PeopleSim
                 int x = c % S + DX8[k] * r, y = c / S + DY8[k] * r;
                 if ((uint)x >= S || (uint)y >= S) continue;
                 int t = y * S + x;
-                if (life.Walk[t] && life.Region[t] == life.Region[here] && !life.Fires.ContainsKey(t) && !life.Plots.ContainsKey(t) && !GroundInfo.IsWater(life.Map.Ground[t]) && life.BuildingAt[t] == 0) return t;
+                if (life.Walk[t] && life.Region[t] == life.Region[here] && !life.Fires.ContainsKey(t) && !life.Plots.ContainsKey(t) && !GroundInfo.IsWater(life.Map.Ground[t]) && life.BuildingAt(t) == 0) return t;
             }
         return here;
     }
