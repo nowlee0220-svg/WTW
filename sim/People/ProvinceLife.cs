@@ -225,6 +225,8 @@ public sealed class ProvinceLife
     public object? BuildCache;
     /// <summary>(E6) 밭 · 건물 자리를 고르며 걷어 낸 덤불 · 풀 타일(그 오브젝트가 없어졌다). 저장한다.</summary>
     public readonly SortedSet<int> Cleared = new();
+    /// <summary>(E6) 마지막으로 비가 온 날(하루 경계에 정한다 — 한데서 자면 젖는다). 저장한다(깨어 있는 지방만).</summary>
+    public long RainDay = -1;
     /// <summary>(E6) 이 땅에 놓인 사연 있는 물건(번호 순 — 세계 목록으로 다시 만든다, 저장 안 함).</summary>
     public readonly SortedSet<int> NamedGround = new();
 

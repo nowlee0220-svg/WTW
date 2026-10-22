@@ -156,6 +156,7 @@ public static class SaveGame
                 WriteAnimals(bw, life.NextHerdId, life.FishStock, true, -1, life.Herds.Values);
                 WriteFarm(bw, life.Stash, life.FarmSince, life.FirstHarvest, life.SeedsEatenYear, life.YearHarvest, life.YearPotential, life.HarvestYear, life.Plots.Values);
                 WriteBuild(bw, life.NextBuildingId, life.Buildings.Values, life.Cleared);
+                bw.Write(life.RainDay);
             }
             else
             {
@@ -422,6 +423,7 @@ public static class SaveGame
         bw.Write(p.Burial); bw.Write(p.GraveId); bw.Write(p.WornQ); bw.Write(p.FeetQ);
         bw.Write(p.Quality.Count); foreach (var (it, q) in p.Quality) { bw.Write(it); bw.Write(q); }
         bw.Write(p.NamedHeld.Count); foreach (int id in p.NamedHeld) bw.Write(id);
+        bw.Write(p.LastPickItem); bw.Write(p.LastPickTick);
     }
 
     private static void ReadPeople(BinaryReader br, GameWorld w, int version)
@@ -429,6 +431,7 @@ public static class SaveGame
         var ps = w.People;
         int[] crossQueue = Array.Empty<int>(); long crossAt = long.MaxValue;
         var awake = new List<(int Cell, long EmptySince)>();
+        var rainDays = new SortedDictionary<int, long>();
         ps.NextEventSeq = br.ReadInt64();
         int ne = br.ReadInt32();
         for (int i = 0; i < ne; i++)
@@ -469,7 +472,7 @@ public static class SaveGame
                 dp = dp with { NextHerdId = an.NextId, FishStock = an.Fish, AnimalsReady = an.Ready, SleptAt = an.SleptAt, Herds = an.Herds };
             }
             if (version >= 12) dp = ReadFarm(br, dp);
-            if (version >= 13) dp = ReadBuild(br, dp);
+            if (version >= 13) { dp = ReadBuild(br, dp); if (awake.Count > 0 && awake[^1].Cell == cell) rainDays[cell] = br.ReadInt64(); }
             ps.Dormant[cell] = dp;
         }
         if (version >= 7)
@@ -592,6 +595,7 @@ public static class SaveGame
         }
         // (S1) 깨어 있던 지방은 깨어 있게(산 사람이 없어도 — 잠들기 전까지 불 · 들불이 계속된다)
         foreach (var (cell, since) in awake) ps.Life(cell).EmptySince = since;
+        foreach (var (cell, rd) in rainDays) ps.Life(cell).RainDay = rd;
         // 넘겨주기 대기는 사람이 다 들어온 뒤 그 사람의 지방에
         ps.LoadCrossQueue(crossQueue, crossAt);
         if (version >= 9)
@@ -697,6 +701,7 @@ public static class SaveGame
                 p.Burial = br.ReadByte(); p.GraveId = br.ReadInt32(); p.WornQ = br.ReadByte(); p.FeetQ = br.ReadByte();
                 int nq = br.ReadInt32(); for (int k = 0; k < nq; k++) p.Quality.Add((br.ReadInt32(), br.ReadByte()));
                 int nn = br.ReadInt32(); for (int k = 0; k < nn; k++) p.NamedHeld.Add(br.ReadInt32());
+                p.LastPickItem = br.ReadInt32(); p.LastPickTick = br.ReadInt64();
             }
         }
         else

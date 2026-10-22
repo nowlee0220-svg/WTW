@@ -714,6 +714,13 @@ public sealed partial class PeopleSim
     {
         int here = p.Tile(Now);
         int ft = life.NearestFire(here % S, here / S, Now, 25);
+        // 막 꺼진 불(네 시간 안 — 재 속에 불씨가 남았다)은 땔감을 얹으면 되살아난다
+        if (ft < 0 && EmberFire(life, here, 25) is int ef && ef >= 0)
+        {
+            int fuel0 = BestCarried(p, Craft.P_burns, 3, I_ember);
+            if (fuel0 >= 0) { St.EveningFires++; return StartTend(p, ef, fuel0, Why.EveningFire); }
+            if (StartMaterialFor(p, Craft.P_burns, 3, Why.EveningFire)) return true;
+        }
         long tod = life.LocalTickOfDay(Now);
         long untilMorning = (31 * GameTime.TicksPerHour - tod) % GameTime.TicksPerDay;
         int fuels = CountCarried(p, Craft.P_burns, 3, Craft.P_burns, 3) - p.CarryCount(I_ember);
@@ -723,10 +730,12 @@ public sealed partial class PeopleSim
             if (f.Remaining(Now) < untilMorning)
             {
                 int fuel = BestCarried(p, Craft.P_burns, 3, I_ember);
-                if (fuel >= 0) { St.EveningFires++; return StartTend(p, ft, fuel, Why.EveningFire); }
+                // 밤새 탈 만큼(땔감 셋 남짓) 모아서 넣는다
+                if (fuel >= 0 && (fuels >= 3 || f.Remaining(Now) < 2 * GameTime.TicksPerHour)) { St.EveningFires++; return StartTend(p, ft, fuel, Why.EveningFire); }
                 if (StartMaterialFor(p, Craft.P_burns, 3, Why.EveningFire)) return true;
+                if (fuel >= 0) { St.EveningFires++; return StartTend(p, ft, fuel, Why.EveningFire); }
             }
-            else if (fuels < 2 && StartMaterialFor(p, Craft.P_burns, 3, Why.EveningFire)) return true;
+            else if (fuels < 3 && StartMaterialFor(p, Craft.P_burns, 3, Why.EveningFire)) return true; // 밤에 다시 넣을 땔감
             p.LastEveningFire = Now;
             return false;
         }
@@ -739,13 +748,31 @@ public sealed partial class PeopleSim
         return TryLightKnownFire(p);
     }
 
+    /// <summary>r 타일 안의 막 꺼진 불(꺼진 지 네 시간 안 — 불씨가 남았다). 없으면 −1.</summary>
+    internal int EmberFire(ProvinceLife life, int here, int r)
+    {
+        int best = -1, bd = r + 1;
+        foreach (var (t, f) in life.Fires.Items)
+        {
+            if (f.Lit(Now) || Now - (f.Stamp + f.Fuel) > EmberHours * GameTime.TicksPerHour) continue;
+            int d = Cheb(t, here);
+            if (d < bd && life.BesideRegion(t, life.Region[here])) { bd = d; best = t; }
+        }
+        return best;
+    }
+
+    /// <summary>꺼진 불의 재 속에 불씨가 남아 있는 시간.</summary>
+    public const int EmberHours = 4;
+
     /// <summary>
     /// 깨어날 때: 불 피우는 법을 아는 사람이 추운 땅에서 — 불 없이 떨며 잤으면 버릇이 크게 늘고(25), 불 곁에서 따뜻하게 잤으면 조금(6).
     /// </summary>
     private void FireHabitOnWake(Person p, ProvinceLife life, bool fireNear)
     {
         if (R_campfire is null || !p.Knows(R_campfire.Index) || life.Mean10 - life.Range10 / 2 >= 120) return;
-        int add = p.SleptCold ? (fireNear ? 10 : 25) : fireNear ? 6 : 0;
+        // 새벽(가장 추울 때) 몸이 시렸으면 — 옷을 입었어도 — 불이 아쉬웠다
+        bool chilly = !fireNear && FeltNow(p) < 110;
+        int add = p.SleptCold ? (fireNear ? 10 : 25) : chilly ? 10 : fireNear ? 6 : 0;
         p.FireHabit = Math.Min(100, p.FireHabit + add);
     }
 
@@ -966,4 +993,22 @@ public sealed partial class PeopleSim
         }
         return list;
     }
+
+    // ───────── 테스트용 ─────────
+
+    /// <summary>(테스트) p 곁 anchor 에 그 종류의 짓는 자리를 놓는다.</summary>
+    internal Building TestSite(Person p, int kind, int anchor) => NewSite(p, Life(p.Cell), Builds.Buildings[kind], anchor);
+    /// <summary>(테스트) 재료 · 일을 다 채우고 다 짓는다.</summary>
+    internal void TestComplete(Person p, Building b)
+    {
+        var d = BDef(b);
+        for (int i = 0; i < d.Parts.Length; i++) b.Have[i] = d.Parts[i].Count;
+        b.Work = d.WorkHours * 60;
+        if (!b.Builders.Contains(p.Id)) b.Builders.Add(p.Id);
+        Complete(p, Life(p.Cell), b);
+    }
+    /// <summary>(테스트) 그 자리가 지금 쓸 수 있나 · 하루 경계의 모아 둔 것 줄기.</summary>
+    internal bool TestSiteOk(ProvinceLife life, int kind, int anchor) => SiteOk(life, Builds.Buildings[kind], anchor, life.Region[anchor]);
+    internal void TestStashDaily(ProvinceLife life) => StashDaily(life, Rng(life.Cell));
+    internal int TestFindSite(ProvinceLife life, int kind, int center) => FindSite(life, Builds.Buildings[kind], center, 2, 20);
 }

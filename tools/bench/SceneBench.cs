@@ -10,10 +10,17 @@ using Wtw.Sim.World;
 /// </summary>
 public static class SceneBench
 {
-    public static void Run(string outDir, ulong seed, bool onlyArtisan = false, bool onlyCopper = false, bool onlyTundra = false, bool onlyFarm = false)
+    public static void Run(string outDir, ulong seed, bool onlyArtisan = false, bool onlyCopper = false, bool onlyTundra = false, bool onlyFarm = false, bool onlyBuild = false)
     {
         Directory.CreateDirectory(outDir);
         var index = new List<string>();
+        if (onlyBuild)
+        {
+            index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("hut-village")));
+            BuildScene(outDir, seed, index);
+            File.WriteAllLines(Path.Combine(outDir, "index.txt"), index);
+            return;
+        }
         if (onlyFarm)
         {
             index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("river-farm")));
@@ -169,6 +176,31 @@ public static class SceneBench
         SaveGame.SaveFile(w, Path.Combine(outDir, file));
         string land = Wtw.Sim.Planet.PlanetNames.Of(w.Planet.Biome[cell]);
         index.Add($"{file}|씨를 아는 무리, 강가 초원|큰 강이 흐르는 {land}(칸 {cell}, 연평균 {w.Planet.Temp10[cell] / 10.0:0.0}°C)에 세 가족 — 어른들은 씨를 묻고 땅을 일구는 법을 알고 낟알 씨와 땅 파는 막대를 든다. 1~2배속으로 밭을 일구는 모습을, 5배속으로 며칠 넘겨 싹 → 익음 → 거두기와 밭에 오는 짐승을 보세요 ({GameTime.Format(w.Now)} · 사람 {w.People.AliveCount}명)");
+        Console.WriteLine($"{file}: 칸 {cell}({land}) · 사람 {w.People.AliveCount}명");
+    }
+
+    /// <summary>
+    /// (E6) 움집을 짓는 마을: 나무가 있는 따뜻한 땅(온대림 · 강가)에 세 가족 — 어른들은 불 · 바람막이 · 움집 · 저장 구덩이 짓는 법을 알고 돌날 · 뾰족한 막대를 든다.
+    /// 비 오는 밤을 한데서 보내고 온 무리라 머물 곳이 아쉽다(바람 30). 그 지방 아침 7시에서 시작.
+    /// </summary>
+    private static void BuildScene(string outDir, ulong seed, List<string> index)
+    {
+        var w = GameWorld.Create(seed, new WorldConfig { DotCount = 0 });
+        int cell = PeopleSamples.Ranked(w.Planet, (pl, c) => pl.Biome[c] == Wtw.Sim.Planet.Biome.Temperate && pl.RiverSize[c] > 0 && pl.Temp10[c] is >= 120 and <= 220 ? Math.Min((int)pl.RiverSize[c], 40) - Math.Abs(pl.Temp10[c] - 170) / 10 : int.MinValue).FirstOrDefault(-1);
+        if (cell < 0) cell = RiverGrassland(w.Planet);
+        foreach (var (x, y) in PeopleSamples.SpawnSpots(w.People.Life(cell), 3))
+            w.Apply(new Intervention(0, Intervention.Kinds.SpawnFamily, new long[] { cell, x, y }));
+        w.AdvanceTo(1);
+        BuildBench.Teach(w, "build");
+        foreach (var q in w.People.All) if (q.Stage(w.Now) >= LifeStage.Adult) q.Wish[12] = 30;
+        var life = w.People.Life(cell);
+        long t = 1;
+        while (life.LocalHour(t) != 7) t += GameTime.TicksPerHour / 4;
+        w.AdvanceTo(t);
+        string file = "hut-village.wtw";
+        SaveGame.SaveFile(w, Path.Combine(outDir, file));
+        string land = Wtw.Sim.Planet.PlanetNames.Of(w.Planet.Biome[cell]);
+        index.Add($"{file}|움집을 짓는 마을|강이 흐르는 {land}(칸 {cell}, 연평균 {w.Planet.Temp10[cell] / 10.0:0.0}°C)에 세 가족 — 어른들은 불 · 바람막이 · 움집 · 저장 구덩이 짓는 법을 안다. 비 오는 밤을 한데서 보내 머물 곳이 아쉽다. 1~2배속으로 자리를 정하고 · 나무를 베어 · 풀을 날라 · 쌓는 모습을, 3~4배속으로 움집이 서는 것을 보세요. 건물을 누르면 건물 창 ({GameTime.Format(w.Now)} · 사람 {w.People.AliveCount}명)");
         Console.WriteLine($"{file}: 칸 {cell}({land}) · 사람 {w.People.AliveCount}명");
     }
 

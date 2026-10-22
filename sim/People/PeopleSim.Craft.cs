@@ -507,12 +507,13 @@ public sealed partial class PeopleSim
                 if (c.Item == I_ember) continue;
                 // (E5b 고침) 그릇 · 바구니(담는 것)는 마지막까지 든다 — 뼈 · 힘줄 · 기름에 밀려 바구니를 내려놓고 다시 엮기를 끝없이 되풀이했다
                 // (E5c 고침) 단단한 날붙이(갈아 만든 돌날 등)도 끝까지 든다 — 바구니 재료를 들려고 돌날을 내려놓고, 돌날이 없어 다시 그것을 주우러 가기를 되풀이했다
-                int sc = (IsNamedHeld(p, c.Item) ? 500 : 0) + (IsMade(c.Item) ? 40 : Craft.IsAnimal(c.Item) ? 10 : 0) + (Prop(c.Item, Craft.P_holds) > 0 ? 60 : 0) + (IsMade(c.Item) && Prop(c.Item, Craft.P_hardness) >= 4 && Prop(c.Item, Craft.P_sharp) >= 2 ? 50 : 0) + Prop(c.Item, wantProp) * 10 + Prop(c.Item, Craft.P_edible) * 6 - Prop(c.Item, Craft.P_weight) * 3 - (c.Count > 2 ? 15 : 0);
+                int sc = (IsNamedHeld(p, c.Item) ? 500 : 0) + (c.Item == p.LastPickItem && Now - p.LastPickTick < 6 * GameTime.TicksPerHour ? 300 : 0) + (IsMade(c.Item) ? 40 : Craft.IsAnimal(c.Item) ? 10 : 0) + (Prop(c.Item, Craft.P_holds) > 0 ? 60 : 0) + (IsMade(c.Item) && Prop(c.Item, Craft.P_hardness) >= 4 && Prop(c.Item, Craft.P_sharp) >= 2 ? 50 : 0) + Prop(c.Item, wantProp) * 10 + Prop(c.Item, Craft.P_edible) * 6 - Prop(c.Item, Craft.P_weight) * 3 - (c.Count > 2 ? 15 : 0);
                 if (sc < ws) { ws = sc; worst = c.Item; }
             }
             if (worst < 0) break;
             int n = Math.Max(1, p.CarryCount(worst) - 1);
             p.RemoveCarry(worst, n);
+            ItemHook?.Invoke(this, p, worst, false);
             SpillSeed(p, worst, Rng(p.Cell)); // (E5c) 버린 씨
             if (life.Walk[here] && (IsMade(worst) || Craft.IsAnimal(worst))) life.Drop(here, worst, n); // 만든 것만 내려놓는다 — 흔한 돌 · 가지 · 풀은 그냥 버린다(자연으로)
         }
@@ -867,6 +868,7 @@ public sealed partial class PeopleSim
     {
         int w0 = CarryWeight(p), n0 = p.Carry.Sum(c => c.Count);
         FinishMaterialInner(p);
+        if (p.PlanItem >= 0 && p.Carry.Sum(c => c.Count) > n0) { p.LastPickItem = p.PlanItem; p.LastPickTick = Now; ItemHook?.Invoke(this, p, p.PlanItem, true); }
         St.PlanWhy[p.Carry.Sum(c => c.Count) > n0 ? 10 : 11]++;
         _ = w0;
     }
@@ -910,7 +912,7 @@ public sealed partial class PeopleSim
         {
             int it = Craft.ItemIndex(y.Id);
             if (it < 0) continue;
-            p.AddCarry(it, (use.Action.Id == "cut" ? 2 : 1) * (p.Why == Why.BuildFetch ? 2 : 1)); // (E6) 지을 재료는 한 번에 더 많이
+            p.AddCarry(it, use.Action.Id == "cut" ? 2 : 1);
         }
         if (use.Action.Id == "cut") WearTool(p, BestTool(p, Craft.P_sharp, 2), rng);
     }
@@ -964,6 +966,7 @@ public sealed partial class PeopleSim
         if (known) bonus = bonus - 30 + 10 + 20 * level / 100;
         var outcome = Craft.Judge(action, PropsOf(input), with >= 0 ? PropsOf(with) : null, tool >= 0 ? PropsOf(tool) : null, heat, tinder, rng.NextInt(100), bonus, known ? Craft.Rules[p.PlanRule] : null);
         if (known) St.Crafts++; else St.Experiments++;
+        WorkHook?.Invoke(this, p, outcome.Rule?.Index ?? -1, outcome.Success);
         WearTool(p, tool, rng);
         if (outcome.Rule is null) { AddThought(p, H_failedTry); return; }
         var rule = outcome.Rule;
@@ -1054,7 +1057,7 @@ public sealed partial class PeopleSim
             if (pas > 0) AddThought(p, H_passion);
             int before = p.SkillLevel(skill);
             p.SkillXp[skill] += xp;
-            if (p.SkillLevel(skill) > before) PassionEvent(p, skill, 10);
+            if (p.SkillLevel(skill) > before) PassionEvent(p, skill, 5);
             return;
         }
         p.SkillXp[skill] += xp;
@@ -1402,7 +1405,15 @@ public sealed partial class PeopleSim
         if (R_campfire is null || !p.Knows(R_campfire.Index)) return false;
         int here = p.Tile(Now);
         int ft = life.NearestFire(here % S, here / S, Now, 40);
-        if (ft < 0 || life.Fires[ft].Remaining(Now) > 3 * GameTime.TicksPerHour) return false;
+        // (E6) 버릇이 있으면 막 꺼진 불(재 속 불씨)도 되살린다
+        if (ft < 0 && p.FireHabit >= 30 && EmberFire(life, here, 40) is int ef && ef >= 0)
+        {
+            int f0 = BestCarried(p, Craft.P_burns, 3, I_ember);
+            return f0 >= 0 ? StartTend(p, ef, f0, Why.Fuel) : StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel);
+        }
+        // (E6) 불을 지키는 버릇이 있으면(추운 땅에서 떨며 자 본 사람) 꺼지기 훨씬 전에(6시간) 넣는다 — 꺼지면 다시 피우기 어렵다
+        long keep = (p.FireHabit >= 30 ? 6 : 3) * GameTime.TicksPerHour;
+        if (ft < 0 || life.Fires[ft].Remaining(Now) > keep) return false;
         int fuel = BestCarried(p, Craft.P_burns, 3, I_ember);
         if (fuel < 0) return StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel);
         return StartTend(p, ft, fuel, Why.Fuel);
@@ -1437,13 +1448,27 @@ public sealed partial class PeopleSim
         if (R_campfire is not null) UseKnowledge(p, R_campfire.Index);
         long add = FuelTicks(p.PlanItem);
         if (f.Kind == 2) add = add * 3 / 2; // (E4) 가둔 불은 땔감이 오래 간다
+        // (E6) 저녁 불: 아침(7시)까지 탈 만큼 든 땔감을 다 넣는다
+        if (p.Why == Why.EveningFire && f.Lit(Now))
+        {
+            long need = (31 * GameTime.TicksPerHour - life.LocalTickOfDay(Now)) % GameTime.TicksPerDay;
+            for (int guard = 0; guard < 6 && f.Remaining(Now) + add < need; guard++)
+            {
+                int more = BestCarried(p, Craft.P_burns, 3, I_ember);
+                if (more < 0) break;
+                p.RemoveCarry(more, 1);
+                long a2 = FuelTicks(more); if (f.Kind == 2) a2 = a2 * 3 / 2;
+                add += a2;
+            }
+        }
         else if (f.Lit(Now) && f.Remaining(Now) < GameTime.TicksPerHour && R_hearth is not null && !p.Knows(R_hearth.Index) && Rng(p.Cell).NextInt(100) < 25)
             AddClue(p, new Clue { Rule = R_hearth.Index, Key = "fuel", Tick = Now, Input = p.PlanItem }); // 땔감이 금방 다 탄다
         if (p.PlanItem == I_charcoal && f.Kind == 2) f.Charcoal = true;
         if (f.Lit(Now)) { f.Fuel += add; }
-        else { f.Stamp = Now; f.Fuel = add; f.Charcoal = p.PlanItem == I_charcoal && f.Kind == 2; }
+        else if (Now - (f.Stamp + f.Fuel) <= EmberHours * GameTime.TicksPerHour) { f.Stamp = Now; f.Fuel = add; f.Charcoal = p.PlanItem == I_charcoal && f.Kind == 2; } // (E6) 재 속 불씨가 남아 있을 때만 되살아난다
+        else { p.AddCarry(p.PlanItem, 1); return; } // 다 식었다 — 새로 피워야 한다
         life.Fires[p.Target] = f;
-        if (p.Why == Why.EveningFire) { p.LastEveningFire = Now; FireHabitWatchers(p, life); } // (E6) 저녁에 불을 챙기는 것을 본 사람도 버릇이 는다
+        if (p.Why == Why.EveningFire) { if (f.Remaining(Now) >= (31 * GameTime.TicksPerHour - life.LocalTickOfDay(Now)) % GameTime.TicksPerDay) p.LastEveningFire = Now; FireHabitWatchers(p, life); } // (E6) 저녁에 불을 챙기는 것을 본 사람도 버릇이 는다
     }
 
     /// <summary>하루 경계(지방마다): 비가 오면 바깥의 불이 꺼진다 · 오래 꺼진 모닥불 자리는 없어진다 · 들불 · 번개.</summary>
@@ -1453,6 +1478,7 @@ public sealed partial class PeopleSim
         var planet = _w.Planet;
         int precip = planet.PrecipMm[cell];
         bool rain = rng.NextInt(10_000) < Math.Min(6_000, precip * 10_000 / 3650);
+        if (rain) life.RainDay = Now / GameTime.TicksPerDay; // (E6)
         List<int>? remove = null;
         foreach (var (t, f0) in life.Fires.ToList())
         {

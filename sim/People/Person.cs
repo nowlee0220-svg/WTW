@@ -297,6 +297,9 @@ public sealed class Person
     public int FireHabit;
     public long LastEveningFire = long.MinValue / 2, LastBuildLook = long.MinValue / 2, LastGraveLook = long.MinValue / 2;
     public long BuildMissKey, BuildMissTick = long.MinValue / 2;
+    /// <summary>(E6 되풀이 감시로 고침) 마지막으로 구해 온 재료와 그때 — 짐을 덜 때 막 구해 온 것은 내려놓지 않는다(재료를 줍고 버리기를 되풀이했다).</summary>
+    public int LastPickItem = -1;
+    public long LastPickTick = long.MinValue / 2;
     /// <summary>(E6) 묻혔나(0 아니 · 1 무덤 · 2 그대로 둠) · 묻힌 건물 번호(지방 안).</summary>
     public byte Burial;
     public int GraveId = -1;

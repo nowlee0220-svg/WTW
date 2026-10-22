@@ -78,6 +78,16 @@ public sealed class WorldSnapshot
     public Dictionary<int, PlotView[]> Plots = new();
     public Dictionary<int, int> Stashes = new();
     private long _plotSig = -1;
+    // ── (E6) 건물 · 걷은 덤불 · 사연 있는 물건 ──
+    /// <summary>깨어 있는 지방의 건물(칸 → 건물들, 번호 순). 건물이 바뀌거나 한 시간이 지나면 새로.</summary>
+    public Dictionary<int, BuildingView[]> Buildings = new();
+    /// <summary>걷어 낸 덤불 · 풀 타일(칸 → 타일들). 바뀔 때만 새 배열.</summary>
+    public Dictionary<int, int[]> Cleared = new();
+    /// <summary>사연 있는 물건(번호 순). 바뀔 때만 새 배열.</summary>
+    public NamedView[] Named = Array.Empty<NamedView>();
+    private long _buildSig = -1, _namedSig = -1;
+
+    public NamedView? NamedById(int id) { foreach (var n in Named) if (n.Id == id) return n; return null; }
 
     public PaintingView? PaintingById(int id) { foreach (var (_, l) in Paintings) foreach (var g in l) if (g.Id == id) return g; return null; }
 
@@ -214,6 +224,7 @@ public sealed class WorldSnapshot
         FillCraft(w);
         FillAnimals(w);
         FillFarm(w);
+        FillBuild(w);
         long sig = live.Count;
         foreach (var (id, n) in live) if (ps.Languages.TryGetValue(id, out var l)) sig = sig * 1_000_003 + id * 7919 + l.Version * 31 + n;
         if (sig != _langSig)
@@ -279,6 +290,45 @@ public sealed class WorldSnapshot
             plots[cell] = arr;
         }
         Plots = plots; Stashes = stashes;
+    }
+
+    private void FillBuild(GameWorld w)
+    {
+        var ps = w.People;
+        long sig = w.Now / Time.GameTime.TicksPerHour;
+        foreach (var (cell, life) in ps.Provinces) sig = sig * 31 + cell * 7 + life.BuildVersion * 13 + life.Cleared.Count;
+        if (sig != _buildSig)
+        {
+            _buildSig = sig;
+            var bs = new Dictionary<int, BuildingView[]>();
+            var cl = new Dictionary<int, int[]>();
+            foreach (var (cell, life) in ps.Provinces)
+            {
+                if (life.Cleared.Count > 0) cl[cell] = Cleared.TryGetValue(cell, out var old) && old.Length == life.Cleared.Count ? old : life.Cleared.ToArray();
+                if (life.Buildings.Count == 0) continue;
+                var arr = new BuildingView[life.Buildings.Count];
+                int k = 0;
+                foreach (var (_, b) in life.Buildings)
+                {
+                    var d = ps.BDef(b);
+                    int need = Math.Max(1, d.PartTotal + d.WorkHours * 60);
+                    int have = Math.Min(d.PartTotal, b.Have.Sum()) + Math.Min(b.Work, d.WorkHours * 60);
+                    var users = ps.BuildingUsers(life, b).Select(id => ps.DisplayName(ps.Get(id))).ToArray();
+                    arr[k++] = new BuildingView(b.Id, b.Kind, d.Name, b.Tile, d.W, d.H, b.Done, b.Quality, ps.Condition(b, w.Now), b.Done ? 1f : (float)have / need,
+                        ps.DisplayName(ps.Get(b.Founder)), b.Builders.Select(id => ps.DisplayName(ps.Get(id))).ToArray(), b.Started, b.Finished, b.Repaired,
+                        b.Done ? "" : ps.BuildNeedText(b), users, b.Owner >= 0 ? ps.DisplayName(ps.Get(b.Owner)) : "", b.Person >= 0 ? ps.DisplayName(ps.Get(b.Person)) : "",
+                        b.Person >= 0 && ps.Get(b.Person) is { } dp ? dp.AgeYears(dp.DeathTick) : -1, b.Person >= 0 && ps.Get(b.Person) is { } dp2 ? dp2.DeathTick : 0);
+                }
+                bs[cell] = arr;
+            }
+            Buildings = bs; Cleared = cl;
+        }
+        long nsig = ps.Named.Count;
+        foreach (var (_, n) in ps.Named) nsig = nsig * 31 + n.History.Count * 7 + n.Holder * 3 + n.Tile + (n.Gone ? 1 : 0);
+        if (nsig == _namedSig) return;
+        _namedSig = nsig;
+        Named = ps.Named.Values.Select(n => new NamedView(n.Id, n.Item, ps.Craft.ItemName(n.Item), n.Name, ps.NamedMeaning(n), n.Holder, n.Holder >= 0 ? ps.DisplayName(ps.Get(n.Holder)) : "", n.Cell, n.Tile, n.Gone,
+            n.Quality, n.Born, n.History.Select(e => (e.Tick, ps.NamedEventText(n, e))).ToArray())).ToArray();
     }
 
     private void FillCraft(GameWorld w)
@@ -387,6 +437,17 @@ public sealed class WorldSnapshot
     }
 }
 
+/// <summary>(E6) 건물 하나(화면용): 번호 · 종류 · 이름 · 자리(왼쪽 위 타일) · 크기 · 다 지었나 · 품질 · 상태(0~1000) · 짓는 정도(0~1) · 자리를 정한 사람 · 함께 지은 사람 ·
+/// 시작 · 다 지은 때 · 고친 때 · 모자란 재료 · 지금 쓰는(자는) 사람 · 주인 집안 · 묻힌 사람과 그 나이 · 죽은 때.</summary>
+public sealed record BuildingView(int Id, int Kind, string Name, int Tile, int W, int H, bool Done, int Quality, int Condition, float Progress, string Founder, string[] Builders,
+    long Started, long Finished, long Repaired, string Need, string[] Users, string Owner, string Buried, int BuriedAge, long BuriedDied)
+{
+    public bool Covers(int tile) { int x = tile % Provinces.HexFrame.Size - Tile % Provinces.HexFrame.Size, y = tile / Provinces.HexFrame.Size - Tile / Provinces.HexFrame.Size; return x >= 0 && x < W && y >= 0 && y < H; }
+}
+
+/// <summary>(E6) 사연 있는 물건(화면용): 번호 · 아이템 · 이름 · 지어낸 이름 · 뜻 · 지닌 사람(번호 · 이름) · 놓인 곳 · 없어졌나 · 품질 · 이름이 붙은 때 · 내력.</summary>
+public sealed record NamedView(int Id, int Item, string ItemName, string Name, string Meaning, int Holder, string HolderName, int Cell, int Tile, bool Gone, int Quality, long Born, (long Tick, string Text)[] History);
+
 /// <summary>(E4) 땅 위의 불 하나(화면용): 타일 · 종류(1 모닥불 · 2 돌 화덕) · 켜졌나 · 남은 시간 · 숯을 넣었나.</summary>
 /// <summary>(E5c) 화면용 밭 한 칸: 단계 · 일군 땅인가 · 저절로 났나 · 자라는 것 · 짐승이 먹은 정도 · 잡풀 · 이 단계에서 얼마나 지났나(0~1) · 자라기 좋은 정도.</summary>
 public readonly record struct PlotView(int Tile, Wtw.Sim.People.PlotStage Stage, bool Tilled, bool Wild, int Crop, int Damage, int Weeds, float Progress, int Grow);
@@ -472,6 +533,9 @@ public sealed class PersonView
     /// <summary>(E5b) 입은 것(몸 · 발, 아이템 번호 −1 = 없음) · 다쳤나 · 하는 일의 대상(사냥이면 무리 번호).</summary>
     public int Worn = -1, WornFeet = -1, Target = -1;
     public bool Injured;
+    /// <summary>(E6) 묻혔나(무덤 · 돌무더기 — 시신을 그리지 않는다) · 지닌 사연 있는 물건(번호).</summary>
+    public bool Buried;
+    public int[] NamedHeld = Array.Empty<int>();
     public string Nickname = "";
     private static int _ember = -1;
     /// <summary>말풍선: 그 사람의 말로 된 낱말과 뜻(이야기할 때만).</summary>
@@ -521,6 +585,8 @@ public sealed class PersonView
         Painting = !p.Walking && p.Act is Act.Experiment or Act.Craft && p.PlanAction == Data.CraftData.Default.ActionIndex("draw");
         Nickname = p.Nickname;
         Worn = p.Worn; WornFeet = p.WornFeet; Injured = p.Injury > 15_000; Target = p.Target;
+        Buried = p.Burial == 1;
+        if (p.NamedHeld.Count != NamedHeld.Length || (p.NamedHeld.Count > 0 && !p.NamedHeld.SequenceEqual(NamedHeld))) NamedHeld = p.NamedHeld.ToArray();
     }
 
     /// <summary>tick 시점 위치(밀리타일)와 걷는 방향. 출발이 tick 이하인 가장 최근 구간.</summary>

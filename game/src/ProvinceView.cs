@@ -444,7 +444,7 @@ public partial class ProvinceView : Node2D
         var tall = new SortedDictionary<int, List<(float SortY, Transform2D T, Color C, Color D, float H, float HalfW)>>();
         for (int i = 0; i < HexFrame.TileCount; i++)
         {
-            if (m.Object[i] == 0) continue;
+            if (m.Object[i] == 0 || IsCleared(m.Cell, i)) continue; // (E6) 걷은 덤불 · 풀
             int o = m.Object[i] - 1;
             var sp = sprites[o];
             int v = m.Variant[i];

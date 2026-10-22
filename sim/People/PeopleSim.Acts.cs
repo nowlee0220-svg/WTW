@@ -167,7 +167,7 @@ public sealed partial class PeopleSim
         // (E4) 실험 · 아는 법대로 만들기 · 불 지키기 · 캐기
         int ex = ExperimentScore(p, life); if (ex > int.MinValue) Opt(10, ex); else St.PlanWhy[8]++;
         int cs = CraftScore(p); if (cs > int.MinValue) Opt(11, cs);
-        if (p.Known.Count > 0) Opt(12, 14);
+        if (p.Known.Count > 0) Opt(12, 14 + p.FireHabit / 5); // (E6) 불을 지키는 버릇이 있으면 더
         if ((p.Wish[W_shiny] >= 20 || p.Wish[W_hardTool] >= 40 || p.HasTrait(T_curious)) && HasHardTool(p) && !life.IsNight(Now)) Opt(13, 8 + p.Wish[W_shiny] / 4);
         // (E5) 가르치기 · 그림 보기
         int ts = TeachScore(p, life); if (ts > int.MinValue) Opt(14, ts);
@@ -422,7 +422,9 @@ public sealed partial class PeopleSim
         bool homeSlept = wl.BuildingOn(tile) is { Done: true } hb && hb.Kind == B_hut;
         if (homeSlept) AddThought(p, H_sleptHome);
         // (E6) 바람 · 추위를 막을 곳이 없어 떨거나 한데서 잤다 → 머물 곳이 있었으면(짓는 법을 알아내는 실험으로 이어진다)
-        else if (W_shelter >= 0 && (p.SleptCold || p.SleepShelter == 0 && !p.Huddle) && (wl.Warm is null || wl.Warm[tile] == 0) && wl.Shelter[tile] < 3) AddWish(p, W_shelter, p.SleptCold ? 12 : 3);
+        // (E6) 비 오는 밤을 지붕 없이(움집 · 동굴 밖에서) 보냈다 → 비를 막을 곳이 있었으면
+        else if (W_shelter >= 0 && wl.RainDay >= Now / GameTime.TicksPerDay - 1 && wl.Shelter[tile] < 3) AddWish(p, W_shelter, 8);
+        else if (W_shelter >= 0 && (p.SleptCold || p.SleepShelter == 0 && !p.Huddle) && (wl.Warm is null || wl.Warm[tile] == 0) && wl.Shelter[tile] < 3) AddWish(p, W_shelter, p.SleptCold ? 12 : p.Huddle ? 2 : 5);
         if (fireNear) AddThought(p, H_firelight);
         else if (p.SleepShelter == 0 && !p.Huddle && Ability(p, PeopleData.Nerve) <= 3) { AddThought(p, H_dark); AddWish(p, W_warmth, 12); } // 어둠이 무서웠다 → 밝고 따뜻한 것이 있었으면
         else if (p.SleptCold) AddWish(p, W_warmth, 15);

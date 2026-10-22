@@ -462,10 +462,18 @@ public sealed partial class PeopleSim
         if (p.Conceived >= 0) c.Body.Add($"아이를 가짐 (아빠 {NameOf(p.ChildFather)}, {PeopleText.Date(p.Conceived + PregnancyTicks)}쯤 태어남)");
         c.Body.Add($"걷는 빠르기: 1배속에서 초당 {60.0 / TicksPerTile(p):0.0}타일");
         if (p.Injury > 0) c.Body.Add($"다침 {p.Injury / 1000}% ({(p.InjuryCause == DeathCause.HuntAccident ? "사냥하다" : "짐승에게")} — 하루에 조금씩 낫는다, 100% 가 되면 죽는다)");
-        if (p.Worn >= 0) c.Body.Add($"입은 것: {ItemName(p.Worn)} (따뜻함 +{Prop(p.Worn, Craft.P_warm) * 4}°C, 닳음 {100 - p.WornWear / 10}%)");
+        if (p.Worn >= 0) c.Body.Add($"입은 것: {ItemName(p.Worn)} (따뜻함 +{ClothWarm(p) / 10}°C, 닳음 {100 - p.WornWear / 10}%{(p.WornQ != 1 ? $", 품질 {QualityName(p.WornQ)}" : "")})");
         if (p.WornFeet >= 0) c.Body.Add($"신은 것: {ItemName(p.WornFeet)} (따뜻함 +{Prop(p.WornFeet, Craft.P_warm) * 3}°C, 닳음 {100 - p.FeetWear / 10}%)");
         if (p.Worn < 0 && p.WornFeet < 0 && ColdLand(Life(p.Cell))) c.Body.Add("입은 것: 없음 — 밤이 추운 땅이다");
         if (p.Kills > 0) c.Body.Add($"잡은 짐승 {p.Kills}마리");
+        // (E6) 품질이 보통이 아닌 든 것 · 사연 있는 물건(내력) · 불 버릇 · 묻힘
+        foreach (var (it, q) in p.Quality) if (p.CarryCount(it) > 0 && !IsNamedHeld(p, it)) c.Body.Add($"든 것: {ItemName(it)} — 품질 {QualityName(q)}" + (q >= 2 ? " (오래가고 더 잘 된다)" : q <= 0 ? " (빨리 닳는다)" : ""));
+        foreach (int nid in p.NamedHeld)
+            if (Named.TryGetValue(nid, out var nm) && !nm.Gone)
+                c.Body.Add($"사연 있는 물건: {ItemName(nm.Item)} '{nm.Name}'({NamedMeaning(nm)}, 품질 {QualityName(nm.Quality)}) — " + string.Join(" → ", nm.History.Select(e => $"{PeopleText.Date(e.Tick)} {NamedEventText(nm, e)}")));
+        if (p.FireHabit >= 25) c.Body.Add($"자기 전에 불을 챙기는 버릇 {p.FireHabit}/100 — 추운 밤을 겪어서");
+        if (p.Dead && p.Burial == 1) c.Body.Add(p.GraveId >= 0 && Provinces.TryGetValue(p.Cell, out var gl) && gl.Buildings.TryGetValue(p.GraveId, out var gb) ? $"{BDef(gb).Name}에 묻혔다" : "묻혔다");
+        else if (p.Dead && p.Burial == 2) c.Body.Add("묻히지 않았다 — 가까운 이들이 그대로 두었다");
         if (p.Dead) c.Body.Add($"{PeopleText.Date(p.DeathTick)}에 죽음 — {PeopleText.CauseName(p.Cause)}{(p.Eaten ? " (시신이 먹혔다)" : "")}");
         if (!p.Dead)
         {

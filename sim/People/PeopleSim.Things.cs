@@ -205,6 +205,23 @@ public sealed partial class PeopleSim
         }
     }
 
+    /// <summary>내력 한 줄(쉬운 말).</summary>
+    public string NamedEventText(NamedItem n, NamedEvent e)
+    {
+        string who = DisplayName(Get(e.Person));
+        string land = LandLabelOr(e.Cell, "이름 없는 땅");
+        return e.Kind switch
+        {
+            NamedEventKind.Named => n.Reason == 1 && (uint)e.Arg < (uint)Fauna.Animals.Count ? $"{Hangul.I(who)} 이것으로 {Hangul.Eul(Fauna.Animals[e.Arg].Name)} 잡아 '{n.Name}'이라 불리게 되었다 — {land}" : $"{Hangul.I(who)} 훌륭하게 만들어 '{n.Name}'이라 불리게 되었다 — {land}",
+            NamedEventKind.Inherited => $"{DisplayName(Get(e.Arg))}이(가) 죽어 {Hangul.I(who)} 물려받았다",
+            NamedEventKind.LeftBehind => $"{who}의 곁을 떠나 {land}의 땅에 남겨졌다",
+            NamedEventKind.Found => $"{Hangul.I(who)} 땅에 남은 것을 찾아 들었다 — {land}",
+            NamedEventKind.Broke => $"{Hangul.I(who)} 쓰다가 부러지거나 다른 것의 재료가 되어 없어졌다",
+            NamedEventKind.Gone => $"{land}의 땅에서 없어졌다(썩거나 흩어짐)",
+            _ => "",
+        };
+    }
+
     /// <summary>지방이 열리거나 깨어날 때: 그 땅에 놓인 사연 있는 물건 목록을 다시 만든다(세계 쪽 — 한 줄기에서).</summary>
     private void FillNamedGround(ProvinceLife life)
     {
@@ -222,7 +239,7 @@ public sealed partial class PeopleSim
     {
         if (!_w.Config.Passion || skill < 0 || skill >= PeopleData.SkillCount) return;
         p.PassionPoints[skill] += points;
-        if (p.Passion[skill] < 2 && p.PassionPoints[skill] >= 120 * (p.Passion[skill] + 1) && Rng(p.Cell).NextInt(100) < 25)
+        if (p.Passion[skill] < 2 && p.PassionPoints[skill] >= 120 * (p.Passion[skill] + 1) && Rng(p.Cell).NextInt(100) < 10)
         {
             p.Passion[skill]++;
             p.PassionPoints[skill] = 0;

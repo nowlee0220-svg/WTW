@@ -285,6 +285,7 @@ public sealed partial class PeopleSim
         MoveCompanions(p, from, to, entry);
         p.SearchDir = b.InDir8;
         St.Crossings++;
+        CrossHook?.Invoke(this, p, b.Nb);
         if (p.Why is Why.Scarce or Why.SeekMate or Why.Explore or Why.NoWater or Why.NoFood or Why.FollowFamily or Why.Break || !VisitedBefore(p, b.Nb))
             AddBio(p, BioKind.Moved, b.Nb, (int)p.Why | (from.Cell << 8));
         if (fresh) Notify(WorldEventKind.Moved, p, from.Cell, $"{Hangul.I(DisplayName(p))} 아무도 살지 않던 새 땅으로 들어갔습니다");
