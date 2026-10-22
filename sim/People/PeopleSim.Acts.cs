@@ -325,8 +325,10 @@ public sealed partial class PeopleSim
         // (E6) 우리 집안의 움집 안 · (추운 밤) 바람막이 곁 — 짝 · 아이도 같은 집에서 잔다
         int home = ShelterSpot(p, life, here, coldNight, out var homeWhy);
         if (home >= 0 && homeWhy == Why.Home && life.Paths.Reachable(here, home)) { spot = home; reason = Why.Home; }
-        // (E6) 자기 전에 불을 피워 두는 버릇이 있으면(추운 밤) 짝이 어디 자든 불가로 — 불이 없으면 바람막이 곁
-        if (spot < 0 && coldNight && p.FireHabit >= 30)
+        // (E6) 자기 전에 불을 피워 두는 버릇이 있으면(추운 밤) 불가로 — (E6 고침) 다만 짝이 이미 다른 곳에서 자고 있으면 짝 곁으로
+        // (처음엔 "짝이 어디 자든 불가로" — 짝과 떨어져 자는 밤이 늘어 쌀쌀한 땅에서 아이가 절반으로 줄었다)
+        bool mateAsleep = Get(p.Partner) is { Dead: false } m0 && m0.Cell == p.Cell && (m0.Asleep || m0.Act == Act.Sleep);
+        if (spot < 0 && coldNight && p.FireHabit >= 30 && !mateAsleep)
         {
             int ft0 = life.NearestFire(hx, hy, Now, (int)FireSleepRange);
             if (ft0 >= 0 && TendBeforeSleep(p, life, ft0)) return;
