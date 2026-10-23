@@ -93,18 +93,26 @@ public sealed partial class PeopleSim
     /// <summary>씨를 묻고 익을 때까지 날 수(자라기 좋은 정도 g — 15 아래면 자라지 않는다): 100 이면 16일, 50 이면 32일, 60일까지.</summary>
     public static int GrowDays(int g) => g < 15 ? 0 : Math.Clamp(1600 / g, 16, 60);
 
-    /// <summary>그 해 그 땅의 비 · 날씨(보이지 않는 작은 계절 — 기획서 5-2): 70~115%, 열두 해에 한 번꼴로 가뭄 35%. 시드 · 칸 · 해로만 정해진다.</summary>
+    /// <summary>
+    /// 그 해 그 땅의 비 · 날씨(보이지 않는 작은 계절 — 기획서 5-2): 70~115%, 열 해에 한 번꼴로 가뭄 35%, 일곱 해에 한 번꼴로 모자란 해 50~69%. 시드 · 칸 · 해로만 정해진다.
+    /// (T1) 전에는 가뭄만 열두 해에 한 번(8%) — 옛 농사에서 "모자란 해"는 네댓 해에 한 번, 크게 망치는 해는 열 해에 한 번꼴이었다(Halstead &amp; O'Shea, Bad Year Economics, 1989 — 그리스 · 지중해 밀 · 보리).
+    /// </summary>
     public int YearLuck(int cell, long year)
     {
         ulong h = StableHash.Combine(_w.Seed, (ulong)cell, (ulong)year) % 1000;
-        return h < 80 ? 35 : 70 + (int)(h % 46);
+        return h < 100 ? 35 : h < 250 ? 50 + (int)(h % 20) : 70 + (int)(h % 46);
     }
 
     /// <summary>잡풀(0~100): 마지막으로 김을 맨 때부터 하루 2씩. 그냥 묻은 자리 · 저절로 난 싹은 50 에서 시작.</summary>
     public int WeedsOf(Plot p, long now) => (int)Math.Min(100, (p.Tilled ? 0 : 50) + Math.Max(0, now - p.LastTend) / GameTime.TicksPerDay * 2);
 
-    /// <summary>한 칸에서 거둘 수 있는 양(잡풀 · 짐승 · 날씨를 빼기 전): 10 × 자라기 좋은 정도, 그냥 묻은 자리는 절반.</summary>
-    public int PlotPotential(ProvinceLife life, Plot p) => 10 * GrowAt(life, p.Tile) * (p.Tilled ? 100 : 50) / 10_000;
+    /// <summary>
+    /// 한 칸에서 거둘 수 있는 양(잡풀 · 짐승 · 날씨를 빼기 전): 씨 하나에 6 × 자라기 좋은 정도, 그냥 묻은 자리는 절반.
+    /// (T1) 전에는 10(씨 하나에서 열) — 옛 밀 · 보리는 뿌린 씨의 네댓 배를 거두었다(로마 · 중세 1:4 안팎, 신석기 어림 1:3~1:6).
+    /// 잡풀 · 날씨를 빼면 보통 네 배 남짓이 되게 6.
+    /// </summary>
+    public const int SeedYield = 6;
+    public int PlotPotential(ProvinceLife life, Plot p) => SeedYield * GrowAt(life, p.Tile) * (p.Tilled ? 100 : 50) / 10_000;
 
     // ───────── 하루 경계: 단계가 바뀌는 밭만 ─────────
 

@@ -684,6 +684,11 @@ public sealed class ProvinceLife
 
     // ── 먹을 것 · 주울 것 ──
 
+    /// <summary>(T1 장부) 따거나 주울 수 있는 것이 있는 타일(타일 번호 순).</summary>
+    public IEnumerable<(int Tile, HarvestDef H)> HarvestTiles()
+    {
+        for (int i = 0; i < HexFrame.TileCount; i++) if (_harvest[i] is { } h) yield return (i, h);
+    }
     public HarvestDef? HarvestAt(int tile) => (uint)tile < HexFrame.TileCount ? _harvest[tile] : null;
 
     public int StockAt(int tile, long now)

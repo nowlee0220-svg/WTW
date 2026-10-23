@@ -74,6 +74,8 @@ public sealed class PeopleStats
         BenchLearned, BuriedEarth, BuriedCairn, BodiesLeft, NamedMade, NamedInherited, NamedLost, NamedFound, NamedGone, EveningFires, FireKits, EmbersKept, ClearedBrush,
         /// <summary>(E6) 만든 물건의 품질별 수(0 나쁨 ~ 3 훌륭함).</summary>
         Q0, Q1, Q2, Q3;
+    /// <summary>(T1 측정) 먹은 배부름(1000 = 1)을 갈래마다: [0 들에서 바로 딴 열매 · 버섯 · 이끼, 1 들고 먹은 열매 · 버섯 · 이끼, 2 낟알 · 콩 · 덩이뿌리 · 도토리(익힌 것 포함), 3 고기 · 물고기(익힌 것 포함), 4 그 밖, 5 시신].</summary>
+    public readonly long[] Eaten = new long[6];
     /// <summary>(E5c 측정) 계획 · 재료 구하기를 바람마다(바람 × 2 + 아는 법이면 1).</summary>
     public readonly long[] PlanByWish = new long[32], MatByWish = new long[32], PlanKnownRule = new long[64];
 }

@@ -110,6 +110,7 @@ public class SpeedTests
     //   E5b 고침(목마름 · 썩음 · 속도 — 경계 넘어 설 자리 · 사냥 길 · 무리 판단 · 손질 몫 · 바구니 되풀이): 결과가 바뀌어 새 값(마을은 장면도 다시 만듦)
     //   E5c 농사(씨 맺는 들풀 · 밭 · 모아 둔 자리 · 저장 버전 12): 들풀이 지방 지도를 바꾸고 농사가 세계를 바꿔 새 값(장면도 다시 만듦)
     //   E6 건물과 물건(짓기 · 무덤 · 품질 · 사연 있는 물건 · 저장 버전 13): 건물이 세계를 바꿔 새 값(장면도 다시 만듦)
-    private const ulong PinFamilies = 0xAF8419E6C41875D1UL;
-    private const ulong PinVillage = 0x4D6D156FA1E46681UL;
+    //   T1 먹을 것 맞추기(들의 열매 · 도토리 한 해에 한 번 · 덤불 · 바나나 한 해 한 줌 · 밭 씨 하나에 6 · 흉년 잦기 · 젖 먹이는 어머니): 먹을 것이 바뀌어 새 값(장면도 다시 만듦)
+    private const ulong PinFamilies = 0x66557959D037EA4BUL;
+    private const ulong PinVillage = 0xE636347C5A82B137UL;
 }

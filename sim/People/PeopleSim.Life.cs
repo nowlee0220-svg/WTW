@@ -161,6 +161,12 @@ public sealed partial class PeopleSim
             var rng = Rng(p.Cell);
             Integrate(p, Now);
             if (CheckDeath(p)) continue;
+            // (T1) 안긴 아기가 젖을 먹었으면 어머니(안은 사람)가 그 몫을 더 쓴다
+            if (p.Carrier >= 0 && Get(p.Carrier) is { Dead: false } nurse && nurse.Cell == p.Cell)
+            {
+                Integrate(nurse, Now);
+                if (nurse.Malnutrition < 20_000) nurse.Food = Math.Max(0, nurse.Food - NursingFood);
+            }
             long age = p.AgeTicks(Now);
             // 아기가 자라 혼자 걷는다
             if (p.Carrier >= 0 && age >= 3 * GameTime.TicksPerYear)
