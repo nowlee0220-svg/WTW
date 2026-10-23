@@ -599,6 +599,9 @@ public sealed partial class PeopleSim
     /// <summary>옷이 없는 사람: 같은 지방 가족이 들고 있는 남는 입을 것을 받는다.</summary>
     private void GiveSpareClothes(Person p)
     {
+        // (E6 고침 — 툰드라) 안겨 있는 아기는 입지 못한다(입기는 안긴 사람을 건너뛴다) — 무두질한 가죽이 날마다 아기 손으로 갔다가
+        // 털옷 지을 사람에게 되돌아가기를 되풀이해 털옷 지을 가죽 석 장이 좀처럼 한 손에 모이지 않았다(E5c 부터 있던 구멍)
+        if (p.Carrier >= 0) return;
         var life = Life(p.Cell);
         if (!ColdLand(life)) return;
         foreach (var q in life.People)
