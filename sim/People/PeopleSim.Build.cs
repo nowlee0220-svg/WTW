@@ -308,6 +308,7 @@ public sealed partial class PeopleSim
         if (p.AgeYears(Now) < 10 || life.IsNight(Now)) return int.MinValue;
         // (E6 고침) 몸이 식어 가는 사람은 짓지 않는다 — 몸부터 데운다(툰드라에서 짓기 · 재료 찾기에 나섰다가 얼어 죽었다)
         if (p.Hypothermia > 0) return int.MinValue;
+        bool clothesFirst = ClothesFirst(p); // (E6 툰드라) 옷이 닳아 가면 묻는 일만 하고 짓기는 미룬다
         int skill = p.SkillLevel(PeopleData.Building);
         if (bar >= 30 + skill) return int.MinValue;
         var v = BViewOf(life);
@@ -325,7 +326,7 @@ public sealed partial class PeopleSim
                 best = 26; job = BuildJob.Bury; target = q.Id; break;
             }
         // 2) 짓는 중인 자리
-        foreach (var b in v.Sites)
+        if (!clothesFirst) foreach (var b in v.Sites)
         {
             var d = BDef(b);
             if (life.Region[b.Tile] != life.Region[here] || Cheb(b.Tile, here) > 60) continue;
@@ -341,11 +342,11 @@ public sealed partial class PeopleSim
             else if (knows && 20 + skill * 2 > best) { best = 20 + skill * 2; job = BuildJob.Work; target = b.Id; }
         }
         // 3) 낡은 것 고치기(짓는 법을 아는 사람)
-        if (14 + skill > best)
+        if (14 + skill > best && !clothesFirst)
             foreach (var b in v.Worn)
                 if (KnowsBuilding(p, b.Kind) && life.Region[b.Tile] == life.Region[here] && Cheb(b.Tile, here) <= 40) { best = 14 + skill; job = BuildJob.Repair; target = b.Id; break; }
         // 4) 새로 지을까(하루에 한 번 둘러본다)
-        if (look && 16 + skill > best && v.NonGraveSites < MaxSites && p.AgeYears(Now) >= 14)
+        if (look && !clothesFirst && 16 + skill > best && v.NonGraveSites < MaxSites && p.AgeYears(Now) >= 14)
         {
             p.LastBuildLook = Now;
             int kind = WhatToBuild(p, life, v);

@@ -158,6 +158,7 @@ public sealed partial class PeopleSim
         if (Now - p.LastCraftFail < 3 * GameTime.TicksPerHour) return int.MinValue; // 방금 계획이 서지 않았다
         int w = StrongestWish(p);
         if (w >= 0 && p.Wish[w] < 20 && !p.HasTrait(T_curious)) return int.MinValue; // 조금 아쉬운 정도로는 실험하지 않는다
+        if (w != W_clothing && ClothesFirst(p)) return int.MinValue; // (E6 툰드라) 옷이 닳아 가면 다른 실험은 미룬다
         int s = (w >= 0 ? p.Wish[w] / 3 : 0) + (p.HasTrait(T_curious) ? 12 : 0) - (p.HasTrait(T_stubborn) ? 10 : 0) + (Ability(p, PeopleData.Int) - 5);
         if (w < 0 && !p.HasTrait(T_curious)) return int.MinValue;
         return s;
@@ -168,8 +169,20 @@ public sealed partial class PeopleSim
     {
         if (p.Known.Count == 0 || p.Stage(Now) < LifeStage.Child) return int.MinValue;
         if (Now - p.LastCraftFail < 6 * GameTime.TicksPerHour) return int.MinValue; // 방금 재료가 없어 못 했다
+        if (ClothesFirst(p)) return p.Wish[W_clothing] / 2 + 20; // (E6 툰드라) 추운 땅에서 옷이 닳아 가면 옷 짓기가 먼저
         int w = StrongestWish(p);
         return w < 0 ? int.MinValue : p.Wish[w] / 2 + 8;
+    }
+
+    /// <summary>
+    /// (E6 툰드라) 추운 땅에서 입을 것이 아쉽고(옷이 반쯤 닳았거나 · 없거나 · 가족이 입을 것이 없음) 가죽 일 · 옷 짓는 법을 아는 사람: 옷 짓기(가죽 손질 · 바느질)가
+    /// 짓기 · 다른 실험보다 앞선다. 툰드라에서 얼어 죽은 사람의 78%가 처음 털옷이 다 닳는 4년째 겨울에 죽었다 — 새 옷을 미리 짓지 못해서.
+    /// </summary>
+    private bool ClothesFirst(Person p)
+    {
+        if (W_clothing < 0 || p.Wish[W_clothing] < 30 || p.Stage(Now) < LifeStage.Child || !ColdLand(Life(p.Cell))) return false;
+        foreach (var k in p.Known) { var r = Craft.Rules[k.Rule]; if (r.Result >= 0 && (Craft.WearSlot(r.Result) > 0 || Prop(r.Result, Craft.P_covers) >= 3)) return true; }
+        return false;
     }
 
     /// <summary>실험 시작(또는 재료부터 모으기). 못 하면 false.</summary>
@@ -199,6 +212,7 @@ public sealed partial class PeopleSim
         var rng = Rng(p.Cell);
         // 바람 센 순서로 아는 법을 찾는다
         var order = Enumerable.Range(0, Craft.Wishes.Count).Where(w => p.Wish[w] > 0).OrderByDescending(w => WishRank(p, w)).ThenBy(w => w).Take(2).ToList(); // 가장 센 바람 둘만
+        if (ClothesFirst(p)) { order.Remove(W_clothing); order.Insert(0, W_clothing); } // (E6 툰드라) 옷부터
         foreach (int w in order) if (Plan(p, w, known: true, rng)) return true;
         p.LastCraftFail = Now;
         return false;

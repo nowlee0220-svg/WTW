@@ -18,7 +18,7 @@ public static class StarveBench
         public ulong Seed; public int Id, Age; public string Stage = "", Land = ""; public long Tick;
         public int CellPeople, RegionPeople; public long Supply; public int NearFood = -1, NearFoodAny = -1; public bool FoodReach;
         public int StashFood = -1, StashSeeds = -1, StashDist = -1, Tilled, Patches, Ripe, Growing, CarryFood, CarrySeeds;
-        public int Crossed, Cells, EatTries, FarmActs; public bool FarmGroup, Knows;
+        public int Crossed, Cells, EatTries, FarmActs, FireActs, CarryFat, Habit; public bool FarmGroup, Knows;
         public Dictionary<string, long> Time = new();
         public Dictionary<string, int> Whys = new();
         public string Trace = "";
@@ -64,6 +64,7 @@ public static class StarveBench
             d.Tilled = fc.Tilled; d.Patches = fc.Patches; d.Ripe = fc.Ripe; d.Growing = fc.Growing;
             if (life.Stash >= 0) { d.StashFood = fc.StashFood; d.StashSeeds = fc.StashSeeds; d.StashDist = Math.Max(Math.Abs(life.Stash % S - x / 1000), Math.Abs(life.Stash / S - y / 1000)); }
             d.FarmGroup = fc.Tilled + fc.Patches >= 3; d.Knows = sim.KnowsFarming(p);
+            d.Habit = p.FireHabit; int fatI = sim.Craft.ItemIndex("fat"); d.CarryFat = fatI >= 0 ? p.CarryCount(fatI) : 0; // (E6)
             foreach (var (it, c) in p.Carry) { if (sim.Craft.Prop(it, sim.Craft.PropIndex("sprouts")) > 0) d.CarrySeeds += c; else if (sim.Craft.Prop(it, sim.Craft.P_edible) > 0) d.CarryFood += c; }
             Ring? r;
             lock (rings) rings.TryGetValue((sim, p.Id), out r);
@@ -88,6 +89,7 @@ public static class StarveBench
                         if (e.A == Act.Cross) d.Crossed++;
                         if (e.A is Act.Eat or Act.EatCarried or Act.Gather) d.EatTries++;
                         if (e.A == Act.Farm) d.FarmActs++;
+                        if (e.A == Act.TendFire || e.A == Act.TakeFire || e.A == Act.Material && (e.W == Why.Fuel || e.W == Why.EveningFire || e.W == Why.FireKit)) d.FireActs++; // (E6) 불 지키는 일
                         string wk = $"{e.A}/{e.W}"; d.Whys[wk] = d.Whys.GetValueOrDefault(wk) + 1;
                         sb.Append($"{GameTime.Format(e.T)} {e.A}/{e.W} 칸{e.Cell} t{e.Tile} 밥{e.Food / 1000}; ");
                     }
@@ -129,6 +131,7 @@ public static class StarveBench
         o.AppendLine($"- 모아 둔 자리: 없음 {Pc(deaths.Count(d => d.StashFood < 0))} · 있고 먹을 것(씨 말고)이 있음 {Pc(deaths.Count(d => d.StashFood > 0))} · 씨만 있음 {Pc(deaths.Count(d => d.StashFood == 0 && d.StashSeeds > 0))} · 거리 중앙값 {Med(deaths.Where(d => d.StashDist >= 0).Select(d => d.StashDist))}");
         o.AppendLine($"- 밭: 익은 칸이 있음 {Pc(deaths.Count(d => d.Ripe > 0))} · 자라는 칸이 있음 {Pc(deaths.Count(d => d.Growing > 0))} · 들고 있던 먹을 것 있음 {Pc(deaths.Count(d => d.CarryFood > 0))} · 씨를 들고 있음 {Pc(deaths.Count(d => d.CarrySeeds > 0))}");
         o.AppendLine($"- 마지막 사흘: 지방 넘음 중앙값 {Med(deaths.Select(d => d.Crossed))}번(0번 {Pc(deaths.Count(d => d.Crossed == 0))} · 5번 넘게 {Pc(deaths.Count(d => d.Crossed > 5))}) · 거친 지방 수 중앙값 {Med(deaths.Select(d => d.Cells))} · 먹으러 나섬 중앙값 {Med(deaths.Select(d => d.EatTries))} · 밭일 중앙값 {Med(deaths.Select(d => d.FarmActs))}");
+        o.AppendLine($"- (E6) 불 지키는 일(땔감 · 불에 넣기 · 불씨 · 불쏘시개) 마지막 사흘 중앙값 {Med(deaths.Select(d => d.FireActs))}번(10번 넘게 {Pc(deaths.Count(d => d.FireActs > 10))}) · 불 버릇 30 넘음 {Pc(deaths.Count(d => d.Habit >= 30))} · 기름을 들고 죽음 {Pc(deaths.Count(d => d.CarryFat > 0))}");
         var tot = new Dictionary<string, long>();
         foreach (var d in deaths) foreach (var (k, v) in d.Time) tot[k] = tot.GetValueOrDefault(k) + v;
         long ts = Math.Max(1, tot.Values.Sum());
@@ -140,7 +143,7 @@ public static class StarveBench
         o.AppendLine();
         o.AppendLine("## 보기(앞 12명의 마지막 사흘)");
         foreach (var d in deaths.OrderBy(d => d.Seed).ThenBy(d => d.Tick).Take(12))
-            o.AppendLine($"- 시드 {d.Seed} · {d.Stage} {d.Age}살 · {d.Land} · 지방 사람 {d.CellPeople} · 들 {d.Supply} · 딸 것까지 {d.NearFood}({d.NearFoodAny}) · 모아 둔 것 {d.StashFood}/{d.StashSeeds}(거리 {d.StashDist}) · 밭 {d.Tilled}+{d.Patches}(익음 {d.Ripe}) · 든 것 {d.CarryFood}/{d.CarrySeeds} · 넘음 {d.Crossed} · {GameTime.Format(d.Tick)}: {d.Trace}");
+            o.AppendLine($"- 시드 {d.Seed} · {d.Stage} {d.Age}살 · {d.Land} · 지방 사람 {d.CellPeople} · 들 {d.Supply} · 딸 것까지 {d.NearFood}({d.NearFoodAny}) · 모아 둔 것 {d.StashFood}/{d.StashSeeds}(거리 {d.StashDist}) · 밭 {d.Tilled}+{d.Patches}(익음 {d.Ripe}) · 든 것 {d.CarryFood}/{d.CarrySeeds} · 넘음 {d.Crossed} · 불일 {d.FireActs} · 버릇 {d.Habit} · 기름 {d.CarryFat} · {GameTime.Format(d.Tick)}: {d.Trace}");
         Console.WriteLine(o.ToString().Split("## 보기")[0]);
         if (outPath is not null) File.WriteAllText(outPath, o.ToString());
     }

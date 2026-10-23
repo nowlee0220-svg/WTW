@@ -592,6 +592,8 @@ public sealed partial class PeopleSim
         if (cold || HasWearable(p)) WearBest(p);
         // 추운 땅: 옷이 없거나 닳아 가거나 가족이 입을 것이 없으면 입을 것이 아쉽다(미리 짓는다)
         if (cold && p.Stage(Now) >= LifeStage.Child && (p.Worn < 0 || p.WornWear < 600 || FamilyNeedsClothes(p))) AddWish(p, W_clothing, 25);
+        // (E6 툰드라) 반쯤 닳으면(신도) 더 아쉽다 — 가죽 손질 · 바느질을 앞당긴다
+        if (cold && p.Stage(Now) >= LifeStage.Child && (p.Worn >= 0 && p.WornWear < 500 || p.WornFeet >= 0 && p.FeetWear < 500 || p.WornFeet < 0)) AddWish(p, W_clothing, 15);
     }
 
     /// <summary>옷이 없는 사람: 같은 지방 가족이 들고 있는 남는 입을 것을 받는다.</summary>
