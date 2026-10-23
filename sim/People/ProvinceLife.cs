@@ -211,6 +211,82 @@ public sealed class ProvinceLife
     private Plot[]? _plotArr;
     public Plot[] PlotList => _plotArr ??= Plots.Values.ToArray();
 
+    // ── (E6) 건물 · 걷은 덤불 ──
+
+    /// <summary>(E6) 건물(번호 → 건물, 번호 순) · 다음 번호 · 바뀌는 때 순 목록(무너짐 · 낡음 · 버려짐). 모두 저장한다.</summary>
+    public readonly SortedDictionary<int, Building> Buildings = new();
+    public int NextBuildingId = 1;
+    public readonly SortedSet<(long Due, int Id)> BuildDue = new();
+    /// <summary>(E6) 타일 → 그 타일을 차지한 건물 번호(0 = 없음) · 타일마다 건물이 주는 따뜻함(0.1°C, 밤 기준). 건물로 다시 만든다(저장 안 함).</summary>
+    private int[]? _buildingAt; // (E6 속도) 건물이 처음 설 때 만든다 — 지방마다 9만 바이트를 미리 잡지 않게
+    public int BuildingAt(int tile) => _buildingAt is null ? 0 : _buildingAt[tile];
+    public short[]? Warm;
+    /// <summary>(E6) 건물이 바뀔 때마다 오른다(건물 일 찾기의 기억 · 화면 — 저장 안 함).</summary>
+    public int BuildVersion;
+    public object? BuildCache;
+    /// <summary>(E6) 밭 · 건물 자리를 고르며 걷어 낸 덤불 · 풀 타일(그 오브젝트가 없어졌다). 저장한다.</summary>
+    public readonly SortedSet<int> Cleared = new();
+    /// <summary>(E6) 마지막으로 비가 온 날(하루 경계에 정한다 — 한데서 자면 젖는다). 저장한다(깨어 있는 지방만).</summary>
+    public long RainDay = -1;
+    /// <summary>(E6) 이 땅의 불 지킴이(사람 번호, 없으면 −1) — 하루 경계에 정한다. 저장한다(깨어 있는 지방만).</summary>
+    public int FireKeeper = -1;
+    /// <summary>(E6) 이 땅에 놓인 사연 있는 물건(번호 순 — 세계 목록으로 다시 만든다, 저장 안 함).</summary>
+    public readonly SortedSet<int> NamedGround = new();
+
+    public Building? BuildingOn(int tile) => (uint)tile < HexFrame.TileCount && BuildingAt(tile) != 0 && Buildings.TryGetValue(_buildingAt![tile], out var b) ? b : null;
+
+    public void SetBuildDue(Building b, long due)
+    {
+        if (b.Due > 0) BuildDue.Remove((b.Due, b.Id));
+        b.Due = due;
+        if (due > 0) BuildDue.Add((due, b.Id));
+    }
+
+    /// <summary>(E6) 건물을 더한다(차지한 타일을 적는다).</summary>
+    public void AddBuilding(Building b, int w, int h)
+    {
+        Buildings[b.Id] = b;
+        if (b.Id >= NextBuildingId) NextBuildingId = b.Id + 1;
+        for (int dy = 0; dy < h; dy++) for (int dx = 0; dx < w; dx++) { int t = b.Tile + dy * HexFrame.Size + dx; if ((uint)t < HexFrame.TileCount) (_buildingAt ??= new int[HexFrame.TileCount])[t] = b.Id; }
+        if (b.Due > 0) BuildDue.Add((b.Due, b.Id));
+        BuildVersion++;
+    }
+
+    public void RemoveBuilding(int id, int w, int h)
+    {
+        if (!Buildings.Remove(id, out var b)) return;
+        if (b.Due > 0) BuildDue.Remove((b.Due, b.Id));
+        for (int dy = 0; dy < h; dy++) for (int dx = 0; dx < w; dx++) { int t = b.Tile + dy * HexFrame.Size + dx; if ((uint)t < HexFrame.TileCount && _buildingAt is not null && _buildingAt[t] == id) _buildingAt[t] = 0; }
+        BuildVersion++;
+    }
+
+    /// <summary>(E6) 걷어 낸 것을 빼고 그 타일의 오브젝트(없으면 −1).</summary>
+    public int ObjectAt(int tile) => Cleared.Count > 0 && Cleared.Contains(tile) ? -1 : Map.ObjectAt(tile);
+
+    /// <summary>(E6) 걷을 수 있는 오브젝트인가: 나무 · 돌 · 진흙 바닥이 아니고 먹을 것 · 주울 것이 나지 않는 덤불 · 풀(가시덤불 · 마른 덤불 · 풀 · 갈대 …).</summary>
+    public bool Clearable(int tile)
+    {
+        int o = ObjectAt(tile);
+        if (o < 0) return true;
+        var od = ObjectCatalog.Default.Objects[o];
+        return od.Kind is "bush" or "plant" && _harvest[tile] is null;
+    }
+
+    /// <summary>(E6) 덤불 · 풀을 걷는다(그 자리의 재료 · 다루는 법이 없어진다). 걷었으면 true.</summary>
+    public bool ClearObject(int tile)
+    {
+        int o = ObjectAt(tile);
+        if (o < 0 || !Clearable(tile)) return false;
+        Cleared.Add(tile);
+        int b = Bk(tile % HexFrame.Size, tile / HexFrame.Size);
+        _materials[b].Remove(tile);
+        _matByObj[o]?[b].Remove(tile);
+        return true;
+    }
+
+    /// <summary>(E6) 걷은 자리를 되살린다(불러오기 · 깨어남).</summary>
+    public void RestoreCleared(IEnumerable<int> tiles) { foreach (int t in tiles) ClearObject(t); }
+
     private static List<int>[] NewBuckets() { var a = new List<int>[Buckets * Buckets]; for (int i = 0; i < a.Length; i++) a[i] = new List<int>(); return a; }
 
     public ProvinceLife(Planet.Planet planet, ProvinceMap map, PeopleData data)
@@ -334,6 +410,8 @@ public sealed class ProvinceLife
         if (sh == 3) t = Mean10 + 20;
         else if (sh == 2) t += night ? 25 : (t > 280 ? -30 : 0);
         else if (sh == 1) t += night ? 15 : (t > 280 ? -40 : 0);
+        // (E6) 바람막이 · 움집 안(곁): 밤에 다, 낮에는 절반(동굴은 이미 따뜻하다)
+        if (Warm is not null && (uint)tile < HexFrame.TileCount && sh != 3) { int bw = Warm[tile]; if (bw > 0) t += night ? bw : bw / 2; }
         if (huddle) t += 30;
         // (E5b) 입은 옷: 따뜻함만큼 — 이미 따뜻하면 여미지 않는다(옷 때문에 22°C 를 넘지는 않는다)
         if (cloth > 0 && t < 220) t = Math.Min(t + cloth, 220);

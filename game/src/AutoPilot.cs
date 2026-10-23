@@ -399,7 +399,37 @@ public sealed class AutoPilot
             if (host.SpeedLevel != (_look == "fieldherd" ? 3 : 4)) host.SetSpeed(_look == "fieldherd" ? 3 : 4);
             return false;
         }
-        bool cardLook = _look is "experiment" or "teach" or "study" or "paintact" or "hunt" or "till" or "harvest";
+        // (E6) 건물: hut 다 지은 움집 · site 짓는 자리 · grave 무덤 · bench 작업대 · pit 저장 구덩이 · village 건물 여럿(창 없이 넓게)
+        if (_look is "hut" or "tent" or "site" or "grave" or "bench" or "pit" or "village" or "windbreak")
+        {
+            BuildingView? b = null;
+            if (snap.Buildings.TryGetValue(center, out var bl))
+                b = _look switch
+                {
+                    "hut" => bl.FirstOrDefault(q => q.Done && q.Name == "움집"),
+                    "tent" => bl.FirstOrDefault(q => q.Done && q.Name == "가죽 천막"),
+                    "windbreak" => bl.FirstOrDefault(q => q.Done && q.Name == "바람막이"),
+                    "site" => bl.Where(q => !q.Done && q.Progress > 0.3f && !q.Name.Contains("무덤")).OrderByDescending(q => q.Progress).FirstOrDefault(),
+                    "grave" => bl.FirstOrDefault(q => q.Done && q.Name.Contains("무덤")),
+                    "bench" => bl.FirstOrDefault(q => q.Done && (q.Name.Contains("자리") || q.Name == "가마") && q.Name != "불자리"),
+                    "pit" => bl.FirstOrDefault(q => q.Done && (q.Name == "저장 구덩이" || q.Name == "시렁")),
+                    _ => bl.Count(q => q.Done && !q.Name.Contains("무덤") && q.Name != "불자리") >= 3 ? bl.First(q => q.Done && q.Name == "움집" || q.Done && q.Name == "바람막이") : null,
+                };
+            if (b is not null)
+            {
+                var lp = pv.LayoutOf(center, b.Tile % HexFrame.Size, b.Tile / HexFrame.Size)!.Value;
+                float z = _pzoom ?? 2f;
+                bool panel = _look != "village";
+                pv.LookAt(lp.X + (panel ? (CellPanel.Width / 2.0) / z / ProvinceView.TilePx : 0), lp.Y, z);
+                if (panel) { _main.ClickForTest(center, b.Tile % HexFrame.Size, b.Tile / HexFrame.Size); host.SetPaused(true); }
+                else host.SetSpeed(1);
+                GD.Print($"LOOK {_look} {b.Name} tile={b.Tile} done={b.Done}");
+                return true;
+            }
+            if (host.SpeedLevel != 4) host.SetSpeed(4);
+            return false;
+        }
+        bool cardLook = _look is "experiment" or "teach" or "study" or "paintact" or "hunt" or "till" or "harvest" or "build" or "named";
         for (int i = 0; i < snap.PeopleCount; i++)
         {
             var v = snap.People[i];
@@ -416,6 +446,7 @@ public sealed class AutoPilot
                 "teach" or "study" or "paintact" => CardLookOk(v),
                 "till" => CardLookOk(v),
                 "harvest" => CardLookOk(v) && snap.Plots.TryGetValue(center, out var hp) && hp.Any(q => q.Tile == v.Target && q.Tilled), // 일군 밭을 거두는 사람
+                "build" or "named" => CardLookOk(v),
                 _ => false,
             };
             if (!ok || pv.PersonWorld(v.Id) is not { } wp) continue;
@@ -445,6 +476,9 @@ public sealed class AutoPilot
         // (E5c) 밭을 일구는 · 거두는 사람(걷는 중이 아니라 일하는 중)
         "till" => v.Act == Wtw.Sim.People.Act.Farm && !v.Walking && v.Why is Wtw.Sim.People.Why.FarmTill or Wtw.Sim.People.Why.FarmSow,
         "harvest" => v.Act == Wtw.Sim.People.Act.Farm && !v.Walking && v.Why == Wtw.Sim.People.Why.FarmRipe,
+        // (E6) 짓는 사람(쌓는 중) · 사연 있는 물건을 지닌 사람
+        "build" => v.Act == Wtw.Sim.People.Act.Build && !v.Walking && v.Why == Wtw.Sim.People.Why.BuildWork,
+        "named" => v.NamedHeld.Length > 0 && !v.Asleep,
         _ => false,
     };
 

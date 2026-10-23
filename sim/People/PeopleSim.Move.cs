@@ -37,6 +37,8 @@ public sealed partial class PeopleSim
         // 아이는 어른 따라, 아이 둔 부모는 아이를 데리고만
         // (E5c) 밭이 있는 무리는 쉽게 떠나지 않는다 — 모아 둔 먹을 것이 있거나 밭이 자라는 동안은 세 배를 견딘다
         bool farm = FarmTies(p, life);
+        // (E6) 모아 둔 먹을 것(씨 말고)이 사람 수만큼 있으면 떠나지 않고 그것을 꺼내 먹으며 버틴다
+        if (p.Scarcity >= ScarcityToMove && StashFoodFor(life) >= Math.Max(3, AliveIn(life))) p.Scarcity = ScarcityToMove - 1;
         if (p.Scarcity >= ScarcityToMove * (farm ? 3 : 1))
         {
             if (p.MoveWhy != Why.Scarce && GameScarce(life)) St.LeftForGame++; // (E5b) 측정: 짐승도 줄어 있었다
@@ -55,6 +57,17 @@ public sealed partial class PeopleSim
         { p.MoveWhy = Why.SeekMate; p.MoveTo = -1; return; }
         if (p.HasTrait(T_curious) && rng.NextInt(1000) < (farm ? 1 : 5) && !HasLittleChild(p)) { p.MoveWhy = Why.Explore; p.MoveTo = -1; return; }
     }
+
+    /// <summary>(E6) 모아 둔 자리의 먹을 것(씨는 남겨 둘 만큼 빼고).</summary>
+    private int StashFoodFor(ProvinceLife life)
+    {
+        if (life.Stash < 0 || !life.Items.TryGetValue(life.Stash, out var list)) return 0;
+        int food = 0, seeds = 0;
+        foreach (var (it, c) in list) { if (Prop(it, Craft.P_edible) <= 0) continue; if (IsSeed(it)) seeds += c; else food += c; }
+        return food + Math.Max(0, seeds - SeedReserve(life)) / 3;
+    }
+
+    private static int AliveIn(ProvinceLife life) { int n = 0; foreach (var q in life.People) if (!q.Dead) n++; return n; }
 
     private bool HasMateCandidate(Person p, ProvinceLife life)
     {

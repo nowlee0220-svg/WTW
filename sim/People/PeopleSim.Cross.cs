@@ -285,6 +285,7 @@ public sealed partial class PeopleSim
         MoveCompanions(p, from, to, entry);
         p.SearchDir = b.InDir8;
         St.Crossings++;
+        CrossHook?.Invoke(this, p, b.Nb);
         if (p.Why is Why.Scarce or Why.SeekMate or Why.Explore or Why.NoWater or Why.NoFood or Why.FollowFamily or Why.Break || !VisitedBefore(p, b.Nb))
             AddBio(p, BioKind.Moved, b.Nb, (int)p.Why | (from.Cell << 8));
         if (fresh) Notify(WorldEventKind.Moved, p, from.Cell, $"{Hangul.I(DisplayName(p))} 아무도 살지 않던 새 땅으로 들어갔습니다");
@@ -379,6 +380,7 @@ public sealed partial class PeopleSim
                 SchedHandle = life.Sched.NextHandle, SchedOrder = life.Sched.NextOrder, Events = life.Sched.ExportSorted(),
                 Herds = life.Herds.Values.ToList(), NextHerdId = life.NextHerdId, FishStock = life.FishStock, SleptAt = Now, AnimalsReady = true,
                 Plots = life.Plots.Values.ToList(), Stash = life.Stash, FarmSince = life.FarmSince, YearHarvest = life.YearHarvest, YearPotential = life.YearPotential, HarvestYear = life.HarvestYear, FirstHarvest = life.FirstHarvest, SeedsEatenYear = life.SeedsEatenYear,
+                Buildings = life.Buildings.Values.ToList(), NextBuildingId = life.NextBuildingId, Cleared = life.Cleared.ToArray(),
             };
         }
         ForgetLastLife();
@@ -425,6 +427,10 @@ public sealed record DormantProvince(int Cell, (int Tile, TileStock Stock)[] Sto
     public int HarvestYear { get; init; }
     public long FirstHarvest { get; init; } = -1;
     public int SeedsEatenYear { get; init; } = -1;
+    /// <summary>(E6) 건물(번호 순) · 다음 건물 번호 · 걷은 덤불 타일.</summary>
+    public List<Building> Buildings { get; init; } = new();
+    public int NextBuildingId { get; init; } = 1;
+    public int[] Cleared { get; init; } = Array.Empty<int>();
 }
 
 /// <summary>경계를 넘은 일 하나(화면 · 지구본의 이동 표시).</summary>

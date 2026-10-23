@@ -6,6 +6,7 @@
     "rules: action 으로 input(주 재료, 속성 최소값) 을 다룬다. input_max = 넘으면 안 되는 값, with = 둘째 재료(속성 최소값), with_max = 둘째 재료가 넘으면 안 되는 값, tool = 들고 있는 도구(속성 최소값), heat = 필요한 불 세기, tinder = 불쏘시개(burns 최소값)가 함께 있어야 함.",
     "  chance = 조건이 다 맞을 때 성공할 백분율(손재주 · 영리함 · 기술이 더해짐). result/count = 나오는 것, uses = 쓰는 주 재료 수, with_uses = 쓰는 둘째 재료 수, tool_uses = 쓰는 도구 수(끈처럼 묶으면 없어지는 것), time_min = 걸리는 시간(분), skill = 오르는 기술.",
     "  partial: 조건 하나가 모자랄 때(그 속성 이름 · 'heat' · 'tool' · 'with' · 'tinder' · 'chance') 남는 부분 성공 — text(결과 글) · hint(다음 실험의 단서) · result(남는 것). 없으면 generic_hints 의 말을 쓴다.",
+    "(E6) 짓는 법(세우기 raise · 땅 파기 dig)도 같은 규칙으로 판정한다 — 결과가 건물(kind building, buildings.json)이면 '이렇게 하면 지을 수 있겠다'를 알아낼 뿐 건물이 서지는 않는다(재료를 날라 실제로 쌓아야 선다). 작업대(받침 놓기 set)는 그 일을 자주 하던 사람이 들고 있던 것으로 해 보다가 알아낸다.",
     "(E5c) 심기(bury)는 실험이 아니라 싹이 난 것을 보고 알아낸다 — 그때도 이 규칙으로 판정한다(씨의 속성 sprouts). 판정 순서: 같은 행동의 규칙 중 맞는 조건이 가장 많은 것(같으면 먼저 적은 것). 조건이 모두 맞으면 성공(chance), 주 재료 조건의 절반 넘게 맞으면 부분 성공, 아니면 아무 일도 없다."
   ],
   "actions": [
@@ -30,7 +31,9 @@
     { "id": "scrape",  "name": "긁기" },
     { "id": "smoke",   "name": "그을리기" },
     { "id": "sew",     "name": "꿰매기" },
-    { "id": "dig",     "name": "땅 파기" }
+    { "id": "dig",     "name": "땅 파기" },
+    { "id": "raise",   "name": "세우기" },
+    { "id": "set",     "name": "받침 놓기" }
   ],
   "heat_names": [ "불 없음", "맨불(모닥불)", "가둔 불(돌 화덕)", "숯 + 가둔 불" ],
   "generic_hints": {
@@ -69,9 +72,27 @@
     { "id": "food",      "name": "먹을 것",  "props": ["edible", "meat"],              "actions": ["dry", "roast", "smoke"] },
     { "id": "hunting",   "name": "사냥 도구", "props": ["pierces", "sharp"],           "actions": ["roast", "twist", "strike", "grind", "cut"] },
     { "id": "clothing",  "name": "입을 것",  "props": ["covers", "warm"],              "actions": ["scrape", "dry", "smoke", "twist", "sew", "grind"] },
-    { "id": "farming",   "name": "밭일",     "props": ["digs", "sprouts"],             "actions": ["dig", "roast", "twist"] }
+    { "id": "farming",   "name": "밭일",     "props": ["digs", "sprouts"],             "actions": ["dig", "roast", "twist"] },
+    { "id": "shelter",   "name": "머물 곳",  "props": ["toughness", "tears"],          "actions": ["raise", "dig"] },
+    { "id": "storage",   "name": "모아 둘 곳", "props": ["tears", "fibrous"],          "actions": ["dig", "raise"] }
   ],
   "rules": [
+    { "id": "windbreak",    "name": "잔가지를 세우고 풀 · 잎을 엮어 덮어 바람을 막는다", "action": "raise", "input": { "toughness": 2, "weight": 1 }, "input_max": { "hardness": 2, "edible": 0, "sharp": 1 }, "with": { "tears": 3, "bends": 3 }, "result": "windbreak", "count": 1, "uses": 1, "with_uses": 1, "time_min": 40, "skill": "building",
+      "partial": { "with": { "text": "가지는 섰지만 덮을 것이 없어 바람이 숭숭 샌다", "hint": "풀 · 갈대 · 큰 잎으로 덮으면 바람이 막힐 것 같다" }, "toughness": { "text": "세운 것이 바람에 쓰러졌다", "hint": "더 질긴 가지를 세운다" } } },
+    { "id": "hut",          "name": "땅을 파고 굵은 나무 기둥을 박아 엮고 덮어 움집을 짓는다", "action": "dig", "input": { "toughness": 4, "weight": 2 }, "input_max": { "hardness": 2, "edible": 0, "sharp": 1 }, "with": { "tears": 3, "bends": 3 }, "tool": { "digs": 1 }, "result": "hut", "count": 1, "uses": 1, "with_uses": 1, "time_min": 60, "skill": "building",
+      "partial": { "tool": { "text": "땅이 단단해 기둥 박을 구덩이를 손으로는 못 팠다", "hint": "땅 파는 막대가 있으면 기둥을 박을 수 있겠다" }, "with": { "text": "기둥은 박았지만 지붕을 덮을 것이 없었다", "hint": "풀 · 갈대로 덮으면 비 · 바람을 막을 것 같다" }, "weight": { "text": "가는 가지로는 지붕을 받치지 못했다", "hint": "굵은 나무를 베어 기둥으로 쓴다" } } },
+    { "id": "tent",         "name": "뼈 · 막대를 세우고 가죽을 둘러 덮어 천막을 친다", "action": "raise", "input": { "toughness": 2, "weight": 1 }, "input_max": { "edible": 0, "sharp": 1 }, "with": { "covers": 2, "toughness": 2 }, "result": "tent", "count": 1, "uses": 1, "with_uses": 1, "time_min": 50, "skill": "building",
+      "partial": { "with": { "text": "기둥은 섰지만 덮을 가죽이 없어 바람이 그대로 들어왔다", "hint": "가죽으로 둘러 덮으면 바람을 막을 것 같다" }, "toughness": { "text": "세운 것이 가죽 무게에 쓰러졌다", "hint": "더 질긴 뼈 · 막대를 세운다" } } },
+    { "id": "storage_pit",  "name": "땅을 파고 풀 · 잎을 깔고 덮어 먹을 것을 묻어 둔다", "action": "dig", "input": { "tears": 3, "bends": 3 }, "input_max": { "edible": 0 }, "tool": { "digs": 1 }, "result": "storage_pit", "count": 1, "uses": 1, "time_min": 40, "skill": "building",
+      "partial": { "tool": { "text": "손으로는 얕게만 긁혔다", "hint": "땅 파는 막대로 깊이 파면 쥐가 덜 먹을 것 같다" } } },
+    { "id": "rack",         "name": "막대를 세우고 끈으로 묶어 땅에서 띄운 시렁을 만든다", "action": "raise", "input": { "toughness": 3, "weight": 1 }, "input_max": { "hardness": 2, "edible": 0, "sharp": 1 }, "with": { "fibrous": 4, "toughness": 3 }, "result": "rack", "count": 1, "uses": 1, "with_uses": 1, "time_min": 40, "skill": "building",
+      "partial": { "with": { "text": "막대가 묶이지 않아 무너졌다", "hint": "질긴 끈 · 힘줄로 묶으면 설 것 같다" } } },
+    { "id": "knap_spot",    "name": "무겁고 단단한 돌을 놓아 돌 깨는 받침을 만든다", "action": "set", "input": { "hardness": 3, "weight": 3 }, "input_max": { "edible": 0, "sharp": 0 }, "result": "knap_spot", "count": 1, "uses": 1, "time_min": 30, "skill": "building",
+      "partial": { "weight": { "text": "받침 돌이 가벼워 칠 때마다 튀었다", "hint": "무겁고 넓적한 돌을 받침으로 놓는다" } } },
+    { "id": "hide_frame",   "name": "나무로 틀을 짜고 끈으로 묶어 가죽을 펴 매는 자리를 만든다", "action": "set", "input": { "toughness": 4, "weight": 2 }, "input_max": { "edible": 0, "hardness": 3 }, "with": { "fibrous": 4, "toughness": 3 }, "result": "hide_frame", "count": 1, "uses": 1, "with_uses": 1, "time_min": 60, "skill": "building",
+      "partial": { "with": { "text": "틀이 묶이지 않아 가죽이 늘어졌다", "hint": "끈 · 힘줄로 틀을 묶는다" } } },
+    { "id": "kiln",         "name": "진흙으로 불을 덮어 쌓아 그릇 굽는 가마를 만든다", "action": "set", "input": { "moldable": 4 }, "with": { "hardness": 3, "weight": 3 }, "heat": 1, "result": "kiln", "count": 1, "uses": 1, "with_uses": 1, "time_min": 90, "skill": "building",
+      "partial": { "heat": { "text": "진흙을 쌓았지만 불이 없어 굳지 않았다", "hint": "불 위에 진흙을 덮어 쌓는다" }, "with": { "text": "진흙만으로는 무너졌다", "hint": "돌을 둘러 쌓고 진흙을 바른다" } } },
     { "id": "flake",        "name": "돌을 깨뜨려 날을 낸다",     "action": "strike", "input": { "splits": 3, "sharpens": 3 }, "tool": { "hardness": 3 }, "result": "flake", "count": 2, "uses": 1, "time_min": 40, "skill": "crafting",
       "partial": { "sharpens": { "text": "쪼개지긴 했지만 날이 서지 않았다", "result": "broken_stone" }, "splits": { "text": "깨지지 않고 튕겨 나갔다" }, "tool": { "text": "손으로 쳐서는 깨지지 않았다" } } },
     { "id": "scraper",      "name": "얇은 돌을 쳐서 긁개를 만든다", "action": "strike", "input": { "splits": 3, "sharpens": 2, "hardness": 2 }, "input_max": { "sharpens": 3 }, "tool": { "hardness": 3 }, "result": "scraper", "count": 1, "uses": 1, "time_min": 40, "skill": "crafting",

@@ -49,6 +49,9 @@ public enum Act : byte
     // (E5c) 농사
     /// <summary>밭일(Target = 밭 타일 또는 모아 둔 자리, TargetB = FarmJob).</summary>
     Farm,
+    // (E6) 건물
+    /// <summary>건물 일(Target = 건물 번호, TargetB = BuildJob).</summary>
+    Build,
 }
 
 public enum DeathCause : byte { None = 0, Starvation, Thirst, Cold, Heat, OldAge, Illness,
@@ -70,6 +73,8 @@ public enum Why : byte
     WantFood, WantHunting, WantClothing, HuntFood, HuntHide, HuntBone, JoinHunt, HuntChase, FishFood, Butchering, Injured,
     // (E5c) 밭일의 까닭
     WantFarming, FarmRipe, FarmSow, FarmTill, FarmWeed, FarmGuard, FarmStore, FarmSeed, FarmChase, SeedFood,
+    // (E6) 건물 · 잠자리 · 저녁 불 · 작업대 · 무덤
+    WantShelter, WantStorage, BuildFetch, BuildDeliver, BuildWork, BuildRepair, Bury, Home, Windbreak, EveningFire, Workbench, FireKit,
 }
 
 /// <summary>생김새(코드로 그리는 몸 — 부모를 닮는다). 값은 0~255.</summary>
@@ -102,6 +107,8 @@ public enum BioKind : byte
     Hunted, HuntFailed, Injured, Attacked, Tamed, Wore, KilledBeast, DroveOff,
     // (E5c) Other = 씨 아이템(또는 종 · 사람), Param = 타일 수 · 거둔 수
     SawSprouts, Sowed, Harvested, FieldEaten, AteSeeds, FirstField,
+    // (E6) Other = 건물 종류(또는 사람 · 물건 번호), Param = 품질 · 건물 번호
+    Built, Repaired, Buried, BuriedSomeone, LeftBody, NamedThing, Inherited, LostThing, FoundThing, MadeFine,
 }
 
 /// <summary>(E5) 어떻게 알게 되었나. 값은 저장 파일에 남는다.</summary>
@@ -234,7 +241,7 @@ public sealed class Person
 
     // (E4) 재료와 발견
     /// <summary>바람의 세기(0~100, crafting.json 의 wishes 순서)와 생긴 시각.</summary>
-    public const int WishSlots = 12;
+    public const int WishSlots = 16;
     public int[] Wish = new int[WishSlots];
     public long[] WishSince = new long[WishSlots];
     public readonly List<Knowledge> Known = new();
@@ -283,6 +290,29 @@ public sealed class Person
     public long LastSproutLook = long.MinValue / 2;
     public int Harvested;
     public long FirstSow = -1;
+    /// <summary>
+    /// (E6) 자기 전에 불을 피워 두고 지키는 버릇(0~100): 추운 밤을 겪거나(불 없이 떨며 잠) 남이 그러는 것을 보면 는다 · 천천히 잊는다.
+    /// 마지막으로 저녁 불을 챙긴 때 · 마지막으로 건물을 둘러본(새로 지을까) 때 · 무덤을 지난 때 · 건물 재료 찾기에서 "둘레에 없었다"(열쇠 · 때).
+    /// </summary>
+    public int FireHabit;
+    /// <summary>(E6 툰드라) 마지막으로 불 피울 것(불쏘시개)을 챙긴 때.</summary>
+    public long LastFireKit = long.MinValue / 2;
+    public long LastEveningFire = long.MinValue / 2, LastBuildLook = long.MinValue / 2, LastGraveLook = long.MinValue / 2;
+    public long BuildMissKey, BuildMissTick = long.MinValue / 2;
+    /// <summary>(E6 되풀이 감시로 고침) 마지막으로 구해 온 재료와 그때 — 짐을 덜 때 막 구해 온 것은 내려놓지 않는다(재료를 줍고 버리기를 되풀이했다).</summary>
+    public int LastPickItem = -1;
+    public long LastPickTick = long.MinValue / 2;
+    /// <summary>(E6 고침) 그 앞에 주운 것 — 짐이 찼을 때 둘을 번갈아 줍고 버리던 것(부싯돌 ↔ 힘줄)을 막는다.</summary>
+    public int PrevPickItem = -1;
+    public long PrevPickTick = long.MinValue / 2;
+    /// <summary>(E6) 묻혔나(0 아니 · 1 무덤 · 2 그대로 둠) · 묻힌 건물 번호(지방 안).</summary>
+    public byte Burial;
+    public int GraveId = -1;
+    /// <summary>(E6) 든 것의 품질(아이템 → 0 나쁨 · 1 보통 · 2 좋음 · 3 훌륭함, 없으면 보통) — 같은 것을 여럿 들면 가장 좋은 것. 입은 옷 · 신의 품질.</summary>
+    public readonly List<(int Item, byte Q)> Quality = new();
+    public byte WornQ = 1, FeetQ = 1;
+    /// <summary>(E6) 지닌 사연 있는 물건(번호).</summary>
+    public readonly List<int> NamedHeld = new();
 
     public readonly List<ThoughtInst> Thoughts = new();
     public readonly List<Relation> Relations = new(); // Other 순으로 정렬

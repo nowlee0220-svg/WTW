@@ -288,6 +288,7 @@ public partial class ProvinceView
                 var v = snap.People[i];
                 bool carried = v.Carrier >= 0 && !v.Dead;
                 if ((pass == 0) == carried) continue;
+                if (v.Dead && v.Buried) continue; // (E6) 묻힌 사람은 무덤으로 그린다
                 Shown? sh = null;
                 foreach (var s0 in _shown) if (s0.Map.Cell == v.Cell) { sh = s0; break; }
                 if (sh is null) continue;
@@ -338,6 +339,8 @@ public partial class ProvinceView
             extraX = 0.28f * TilePx; extraY = -0.05f * TilePx;
         }
         else snapPos(v, tick, out mx, out my, out dx, out dy);
+        // (E6) 밭일 · 짓기 중에는 그 칸 아래쪽 끝에 서서 그린다 — 사람 그림이 밭 칸 · 짓는 자리를 가리지 않게(E5c 에서 넘어옴)
+        if (!v.Walking && !v.Dead && v.Act is Act.Farm or Act.Build) extraY = 0.42f * TilePx;
         var (lx, ly) = sh.Place.ToLayout(mx / 1000.0, my / 1000.0);
         var feet = new Vector2((float)lx, (float)ly) * TilePx + new Vector2(extraX, extraY);
         node.Feet = feet;

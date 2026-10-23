@@ -91,6 +91,7 @@ public partial class ProvinceView
                 }
         }
         UpdateFarm(snap);
+        UpdateBuild(snap);
         for (int k = np; k < _paintSprites.Count; k++) _paintSprites[k].Visible = false;
         for (int k = nf; k < _fireSprites.Count; k++) _fireSprites[k].Visible = false;
         for (int k = ng; k < _glowSprites.Count; k++) _glowSprites[k].Visible = false;
@@ -104,6 +105,7 @@ public partial class ProvinceView
         foreach (var s in _itemSprites) s.Visible = false;
         foreach (var s in _paintSprites) s.Visible = false;
         HideFarm();
+        HideBuild();
     }
 
     private static Vector2 TileWorld(Shown sh, int tile)

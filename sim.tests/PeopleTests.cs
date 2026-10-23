@@ -38,7 +38,7 @@ public class PeopleTests
         Assert.Equal(22, d.Traits.Count);
         Assert.Equal(5, d.Abilities.Count);
         Assert.Equal(10, d.Skills.Count);
-        Assert.InRange(d.Thoughts.Count, 20, 50);
+        Assert.InRange(d.Thoughts.Count, 20, 60); // (E6) 집에서 잠 · 묻어 줌 · 무덤 곁에서 떠올림 · 그대로 두고 옴 · 지은 것이 섬 · 훌륭한 물건 6개
         Assert.Contains(d.Harvest, h => h is { Food: true, Item: "apple" });
         Assert.Contains(d.Harvest, h => h is { Food: false, Item: "flint" });
     }

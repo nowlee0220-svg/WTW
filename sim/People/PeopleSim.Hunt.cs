@@ -60,6 +60,20 @@ public sealed partial class PeopleSim
             if (Prop(item, Craft.P_hardness) >= 3 && w >= 2 && Prop(item, Craft.P_edible) == 0) stones += n;
         }
         if (stones >= 2) best = Math.Max(best, 2);
+        // (E6) 가장 잘 찌르는 것의 품질: 좋음 이상이면 +1, 나쁨이면 −1
+        if (best >= 3) { int wi = BestWeapon(p); if (wi >= 0) { int q = QualityOf(p, wi); best += q >= 2 ? 1 : q <= 0 ? -1 : 0; } }
+        return best;
+    }
+
+    /// <summary>(E6) 가장 잘 찌르는 무기(아이템 번호, 없으면 −1).</summary>
+    private int BestWeapon(Person p)
+    {
+        int best = -1, bv = 0;
+        foreach (var (item, _) in p.Carry)
+        {
+            int pierce = Prop(item, Craft.P_pierces);
+            if (pierce >= 2 && Prop(item, Craft.P_weight) >= 1 && Prop(item, Craft.P_toughness) >= 3 && pierce > bv) { bv = pierce; best = item; }
+        }
         return best;
     }
 
@@ -292,6 +306,7 @@ public sealed partial class PeopleSim
                 Integrate(victim, Now);
                 AddBio(victim, BioKind.Injured, h.Species, (int)(sev / 1000));
                 Injure(victim, (int)sev, DeathCause.HuntAccident);
+                PassionEvent(victim, PeopleData.Hunting, -30); // (E6) 크게 다치면 열정이 식는다
                 if (victim.Dead) { St.HuntDeaths++; if (victim == p) { ReleaseHunters(p); return; } helpers.Remove(victim); }
             }
         }
@@ -321,6 +336,9 @@ public sealed partial class PeopleSim
         AddBio(p, BioKind.Hunted, h.Species, helpers.Count);
         foreach (var q in helpers) AddThought(q, H_hunted);
         p.Wish[W_hunting] = Math.Max(0, p.Wish[W_hunting] - 20);
+        // (E6) 큰 짐승 · 포식자를 잡은 무기에는 이름이 붙는다(사연 있는 물건) · 사냥 열정
+        if (a.Size >= 3 || a.Predator) { WantName(p, BestWeapon(p), 1, h.Species); PassionEvent(p, PeopleData.Hunting, 25); }
+        else PassionEvent(p, PeopleData.Hunting, 4);
         if (InProvince) Defer(new PendingOp { Kind = PendingOp.Kinds.Hunt, A = p.Id, B = h.Species, C = helpers.Count, D = -1 });
         else HuntWorld(p, h.Species, helpers.Count);
         // 함께 잡은 사람(다른 말을 쓰면): 그 짐승의 낱말을 이끈 사람의 말에서 빌려 온다
@@ -499,7 +517,9 @@ public sealed partial class PeopleSim
     // ───────── 옷 ─────────
 
     /// <summary>입은 옷의 따뜻함(0.1°C): 몸 따뜻함 × 4°C + 발 따뜻함 × 3°C (털가죽 옷 · 신 = +26°C, 날가죽 두름 = +8°C).</summary>
-    public int ClothWarm(Person p) => (p.Worn >= 0 ? Prop(p.Worn, Craft.P_warm) * 40 : 0) + (p.WornFeet >= 0 ? Prop(p.WornFeet, Craft.P_warm) * 30 : 0);
+    /// <summary>입은 것의 따뜻함(0.1°C) — (E6) 품질이 좋으면 더(나쁨 −20% · 좋음 +15% · 훌륭함 +30%).</summary>
+    public int ClothWarm(Person p) => (p.Worn >= 0 ? Prop(p.Worn, Craft.P_warm) * 40 * ClothPct(p.WornQ) / 100 : 0) + (p.WornFeet >= 0 ? Prop(p.WornFeet, Craft.P_warm) * 30 * ClothPct(p.FeetQ) / 100 : 0);
+    private static int ClothPct(int q) => q <= 0 ? 80 : q == 1 ? 100 : q == 2 ? 115 : 130;
 
     /// <summary>추운 밤이 있는 땅인가(그 지방 밤 기온이 12°C 아래) — 따뜻한 땅에서는 날가죽을 걸치지 않는다.</summary>
     private static bool ColdLand(ProvinceLife life) => life.Mean10 - life.Range10 / 2 < 120;
@@ -523,9 +543,10 @@ public sealed partial class PeopleSim
             }
             if (best < 0) continue;
             if (!cold && Prop(best, Craft.P_covers) < 4 && cur < 0) continue; // 따뜻한 땅: 날가죽 · 마른 가죽은 걸치지 않는다(지은 옷은 입는다)
+            int bq = QualityOf(p, best);
             p.RemoveCarry(best, 1);
-            if (cur >= 0) p.AddCarry(cur, 1);
-            if (slot == 1) { p.Worn = best; p.WornWear = 1000; } else { p.WornFeet = best; p.FeetWear = 1000; }
+            if (cur >= 0) { p.AddCarry(cur, 1); SetQuality(p, cur, slot == 1 ? p.WornQ : p.FeetQ); }
+            if (slot == 1) { p.Worn = best; p.WornWear = 1000; p.WornQ = (byte)bq; } else { p.WornFeet = best; p.FeetWear = 1000; p.FeetQ = (byte)bq; }
             AddBio(p, BioKind.Wore, -1, best);
         }
     }
@@ -545,7 +566,7 @@ public sealed partial class PeopleSim
         {
             int item = slot == 1 ? p.Worn : p.WornFeet;
             if (item < 0) continue;
-            int wear = 3 + (5 - Prop(item, Craft.P_toughness)) * 3 + Prop(item, Craft.P_rots) * 15;
+            int wear = (3 + (5 - Prop(item, Craft.P_toughness)) * 3 + Prop(item, Craft.P_rots) * 15) * WearPct(slot == 1 ? p.WornQ : p.FeetQ) / 100; // (E6) 품질이 좋으면 덜 닳는다
             if (slot == 1) { p.WornWear -= wear; if (p.WornWear <= 0) { p.Worn = -1; St.ClothesWornOut++; } }
             else { p.FeetWear -= wear; if (p.FeetWear <= 0) { p.WornFeet = -1; St.ClothesWornOut++; } }
         }
@@ -571,11 +592,16 @@ public sealed partial class PeopleSim
         if (cold || HasWearable(p)) WearBest(p);
         // 추운 땅: 옷이 없거나 닳아 가거나 가족이 입을 것이 없으면 입을 것이 아쉽다(미리 짓는다)
         if (cold && p.Stage(Now) >= LifeStage.Child && (p.Worn < 0 || p.WornWear < 600 || FamilyNeedsClothes(p))) AddWish(p, W_clothing, 25);
+        // (E6 툰드라) 반쯤 닳으면(신도) 더 아쉽다 — 가죽 손질 · 바느질을 앞당긴다
+        if (cold && p.Stage(Now) >= LifeStage.Child && (p.Worn >= 0 && p.WornWear < 500 || p.WornFeet >= 0 && p.FeetWear < 500 || p.WornFeet < 0)) AddWish(p, W_clothing, 15);
     }
 
     /// <summary>옷이 없는 사람: 같은 지방 가족이 들고 있는 남는 입을 것을 받는다.</summary>
     private void GiveSpareClothes(Person p)
     {
+        // (E6 고침 — 툰드라) 안겨 있는 아기는 입지 못한다(입기는 안긴 사람을 건너뛴다) — 무두질한 가죽이 날마다 아기 손으로 갔다가
+        // 털옷 지을 사람에게 되돌아가기를 되풀이해 털옷 지을 가죽 석 장이 좀처럼 한 손에 모이지 않았다(E5c 부터 있던 구멍)
+        if (p.Carrier >= 0) return;
         var life = Life(p.Cell);
         if (!ColdLand(life)) return;
         foreach (var q in life.People)

@@ -109,6 +109,7 @@ public class SpeedTests
     //   E5b 짐승 · 사냥(지방마다 짐승 무리 · 새 예약 종류 · 바람 12칸 · 저장 버전 10): 짐승과 사냥이 세계를 바꿔 새 값
     //   E5b 고침(목마름 · 썩음 · 속도 — 경계 넘어 설 자리 · 사냥 길 · 무리 판단 · 손질 몫 · 바구니 되풀이): 결과가 바뀌어 새 값(마을은 장면도 다시 만듦)
     //   E5c 농사(씨 맺는 들풀 · 밭 · 모아 둔 자리 · 저장 버전 12): 들풀이 지방 지도를 바꾸고 농사가 세계를 바꿔 새 값(장면도 다시 만듦)
-    private const ulong PinFamilies = 0x45ED9B1BF7CA5E42UL;
-    private const ulong PinVillage = 0xA0E0D976F338535EUL;
+    //   E6 건물과 물건(짓기 · 무덤 · 품질 · 사연 있는 물건 · 저장 버전 13): 건물이 세계를 바꿔 새 값(장면도 다시 만듦)
+    private const ulong PinFamilies = 0xAF8419E6C41875D1UL;
+    private const ulong PinVillage = 0x4D6D156FA1E46681UL;
 }

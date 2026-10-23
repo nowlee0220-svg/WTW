@@ -396,6 +396,14 @@ public partial class Main : Node
                 "무리가 머무는 곳 곁에 쌓아 두고 나눠 먹는 것(거둔 낟알 · 말린 고기 …). 다음에 심을 씨도 여기 남겨 둔다 — 굶주리면 씨까지 먹어 버리기도 한다. 쥐 · 벌레가 조금씩 먹는다(바구니 · 토기가 있으면 덜)."));
             facts = list;
         }
+        // (E6) 건물
+        if (_snap is not null && _snap.Buildings.TryGetValue(m.Cell, out var blds))
+        {
+            var list = facts.ToList();
+            list.Add(new ProvinceFact("건물", BuildingSummary(blds),
+                "사람들이 재료를 날라 쌓아 지은 것. 바람막이 · 움집 안에서 자면 덜 춥고 비를 피한다 · 저장 구덩이 · 시렁은 모아 둔 것을 쥐 · 벌레에게서 지킨다 · 작업대(돌 깨는 자리 · 가죽 일 자리 · 가마) 곁에서 하면 그 일이 더 잘 된다 · 무덤에는 죽은 사람이 묻혀 있다. 짓는 법은 재료의 성질을 해 보며 알아내고, 품질이 낮으면 빨리 낡는다 — 낡으면 고치거나 무너진다."));
+            facts = list;
+        }
         _info.Show($"지방 정보 — {_snap?.LandLabel(m.Cell) ?? TileDescriber.ProvinceName(p, m.Cell)}", facts); // 이름이 있으면 이름만(위 막대와 겹치지 않게)
     }
 
@@ -459,7 +467,7 @@ public partial class Main : Node
         var p = _globe.Planet;
         var m = cell >= 0 ? _province.MapOf(cell) : null;
         if (p is null || m is null) { _card.Visible = false; return; }
-        _card.ShowAt(PaintingReport(cell, x, y) ?? PlotReport(cell, x, y) ?? TileDescriber.Describe(p, m, x, y), GetViewport().GetMousePosition());
+        _card.ShowAt(BuildingReport(cell, x, y) ?? NamedReport(cell, x, y) ?? PaintingReport(cell, x, y) ?? PlotReport(cell, x, y) ?? TileDescriber.Describe(p, m, x, y), GetViewport().GetMousePosition());
     }
 
     /// <summary>(E5c) 밭 · 모아 둔 자리에 마우스를 올리면: 무엇이 · 어느 단계 · 잡풀 · 짐승 · 이 땅이 자라기 좋은 정도.</summary>
@@ -507,7 +515,68 @@ public partial class Main : Node
         var m = _province.MapOf(cell);
         if (p is null || m is null) return;
         CloseCard();
-        _panel.ShowTile(PaintingReport(cell, x, y) ?? PlotReport(cell, x, y) ?? TileDescriber.Describe(p, m, x, y));
+        _panel.ShowTile(BuildingReport(cell, x, y) ?? NamedReport(cell, x, y) ?? PaintingReport(cell, x, y) ?? PlotReport(cell, x, y) ?? TileDescriber.Describe(p, m, x, y));
+    }
+
+    /// <summary>(E6) "움집 3 · 저장 구덩이 1 · 무덤 2 (짓는 중 1 · 낡음 1)".</summary>
+    private static string BuildingSummary(BuildingView[] blds)
+    {
+        var done = blds.Where(b => b.Done).GroupBy(b => b.Name).Select(g => $"{g.Key} {g.Count()}").ToList();
+        int sites = blds.Count(b => !b.Done), worn = blds.Count(b => b.Done && b.Condition < Wtw.Sim.People.PeopleSim.WornCond && !b.Name.Contains("무덤") && b.Name != "불자리");
+        return (done.Count == 0 ? "아직 다 지은 것이 없다" : string.Join(" · ", done)) + (sites + worn > 0 ? $" (짓는 중 {sites} · 낡음 {worn})" : "");
+    }
+
+    /// <summary>(E6) 건물 창: 무엇 · 누가 · 언제 · 무엇을 하는 곳 · 품질 · 지금 누가 쓰나(무덤이면 누가 묻혔나).</summary>
+    private TileReport? BuildingReport(int cell, int x, int y)
+    {
+        if (_snap is null || !_snap.Buildings.TryGetValue(cell, out var blds)) return null;
+        int t = y * HexFrame.Size + x;
+        var b = blds.FirstOrDefault(q => q.Covers(t));
+        if (b is null) return null;
+        var d = Wtw.Sim.Data.BuildingData.Default.Buildings[b.Kind];
+        string F(long tick) => Wtw.Sim.Time.GameTime.Format(tick);
+        string what = d.Grave > 0 ? $"{b.Buried}의 무덤" : d.IsShelter ? "안에서 자면 덜 춥고 비 · 바람을 막는 곳" + (d.WarmIn > 0 ? $"(안 +{d.WarmIn * Wtw.Sim.People.PeopleSim.QualityPct(b.Quality) / 1000}°C)" : "")
+            : d.IsStorage ? "거둔 것 · 말린 고기를 넣어 쥐 · 벌레 · 짐승이 덜 먹게 지키는 곳(모아 둔 자리)" : d.Bench switch
+            {
+                "stone" => "돌 · 뼈를 치고 깨고 가는 일이 여기서 더 잘 되고 빨리 된다(한 사람씩)",
+                "hide" => "가죽을 긁고 말리고 꿰매는 일이 여기서 더 잘 된다(한 사람씩)",
+                "pottery" => "진흙 그릇을 빚고 굽는 곳 — 땔감을 넣으면 돌 화덕만큼 센 불이 된다(한 사람씩)",
+                _ => d.Id == "fire_pit" ? "무리가 정해 둔 불 자리(돌로 둘러 가둔 불)" : "",
+            };
+        var facts = new List<(string, string)>
+        {
+            ("무엇을 하는 곳", what),
+            ("누가", b.Builders.Length > 0 ? string.Join(" · ", b.Builders) + (b.Founder.Length > 0 && b.Builders.Length > 1 ? $" (자리를 정한 사람: {b.Founder})" : "") : b.Founder),
+            ("언제", b.Done ? $"{F(b.Started)}에 시작해 {F(b.Finished)}에 다 지음" + (b.Repaired >= 0 ? $" · {F(b.Repaired)}에 고침" : "") : $"{F(b.Started)}에 시작 — 짓는 중({b.Progress * 100:0}%)"),
+        };
+        if (!b.Done) facts.Add(("모자란 것", b.Need.Length > 0 ? b.Need : "재료는 다 모였다 — 쌓는 중"));
+        if (d.Grave > 0)
+        {
+            facts.Add(("묻힌 사람", $"{b.Buried}" + (b.BuriedAge >= 0 ? $" (나이 {b.BuriedAge}, {F(b.BuriedDied)}에 죽음)" : "")));
+            facts.Add(("까닭", d.Grave == 1 ? "가까운 이들이 땅을 파고 묻었다 — 무리마다 해 오던 대로(흙무덤 · 돌무더기 · 그대로 둠)" : "가까운 이들이 돌을 쌓아 덮었다 — 무리마다 해 오던 대로"));
+            facts.Add(("곁을 지나면", "가까웠던 사람은 그 사람을 떠올린다"));
+        }
+        else
+        {
+            if (b.Done) facts.Add(("품질", $"{Wtw.Sim.People.PeopleSim.QualityName(b.Quality)} — 짓는 사람들의 솜씨 · 운으로 정해졌다(낮으면 빨리 낡고 덜 막는다)"));
+            if (b.Done && d.DecayDays > 0) facts.Add(("상태", b.Condition >= Wtw.Sim.People.PeopleSim.WornCond ? $"멀쩡하다({b.Condition / 10}%)" : $"낡았다({b.Condition / 10}%) — 덜 막는다, 고치지 않으면 무너진다"));
+            if (b.Owner.Length > 0) facts.Add(("집안", $"{b.Owner}의 집안이 자는 곳"));
+            if (b.Done) facts.Add(("지금 쓰는 사람", b.Users.Length == 0 ? "없음" : string.Join(" · ", b.Users)));
+        }
+        string title = d.Grave > 0 ? $"{d.Name} — {b.Buried}" : $"{d.Name}{(b.Done ? "" : " (짓는 중)")}";
+        return new TileReport(title, what, string.Join("\n", facts.Select(f => $"{f.Item1}: {f.Item2}")), facts);
+    }
+
+    /// <summary>(E6) 땅에 남은 사연 있는 물건: 이름 · 뜻 · 내력.</summary>
+    private TileReport? NamedReport(int cell, int x, int y)
+    {
+        if (_snap is null || _snap.Named.Length == 0) return null;
+        int t = y * HexFrame.Size + x;
+        var n = _snap.Named.FirstOrDefault(q => !q.Gone && q.Holder < 0 && q.Cell == cell && q.Tile == t);
+        if (n is null) return null;
+        var facts = new List<(string, string)> { ("이름", $"'{n.Name}' — 뜻: {n.Meaning}"), ("품질", Wtw.Sim.People.PeopleSim.QualityName(n.Quality)) };
+        foreach (var (tick, text) in n.History) facts.Add((Wtw.Sim.Time.GameTime.Format(tick), text));
+        return new TileReport($"{n.ItemName} '{n.Name}' — 사연 있는 물건", "땅에 남아 있다 — 누가 주우면 다시 찾은 것이 된다", n.Meaning, facts);
     }
 
     /// <summary>(E5b) 짐승 무리의 작은 카드: 종 · 마릿수 · 하는 일 · 왜 · 크기 · 사나움 · 나오는 것 · 이 땅에 몇 마리(살 수 있는 수).</summary>
@@ -725,6 +794,8 @@ public partial class Main : Node
             }
         }
         if (l.Count == 0 && snap.OpenedCells.Contains(c)) l.Add(("사는 사람", "지금은 아무도 없다(전에 사람이 살았던 땅)"));
+        // (E6) 건물(깨어 있는 지방만)
+        if (snap.Buildings.TryGetValue(c, out var blds) && blds.Length > 0) l.Add(("건물", BuildingSummary(blds)));
         // (E5) 이 땅의 무리가 아는 법 · 남은 그림
         var knows = snap.Discoveries.Select(d => (d.Item, N: d.Cells.FirstOrDefault(x => x.Cell == c).Count)).Where(x => x.N > 0).OrderByDescending(x => x.N).ToList();
         if (knows.Count > 0) l.Add(("아는 법", string.Join(" · ", knows.Take(10).Select(x => $"{x.Item} {x.N}명")) + (knows.Count > 10 ? $" … 모두 {knows.Count}가지" : "")));

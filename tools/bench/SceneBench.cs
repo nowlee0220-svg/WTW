@@ -10,10 +10,17 @@ using Wtw.Sim.World;
 /// </summary>
 public static class SceneBench
 {
-    public static void Run(string outDir, ulong seed, bool onlyArtisan = false, bool onlyCopper = false, bool onlyTundra = false, bool onlyFarm = false)
+    public static void Run(string outDir, ulong seed, bool onlyArtisan = false, bool onlyCopper = false, bool onlyTundra = false, bool onlyFarm = false, bool onlyBuild = false)
     {
         Directory.CreateDirectory(outDir);
         var index = new List<string>();
+        if (onlyBuild)
+        {
+            index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("hut-village")));
+            BuildScene(outDir, seed, index);
+            File.WriteAllLines(Path.Combine(outDir, "index.txt"), index);
+            return;
+        }
         if (onlyFarm)
         {
             index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("river-farm")));
@@ -28,7 +35,7 @@ public static class SceneBench
             File.WriteAllLines(Path.Combine(outDir, "index.txt"), index);
             return;
         }
-        if (onlyArtisan) index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("last-artisan")));
+        if (onlyArtisan) index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("last-artisan") && !l.StartsWith("first-pot")));
         if (onlyCopper)
         {
             index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("copper-village")));
@@ -67,13 +74,18 @@ public static class SceneBench
         if (!onlyArtisan) {
         long fire = FirstTick("campfire", 200); // (E5c 고침) 장면 시드에서 첫 불이 100년 뒤로 밀려 200년까지 찾는다
         if (fire > 0) Save("first-fire.wtw", "첫 불 직전", "따뜻한 숲의 세 가족 — 이틀 뒤에 누군가 처음으로 모닥불을 피운다. 1배속으로 지켜보세요", fire - 2 * GameTime.TicksPerDay);
-        long pot = FirstTick("pot", 150);
+        }
+        { // (E6) 토기가 150년 뒤로 밀려 200년까지 찾는다(--artisan 으로도 다시 만든다)
+        long pot = FirstTick("pot", 200);
         if (pot > 0) Save("first-pot.wtw", "첫 토기 직전", "이틀 뒤에 누군가 처음으로 진흙 그릇을 불에 구워 토기를 만든다", pot - 2 * GameTime.TicksPerDay);
+        }
+        if (!onlyArtisan) {
         Save("village-50y.wtw", "50년 뒤 마을", "세 가족이 50년을 산 뒤의 마을 — 가르치고 · 배우는 모습. [지식의 행방] 창과 카드의 [지식]을 보세요", 50 * GameTime.TicksPerYear);
         }
         if (!onlyArtisan) CopperScene(outDir, seed, index);
         if (!onlyArtisan) TundraScene(outDir, seed, index);
         if (!onlyArtisan) FarmScene(outDir, seed, index);
+        if (!onlyArtisan) BuildScene(outDir, seed, index);
         // (E5) 마지막 장인이 늙음: 세계에서 그 법을 아는 사람이 셋 이하이고 모두 40살 넘은 때 가운데 가장 "끊기기 쉬운" 때
         // (아는 사람이 적을수록 · 가장 젊은 아는 사람도 늙었을수록). 200년 안. 결정론이라 늘 같은 장면.
         // (E5c) 150년 · 45살로는 찾지 못해(지식이 더 널리 퍼졌다) 200년 · 40살로 넓혔다.
@@ -91,7 +103,7 @@ public static class SceneBench
                     var knowers = w.People.All.Where(q => !q.Dead && q.Knows(rule)).ToList();
                     if (knowers.Count == 0 || knowers.Count > 3) continue;
                     int young = knowers.Min(q => q.AgeYears(w.Now));
-                    if (young < 40) continue;
+                    if (young < 35) continue; // (E6) 40살로는 200년 안에 찾지 못해 35살로
                     int score = young - knowers.Count * 8;
                     if (score <= bestScore) continue;
                     var oldest = knowers.OrderByDescending(q => q.AgeYears(w.Now)).First();
@@ -169,6 +181,31 @@ public static class SceneBench
         SaveGame.SaveFile(w, Path.Combine(outDir, file));
         string land = Wtw.Sim.Planet.PlanetNames.Of(w.Planet.Biome[cell]);
         index.Add($"{file}|씨를 아는 무리, 강가 초원|큰 강이 흐르는 {land}(칸 {cell}, 연평균 {w.Planet.Temp10[cell] / 10.0:0.0}°C)에 세 가족 — 어른들은 씨를 묻고 땅을 일구는 법을 알고 낟알 씨와 땅 파는 막대를 든다. 1~2배속으로 밭을 일구는 모습을, 5배속으로 며칠 넘겨 싹 → 익음 → 거두기와 밭에 오는 짐승을 보세요 ({GameTime.Format(w.Now)} · 사람 {w.People.AliveCount}명)");
+        Console.WriteLine($"{file}: 칸 {cell}({land}) · 사람 {w.People.AliveCount}명");
+    }
+
+    /// <summary>
+    /// (E6) 움집을 짓는 마을: 나무가 있는 따뜻한 땅(온대림 · 강가)에 세 가족 — 어른들은 불 · 바람막이 · 움집 · 저장 구덩이 짓는 법을 알고 돌날 · 뾰족한 막대를 든다.
+    /// 비 오는 밤을 한데서 보내고 온 무리라 머물 곳이 아쉽다(바람 30). 그 지방 아침 7시에서 시작.
+    /// </summary>
+    private static void BuildScene(string outDir, ulong seed, List<string> index)
+    {
+        var w = GameWorld.Create(seed, new WorldConfig { DotCount = 0 });
+        int cell = PeopleSamples.Ranked(w.Planet, (pl, c) => pl.Biome[c] == Wtw.Sim.Planet.Biome.Temperate && pl.RiverSize[c] > 0 && pl.Temp10[c] is >= 120 and <= 220 ? Math.Min((int)pl.RiverSize[c], 40) - Math.Abs(pl.Temp10[c] - 170) / 10 : int.MinValue).FirstOrDefault(-1);
+        if (cell < 0) cell = RiverGrassland(w.Planet);
+        foreach (var (x, y) in PeopleSamples.SpawnSpots(w.People.Life(cell), 3))
+            w.Apply(new Intervention(0, Intervention.Kinds.SpawnFamily, new long[] { cell, x, y }));
+        w.AdvanceTo(1);
+        BuildBench.Teach(w, "build");
+        foreach (var q in w.People.All) if (q.Stage(w.Now) >= LifeStage.Adult) q.Wish[12] = 30;
+        var life = w.People.Life(cell);
+        long t = 1;
+        while (life.LocalHour(t) != 7) t += GameTime.TicksPerHour / 4;
+        w.AdvanceTo(t);
+        string file = "hut-village.wtw";
+        SaveGame.SaveFile(w, Path.Combine(outDir, file));
+        string land = Wtw.Sim.Planet.PlanetNames.Of(w.Planet.Biome[cell]);
+        index.Add($"{file}|움집을 짓는 마을|강이 흐르는 {land}(칸 {cell}, 연평균 {w.Planet.Temp10[cell] / 10.0:0.0}°C)에 세 가족 — 어른들은 불 · 바람막이 · 움집 · 저장 구덩이 짓는 법을 안다. 비 오는 밤을 한데서 보내 머물 곳이 아쉽다. 1~2배속으로 자리를 정하고 · 나무를 베어 · 풀을 날라 · 쌓는 모습을, 3~4배속으로 움집이 서는 것을 보세요. 건물을 누르면 건물 창 ({GameTime.Format(w.Now)} · 사람 {w.People.AliveCount}명)");
         Console.WriteLine($"{file}: 칸 {cell}({land}) · 사람 {w.People.AliveCount}명");
     }
 

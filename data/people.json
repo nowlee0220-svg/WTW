@@ -118,6 +118,12 @@
     { "id": "hunt_failed",  "name": "사냥감을 놓침",       "mood": -2,  "hours": 12,  "stack": 1 },
     { "id": "attacked",     "name": "짐승에게 덮쳐짐",     "mood": -14, "hours": 72,  "stack": 1 },
     { "id": "warm_clothes", "name": "따뜻하게 입음",       "mood": 3,   "hours": 0 },
-    { "id": "pet_near",     "name": "따르는 짐승이 곁에 있음", "mood": 3, "hours": 0 }
+    { "id": "pet_near",     "name": "따르는 짐승이 곁에 있음", "mood": 3, "hours": 0 },
+    { "id": "slept_home",   "name": "집에서 잠",           "mood": 4,   "hours": 14,  "stack": 1 },
+    { "id": "laid_to_rest", "name": "가까운 이를 묻어 줌",  "mood": 3,   "hours": 24,  "stack": 1 },
+    { "id": "remembered",   "name": "무덤 곁에서 그 사람을 떠올림", "mood": -2, "hours": 12, "stack": 1 },
+    { "id": "left_body",    "name": "가까운 이를 그대로 두고 옴", "mood": -4, "hours": 48, "stack": 1 },
+    { "id": "built_home",   "name": "제 손으로 지은 것이 섰음", "mood": 5,   "hours": 48,  "stack": 1 },
+    { "id": "fine_thing",   "name": "훌륭한 물건을 만듦",   "mood": 4,   "hours": 24,  "stack": 1 }
   ]
 }

@@ -210,7 +210,7 @@ public sealed partial class PeopleSim
 
     private bool FreeForPlot(ProvinceLife life, int t) =>
         (uint)t < HexFrame.TileCount && life.Walk[t] && !GroundInfo.IsWater(life.Map.Ground[t]) && GrowAt(life, t) > 0 && life.PlotAt[t] is null
-        && !life.Fires.ContainsKey(t) && t != life.Stash && !life.HasItems(t) && HexFrame.BorderDistance(t) >= 3;
+        && !life.Fires.ContainsKey(t) && t != life.Stash && !life.HasItems(t) && HexFrame.BorderDistance(t) >= 3 && life.BuildingAt(t) == 0;
 
     /// <summary>
     /// 판단할 때(하루에 한 번까지 — 둘러보기): 심는 법을 모르는 사람이 둘레 8타일의 싹 · 자라는 것을 보면, 낮은 확률로 "씨를 묻으면 난다"를 알아낸다.
@@ -424,7 +424,7 @@ public sealed partial class PeopleSim
                     int x = cx + dx, y = cy + dy;
                     if ((uint)x >= S || (uint)y >= S) continue;
                     int t = y * S + x;
-                    if (life.Region[t] != reg || GrowAt(life, t) < 25 || !FreeForPlot(life, t)) continue;
+                    if (life.Region[t] != reg || GrowAt(life, t) < 25 || !FreeForPlot(life, t) || !life.Clearable(t)) continue; // (E6) 먹을 것 · 주울 것이 나는 덤불은 두고, 다른 덤불 · 풀은 걷는다
                     return t;
                 }
         return -1;
@@ -441,7 +441,7 @@ public sealed partial class PeopleSim
                 int x = c % S + DX8[k] * r, y = c / S + DY8[k] * r;
                 if ((uint)x >= S || (uint)y >= S) continue;
                 int t = y * S + x;
-                if (life.Walk[t] && life.Region[t] == life.Region[here] && !life.Fires.ContainsKey(t) && !life.Plots.ContainsKey(t) && !GroundInfo.IsWater(life.Map.Ground[t])) return t;
+                if (life.Walk[t] && life.Region[t] == life.Region[here] && !life.Fires.ContainsKey(t) && !life.Plots.ContainsKey(t) && !GroundInfo.IsWater(life.Map.Ground[t]) && life.BuildingAt(t) == 0) return t;
             }
         return here;
     }
@@ -598,7 +598,7 @@ public sealed partial class PeopleSim
             if (existing && q!.Stage != PlotStage.Empty) continue;
             if (!existing && !FreeForPlot(life, t)) continue;
             p.RemoveCarry(seed, 1);
-            if (!existing) { q = new Plot { Tile = t, Tilled = canTill }; if (canTill) St.Tilled++; }
+            if (!existing) { q = new Plot { Tile = t, Tilled = canTill }; if (canTill) { St.Tilled++; if (life.ClearObject(t)) { St.ClearedBrush++; life.BuildVersion++; } } } // (E6) 땅을 고르며 덤불 · 풀을 걷는다
             q!.Stage = PlotStage.Sown; q.Crop = seed; q.Stamp = Now; q.LastTend = Now; q.Damage = 0; q.Planter = p.Id; q.Wild = false;
             if (existing) life.SetPlotDue(q, Now + SproutDays * GameTime.TicksPerDay);
             else { q.Due = Now + SproutDays * GameTime.TicksPerDay; life.AddPlot(q); }
@@ -665,9 +665,9 @@ public sealed partial class PeopleSim
 
     private int StashContainer(ProvinceLife life)
     {
-        if (life.Stash < 0 || !life.Items.TryGetValue(life.Stash, out var list)) return 0;
+        if (life.Stash < 0 || !life.Items.TryGetValue(life.Stash, out var list)) return StashBuildingHold(life);
         int best = 0; foreach (var (it, _) in list) best = Math.Max(best, Prop(it, Craft.P_holds));
-        return best;
+        return Math.Max(best, StashBuildingHold(life)); // (E6) 저장 구덩이 · 시렁
     }
     private bool StashHasContainer(ProvinceLife life) => StashContainer(life) >= 2;
 
@@ -696,7 +696,8 @@ public sealed partial class PeopleSim
         // (E5c 고침) 마른 낟알 · 콩 · 볶은 것(썩음 2 이하)은 담는 것 없이 하루 1/40(한 해 40일에 절반 남짓) · 바구니 1/100 · 토기 1/300.
         // 전에는 1/12 · 1/30 · 1/80 — E5b 의 "땅에 둔 고기는 하루 1/10"(짐승을 끄는 고기)을 따라 잡은 값이라 마른 씨에는 너무 빨라,
         // 쌓은 것의 대부분(114만 가운데 64만)을 쥐 · 벌레가 먹었다. 썩는 것(썩음 3 이상 — 고기 등)은 아래처럼 그보다 빨리.
-        int div = hold >= 4 ? 300 : hold >= 2 ? 100 : 40;
+        int lostToday = 0;
+        int div = hold >= 5 ? 600 : hold >= 4 ? 300 : hold >= 2 ? 100 : 40; // (E6) 저장 구덩이(5) 1/600
         for (int k = list.Count - 1; k >= 0; k--)
         {
             var (it, n) = list[k];
@@ -706,9 +707,14 @@ public sealed partial class PeopleSim
             int lose = Math.Min(n, (n + rng.NextInt(d)) / d);
             if (lose <= 0) continue;
             St.StashLost += lose;
+            lostToday += lose;
             if (lose == n) list.RemoveAt(k); else list[k] = (it, n - lose);
         }
         if (list.Count == 0) life.RemoveItems(life.Stash);
+        // (E6) 쥐 · 벌레가 먹은 것을 본 사람(모아 둔 자리 곁 15타일)은 더 잘 지킬 곳이 있었으면 한다
+        if (lostToday >= 2 && W_storage >= 0 && hold < 5)
+            foreach (var q in life.People)
+                if (!q.Dead && q.Stage(Now) >= LifeStage.Adult && Cheb(q.Tile(Now), life.Stash) <= 15) AddWish(q, W_storage, Math.Min(15, lostToday * 2));
     }
 
     // ───────── 모아 둔 자리에서 먹기 · 씨까지 먹어 버림 ─────────

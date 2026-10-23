@@ -16,7 +16,9 @@ public enum WorldEventKind : byte { Spawn = 0, Birth, Death, Pair, Break, LandNa
     /// <summary>(E5b) 세계에서 처음 · 무리에서 처음 큰 짐승을 잡음 · 짐승에게 덮쳐짐 · 새끼 짐승이 따라다님.</summary>
     HuntFirst, HuntGroup, BeastAttack, Tamed,
     /// <summary>(E5c) 흉년 · 씨앗까지 먹어 버림 · 무리에서 처음 거둠 · 짐승이 밭을 먹음.</summary>
-    BadHarvest, SeedsEaten, HarvestFirst, FieldEaten }
+    BadHarvest, SeedsEaten, HarvestFirst, FieldEaten,
+    /// <summary>(E6) 무리에서 처음 지은 건물(종류마다) · 다 지음 · 무너짐 · 무리에서 처음 무덤 · 묻음 · 사연 있는 물건이 생김.</summary>
+    BuiltFirst, Built, Collapsed, GraveFirst, Buried, NamedThing }
 
 /// <summary>측정용 셈(저장하지 않는다 — 결과에 영향 없음).</summary>
 public sealed class PeopleStats
@@ -65,7 +67,13 @@ public sealed class PeopleStats
         Guarded, ChasedOff, FieldsFallen, FieldsWeededOver, SeedsFailed, SeedEaten, BadHarvests, Stored, StashTaken, StashLost, SeedFetch, SeedGathered,
         StayFarmDays, StayFarmN, StayOtherDays, StayOtherN, RotBerries,
         /// <summary>(E5c 고침 측정) 아이를 가질 만했는데(짝 곁 · 나이 · 상한 아래) 배를 곯아(영양 부족) 갖지 않은 번.</summary>
-        ConceiveHungry;
+        ConceiveHungry,
+        /// <summary>(E6) 건물: 자리를 정함 · 날라 온 재료 · 쌓은 일(분) · 다 지음 · 버려진 자리 · 무너짐 · 고침 · 집 안에서 잔 번 · 바람막이 곁에서 잔 번 · 작업대에서 만든 번 ·
+        /// 작업대를 알아냄 · 묻음(흙 · 돌) · 그대로 둠 · 사연 있는 물건 · 물려받음 · 잃음 · 다시 찾음 · 저녁 불을 챙김 · 걷은 덤불.</summary>
+        SitesStarted, BuildDelivered, BuildWorkMin, BuildingsDone, SitesAbandoned, BuildingsCollapsed, Repairs, SleptHome, SleptWindbreak, BenchCrafts,
+        BenchLearned, BuriedEarth, BuriedCairn, BodiesLeft, NamedMade, NamedInherited, NamedLost, NamedFound, NamedGone, EveningFires, FireKits, EmbersKept, ClearedBrush,
+        /// <summary>(E6) 만든 물건의 품질별 수(0 나쁨 ~ 3 훌륭함).</summary>
+        Q0, Q1, Q2, Q3;
     /// <summary>(E5c 측정) 계획 · 재료 구하기를 바람마다(바람 × 2 + 아는 법이면 1).</summary>
     public readonly long[] PlanByWish = new long[32], MatByWish = new long[32], PlanKnownRule = new long[64];
 }
@@ -153,6 +161,7 @@ public sealed partial class PeopleSim
         InitKnowledge();
         InitHunt();
         InitFarm();
+        InitBuild();
     }
 
     public IReadOnlyList<Person> All => _all;
@@ -201,8 +210,10 @@ public sealed partial class PeopleSim
                 St.Wakes++;
                 WakeAnimals(life, d);
                 WakeFarm(life, d);
+                WakeBuild(life, d);
             }
             else InitAnimals(life); // (E5b) 처음 열린 지방: 먹이만큼 짐승
+            FillNamedGround(life);
         }
         return lane.LastLife = life;
     }

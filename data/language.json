@@ -75,7 +75,15 @@
     { "id": "field", "meaning": "밭", "kind": "발견", "name": true },
     { "id": "grain", "meaning": "낟알", "kind": "발견" },
     { "id": "bread", "meaning": "빵", "kind": "발견" },
-    { "id": "hoe", "meaning": "괭이", "kind": "발견" }
+    { "id": "hoe", "meaning": "괭이", "kind": "발견" },
+    { "id": "house", "meaning": "집", "kind": "발견", "name": true },
+    { "id": "windbreak", "meaning": "바람막이", "kind": "발견" },
+    { "id": "pit", "meaning": "구덩이", "kind": "발견" },
+    { "id": "rack", "meaning": "시렁", "kind": "발견" },
+    { "id": "workplace", "meaning": "일터", "kind": "발견" },
+    { "id": "kiln", "meaning": "가마", "kind": "발견" },
+    { "id": "grave", "meaning": "무덤", "kind": "발견", "name": true },
+    { "id": "builder", "meaning": "짓는 이", "kind": "사람", "name": true }
   ],
   "sounds": {
     "initials": { "ㄱ": 8, "ㄴ": 9, "ㄷ": 8, "ㄹ": 7, "ㅁ": 9, "ㅂ": 7, "ㅅ": 8, "ㅇ": 8, "ㅈ": 6, "ㅎ": 6, "ㅋ": 3, "ㅌ": 4, "ㅍ": 3 },

@@ -17,6 +17,10 @@ public sealed partial class PeopleSim
     /// <summary>측정 도구용(시뮬은 쓰지 않음): 할 일이 정해질 때 · 죽기 직전에 부른다. 여러 CPU 에서 동시에 불릴 수 있다.</summary>
     public static Action<PeopleSim, Person>? ActHook;
     public static Action<PeopleSim, Person, DeathCause>? DeathHook;
+    /// <summary>(E6) 측정 도구용 되풀이 감시(시뮬은 쓰지 않음, 여러 CPU 에서 동시에 불릴 수 있다): 걷기 시작(목표 타일) · 경계를 넘음 ·
+    /// 실험 · 만들기의 끝(규칙 번호 −1 = 아무 일 없음, 성공했나) · 물건을 줍고(true) 버림(false).</summary>
+    public static Action<PeopleSim, Person, int>? WalkHook, CrossHook;
+    public static Action<PeopleSim, Person, int, bool>? WorkHook, ItemHook;
 
     /// <summary>제자리에서 duration 동안 한다(급한 일이 닥치면 그때 다시 판단).</summary>
     private void DoStill(Person p, long duration)
@@ -46,6 +50,7 @@ public sealed partial class PeopleSim
             St.Paths++;
             if (!life.Paths.Find(x, y, goal, path)) { St.PathFails++; return false; }
         }
+        WalkHook?.Invoke(this, p, goal);
         var m = p.NewMotion();
         m.SetPath(Now, path, TicksPerTile(p));
         p.Walking = true;
@@ -96,6 +101,7 @@ public sealed partial class PeopleSim
         int hx = px / 1000, hy = py / 1000;
         SeeAround(p, life, hx, hy);
         SeeSprouts(p, life, here); // (E5c) 싹이 난 자리를 보면 — 심는 법을 알아내기도 한다
+        SeeGraves(p, life, here); // (E6) 가까운 이의 무덤 곁을 지나면 그 사람을 떠올린다
 
         // 정신 붕괴 중
         if (p.BreakUntil > Now && p.Food > 5_000 && p.Water > 5_000 && p.Rest > UrgentRest) { ContinueBreak(p); return; }
@@ -161,7 +167,7 @@ public sealed partial class PeopleSim
         // (E4) 실험 · 아는 법대로 만들기 · 불 지키기 · 캐기
         int ex = ExperimentScore(p, life); if (ex > int.MinValue) Opt(10, ex); else St.PlanWhy[8]++;
         int cs = CraftScore(p); if (cs > int.MinValue) Opt(11, cs);
-        if (p.Known.Count > 0) Opt(12, 14);
+        if (p.Known.Count > 0) Opt(12, 14 + p.FireHabit / 5); // (E6) 불을 지키는 버릇이 있으면 더
         if ((p.Wish[W_shiny] >= 20 || p.Wish[W_hardTool] >= 40 || p.HasTrait(T_curious)) && HasHardTool(p) && !life.IsNight(Now)) Opt(13, 8 + p.Wish[W_shiny] / 4);
         // (E5) 가르치기 · 그림 보기
         int ts = TeachScore(p, life); if (ts > int.MinValue) Opt(14, ts);
@@ -177,6 +183,11 @@ public sealed partial class PeopleSim
         bar = int.MinValue;
         if (opts.Count >= 3) { int a1 = int.MinValue, a2 = int.MinValue, a3 = int.MinValue; foreach (var (sc, _) in opts) { if (sc > a1) { a3 = a2; a2 = a1; a1 = sc; } else if (sc > a2) { a3 = a2; a2 = sc; } else if (sc > a3) a3 = sc; } bar = a3; }
         int frs = FarmScore(p, life, out var farmJob, out int farmTile, bar); if (frs > bar) Opt(18, frs);
+        // (E6) 건물 일 · 저녁 불
+        if (frs > bar && opts.Count >= 3) { int a1 = int.MinValue, a2 = int.MinValue, a3 = int.MinValue; foreach (var (sc, _) in opts) { if (sc > a1) { a3 = a2; a2 = a1; a1 = sc; } else if (sc > a2) { a3 = a2; a2 = sc; } else if (sc > a3) a3 = sc; } bar = a3; }
+        int bsc = BuildScore(p, life, out var buildJob, out int buildTarget, bar); if (bsc > bar) Opt(19, bsc);
+        int efs = EveningFireScore(p, life); if (efs > int.MinValue) Opt(20, efs);
+        int fks = FireKitScore(p, life); if (fks > int.MinValue) Opt(21, fks);
         opts.Sort((a, b) => b.Score != a.Score ? b.Score.CompareTo(a.Score) : a.Code.CompareTo(b.Code));
         for (int k = 0; k < Math.Min(3, opts.Count); k++)
         {
@@ -200,6 +211,9 @@ public sealed partial class PeopleSim
                 16 => huntHerd is not null && TryHunt(p, huntHerd),
                 17 => fishSpot >= 0 && TryFish(p, fishSpot),
                 18 => TryFarm(p, farmJob, farmTile),
+                19 => TryBuild(p, buildJob, buildTarget),
+                20 => TryEveningFire(p, life),
+                21 => TryFireKit(p, life),
                 _ => false,
             };
             if (ok && p.ActUntil > Now) return;
@@ -309,7 +323,20 @@ public sealed partial class PeopleSim
         int hx = px / 1000, hy = py / 1000, here = hy * S + hx;
         int spot = -1;
         Why reason = why;
-        if (Get(p.Partner) is { Dead: false } mate && mate.Cell == p.Cell && (mate.Asleep || mate.Act == Act.Sleep))
+        bool coldNight = life.Mean10 - life.Range10 / 2 < 120;
+        // (E6) 우리 집안의 움집 안 · (추운 밤) 바람막이 곁 — 짝 · 아이도 같은 집에서 잔다
+        int home = ShelterSpot(p, life, here, coldNight, out var homeWhy);
+        if (home >= 0 && homeWhy == Why.Home && life.Paths.Reachable(here, home)) { spot = home; reason = Why.Home; }
+        // (E6) 자기 전에 불을 피워 두는 버릇이 있으면(추운 밤) 불가로 — (E6 고침) 다만 짝이 이미 다른 곳에서 자고 있으면 짝 곁으로
+        // (처음엔 "짝이 어디 자든 불가로" — 짝과 떨어져 자는 밤이 늘어 쌀쌀한 땅에서 아이가 절반으로 줄었다)
+        bool mateAsleep = Get(p.Partner) is { Dead: false } m0 && m0.Cell == p.Cell && (m0.Asleep || m0.Act == Act.Sleep);
+        if (spot < 0 && coldNight && p.FireHabit >= 30 && !mateAsleep)
+        {
+            int ft0 = life.NearestFire(hx, hy, Now, (int)FireSleepRange);
+            if (ft0 >= 0 && TendBeforeSleep(p, life, ft0)) return;
+            if (ft0 >= 0) { int b0 = Beside(p, ft0, 1); if (b0 == ft0) b0 = Beside(p, ft0, 2); if (b0 != ft0 && life.Paths.Reachable(here, b0)) { spot = b0; reason = Why.FireNear; } }
+        }
+        if (spot < 0 && Get(p.Partner) is { Dead: false } mate && mate.Cell == p.Cell && (mate.Asleep || mate.Act == Act.Sleep))
         {
             int mt = mate.Walking ? TileOf(mate.Current.EndX, mate.Current.EndY) : mate.Tile(Now);
             if (life.Paths.Reachable(here, mt)) { spot = Beside(p, mt); reason = Why.Partner; }
@@ -319,7 +346,6 @@ public sealed partial class PeopleSim
             int gt = g.Walking ? TileOf(g.Current.EndX, g.Current.EndY) : g.Tile(Now);
             if (life.Paths.Reachable(here, gt)) { spot = Beside(p, gt); reason = Why.FamilyNear; }
         }
-        bool coldNight = life.Mean10 - life.Range10 / 2 < 120;
         if (spot < 0 && coldNight)
         {
             // (E4) 불이 있으면 불가에서 잔다
@@ -329,11 +355,17 @@ public sealed partial class PeopleSim
         }
         if (spot < 0 && coldNight)
         {
-            // 추운 밤에는 동굴이 가장 따뜻하다(늘 연평균 근처) — 가까운 동굴이 있으면 그리로, 없으면 바위 그늘
+            // 추운 밤에는 동굴이 가장 따뜻하다(늘 연평균 근처) — 가까운 동굴이 있으면 그리로, 없으면 (E6) 바람막이 곁, 그것도 없으면 바위 그늘
+            // (E6 고침) 바람막이(+3.5°C)를 동굴보다 먼저 골라 툰드라에서 동굴 대신 바람막이 곁에서 얼어 죽었다
             int sh = life.NearestShelter(hx, hy, 60, caveOnly: true);
-            if (sh < 0 || !life.Paths.Reachable(here, sh)) sh = life.NearestShelter(hx, hy, 60, caveOnly: false);
-            if (sh >= 0 && life.Shelter[sh] > life.Shelter[here]) { spot = Beside(p, sh, 0 + 1); if (life.Shelter[spot] < 2) spot = sh; reason = Why.Cold; }
+            if (sh < 0 || !life.Paths.Reachable(here, sh))
+            {
+                if (home >= 0 && life.Paths.Reachable(here, home)) { spot = home; reason = homeWhy; }
+                else sh = life.NearestShelter(hx, hy, 60, caveOnly: false);
+            }
+            if (spot < 0 && sh >= 0 && life.Shelter[sh] > life.Shelter[here]) { spot = Beside(p, sh, 0 + 1); if (life.Shelter[spot] < 2) spot = sh; reason = Why.Cold; }
         }
+        if (spot < 0 && home >= 0 && life.Paths.Reachable(here, home)) { spot = home; reason = homeWhy; } // (E6) 바람막이 곁
         if (spot < 0)
         {
             // 잠든 가족 · 친구 곁
@@ -361,6 +393,9 @@ public sealed partial class PeopleSim
         p.Asleep = true;
         p.SleptCold = false;
         p.SleepShelter = life.Shelter[tile];
+        if (life.Warm is { } bw && bw[tile] >= 30 && p.SleepShelter < 2) p.SleepShelter = 2; // (E6) 움집 안 · 바람막이 곁도 그늘처럼 잘 잔다
+        if (life.BuildingAt(tile) != 0 && life.BuildingOn(tile) is { Done: true } sb) { if (IsHome(sb.Kind)) St.SleptHome++; else if (sb.Kind == B_windbreak) St.SleptWindbreak++; }
+        else if (life.Warm is { } bw2 && bw2[tile] > 0) St.SleptWindbreak++;
         p.Huddle = false;
         foreach (var q in life.People)
         {
@@ -389,7 +424,18 @@ public sealed partial class PeopleSim
         else if (p.SleepShelter >= 2 || p.Huddle) AddThought(p, H_slept);
         else AddThought(p, H_rough);
         if (partnerNear) AddThought(p, H_withPartner);
-        bool fireNear = Life(p.Cell).NearestFire(tile % S, tile / S, Now, 4) >= 0;
+        var wl = Life(p.Cell);
+        bool fireNear = wl.NearestFire(tile % S, tile / S, Now, 4) >= 0;
+        FireHabitOnWake(p, wl, fireNear); // (E6) 추운 밤을 겪으면 자기 전에 불을 챙기는 버릇이 는다
+        KeepEmberOnWake(p, wl, tile); // (E6 툰드라) 아침에 불씨를 담아 들고 떠난다
+        bool homeSlept = wl.BuildingOn(tile) is { Done: true } hb && IsHome(hb.Kind);
+        if (homeSlept) AddThought(p, H_sleptHome);
+        // (E6) 바람 · 추위를 막을 곳이 없어 떨거나 한데서 잤다 → 머물 곳이 있었으면(짓는 법을 알아내는 실험으로 이어진다)
+        // (E6) 비 오는 밤을 지붕 없이(움집 · 동굴 밖에서) 보냈다 → 비를 막을 곳이 있었으면
+        else if (W_shelter >= 0 && wl.RainDay >= Now / GameTime.TicksPerDay - 1 && wl.Shelter[tile] < 3) AddWish(p, W_shelter, 8);
+        // (E6 고침) 추운 땅에서 옷이 닳아 가면(반 넘게) 추위는 옷 탓이다 — 집보다 옷이 먼저 아쉽다(툰드라에서 머물 곳 바람이 옷 짓기를 밀어내 더 얼어 죽었다)
+        else if (W_shelter >= 0 && (p.SleptCold || p.SleepShelter == 0 && !p.Huddle) && (wl.Warm is null || wl.Warm[tile] == 0) && wl.Shelter[tile] < 3
+                 && !(ColdLand(wl) && (p.Worn < 0 || p.WornWear < 500))) AddWish(p, W_shelter, p.SleptCold ? 8 : p.Huddle ? 2 : 5);
         if (fireNear) AddThought(p, H_firelight);
         else if (p.SleepShelter == 0 && !p.Huddle && Ability(p, PeopleData.Nerve) <= 3) { AddThought(p, H_dark); AddWish(p, W_warmth, 12); } // 어둠이 무서웠다 → 밝고 따뜻한 것이 있었으면
         else if (p.SleptCold) AddWish(p, W_warmth, 15);
@@ -518,6 +564,10 @@ public sealed partial class PeopleSim
             case Act.Farm:
                 ArriveFarm(p);
                 return;
+            // (E6)
+            case Act.Build:
+                ArriveBuild(p);
+                return;
             default:
                 Decide(p);
                 return;
@@ -631,6 +681,9 @@ public sealed partial class PeopleSim
                 break;
             case Act.Farm when !p.Walking:
                 FinishFarm(p, done);
+                break;
+            case Act.Build when !p.Walking:
+                FinishBuild(p, done);
                 break;
             case Act.DrinkCarried when done:
                 if (p.PotWater > 0) { p.PotWater--; p.Water = Clamp(p.Water + 45_000); p.Dehydration = Math.Max(0, p.Dehydration - 10_000); }
