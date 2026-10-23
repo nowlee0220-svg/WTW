@@ -101,7 +101,9 @@ public static class HuntBench
             foreach (var id in rules) { var r = cr.Rules.First(x => x.Id == id); ps.Learn(q, r, 0, -1, -1, -1); }
             if (know == "coat")
             {
-                q.Worn = I("fur_coat"); q.WornWear = 1000; q.WornFeet = I("fur_boots"); q.FeetWear = 1000;
+                // (T1) 지어 입은 때가 사람마다 다르다 — 모두 새 옷(1000)이면 같은 날 한꺼번에 해져 같은 밤에 함께 얼어 죽었다(4년 7일 · 12년 21일 떼죽음). 남은 몫 40~100%.
+                q.Worn = I("fur_coat"); q.WornWear = 400 + (int)(Wtw.Sim.Core.StableHash.Combine(w.Seed, (ulong)q.Id, 1) % 601);
+                q.WornFeet = I("fur_boots"); q.FeetWear = 400 + (int)(Wtw.Sim.Core.StableHash.Combine(w.Seed, (ulong)q.Id, 2) % 601);
                 if (q.Stage(w.Now) >= LifeStage.Adult) { q.AddCarry(I("stone_spear"), 1); q.AddCarry(I("flake"), 1); q.AddCarry(I("bone_needle"), 1); q.AddCarry(I("flint"), 2); q.AddCarry(I("dry_grass"), 2); }
             }
         }

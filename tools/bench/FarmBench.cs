@@ -28,6 +28,10 @@ public static class FarmBench
         public double FoodStart, FoodEnd, GameStart, GameEnd; // 사람 사는 지방마다 평균(들의 하루 몫 · 짐승 마릿수)
         public double PeoplePerCellEnd, FieldPerCellEnd;
         public List<long> FarmStays = new();
+        /// <summary>(T1) 끝에 사람 사는 지방마다 들이 먹여 살리는 사람(장부) 평균 · 가뭄 든 해(그해 · 지난해)와 아닌 해의 사람 하루 · 굶어 죽은 사람.</summary>
+        public double LedgerPeopleEnd; public long DroughtPD, NormalPD, DroughtStarve, NormalStarve;
+        public List<double> PerCellByYear = new();
+        public List<int> StarveByYear = new();
     }
 
     public static string Know = "";
@@ -59,11 +63,19 @@ public static class FarmBench
                 int alive = w.People.AliveCount;
                 long day = w.Now / GameTime.TicksPerDay;
                 row.PersonDays += alive;
+                long yr = day / GameTime.DaysPerYear;
+                foreach (var (pc, pl) in w.People.Provinces)
+                {
+                    int n = pl.People.Count(q => !q.Dead);
+                    if (n == 0) continue;
+                    if (w.People.YearLuck(pc, yr) < 50 || (yr > 0 && w.People.YearLuck(pc, yr - 1) < 50)) row.DroughtPD += n; else row.NormalPD += n;
+                }
                 if (alive > row.Peak) { row.Peak = alive; row.PeakYear = (int)(day / GameTime.DaysPerYear); }
                 if (day % GameTime.DaysPerYear == 0)
                 {
                     row.PopByYear.Add(alive);
                     row.CellsByYear.Add(w.People.Provinces.Values.Count(l => l.People.Any(q => !q.Dead)));
+                    row.PerCellByYear.Add(row.CellsByYear[^1] == 0 ? 0 : alive / (double)row.CellsByYear[^1]);
                 }
                 if (alive == 0) { row.ExtinctAt = (int)(day / GameTime.DaysPerYear); break; }
             }
@@ -114,6 +126,18 @@ public static class FarmBench
             if (fc.Tilled + fc.Patches >= 3) { row.FarmGroups++; if (life.FarmSince >= 0) row.FarmStays.Add((w.Now - life.FarmSince) / GameTime.TicksPerDay); }
         }
         row.Inhabited = cells;
+        double led = 0;
+        foreach (var (c, life) in ps.Provinces) if (life.People.Any(q => !q.Dead)) led += ps.Ledger(life).WildTotal * 1000 / PeopleSim.DailyNeed;
+        if (cells > 0) row.LedgerPeopleEnd = led / cells;
+        int ys = (int)(w.Now / GameTime.TicksPerYear) + 1;
+        for (int y = 0; y < ys; y++) row.StarveByYear.Add(0);
+        foreach (var q in ps.All)
+        {
+            if (!q.Dead || q.Cause != DeathCause.Starvation) continue;
+            long y = q.DeathTick / GameTime.TicksPerYear;
+            if (y < ys) row.StarveByYear[(int)y]++;
+            if (ps.YearLuck(q.Cell, y) < 50 || (y > 0 && ps.YearLuck(q.Cell, y - 1) < 50)) row.DroughtStarve++; else row.NormalStarve++;
+        }
         if (cells > 0) { row.FoodEnd = food / cells; row.GameEnd = game / cells; row.PeoplePerCellEnd = ppl / cells; row.FieldPerCellEnd = fields / cells; }
     }
 
@@ -164,6 +188,17 @@ public static class FarmBench
         sb.AppendLine($"- 인구(10년마다 중앙값): " + string.Join(" · ", Enumerable.Range(0, years / 10).Select(k => Med(rows.Select(r => k * 10 < r.PopByYear.Count ? (double)r.PopByYear[k * 10] : 0)).ToString("0"))) + $" · 끝 {M(r => r.Alive)}");
         sb.AppendLine($"- 사람 사는 지방(10년마다 중앙값): " + string.Join(" · ", Enumerable.Range(0, years / 10).Select(k => Med(rows.Select(r => k * 10 < r.CellsByYear.Count ? (double)r.CellsByYear[k * 10] : 0)).ToString("0"))) + $" · 끝 {M(r => r.Inhabited)}");
         sb.AppendLine($"- 지방마다(사람 사는 곳 평균): 사람 {M(r => r.PeoplePerCellEnd):0.0} · 밭 {M(r => r.FieldPerCellEnd):0.0}칸 · 들의 먹을 것 하루 몫 처음(뿌린 지방) {M(r => r.FoodStart):0} → 끝(사는 지방 평균) {M(r => r.FoodEnd):0} · 짐승 마릿수 처음 {M(r => r.GameStart):0} → 끝 {M(r => r.GameEnd):0}");
+        sb.AppendLine($"- (T1) 지방당 인구(10년마다 중앙값): " + string.Join(" · ", Enumerable.Range(0, years / 10).Select(k => Med(rows.Select(r => k * 10 < r.PerCellByYear.Count ? r.PerCellByYear[k * 10] : 0)).ToString("0.0"))) + $" · 끝 {M(r => r.PeoplePerCellEnd):0.0} · 끝에 사는 지방의 들이 먹여 살리는 사람(장부) {M(r => r.LedgerPeopleEnd):0.0}");
+        sb.AppendLine($"- (T1) 굶어 죽은 사람(10년마다, 모든 시드 합): " + string.Join(" · ", Enumerable.Range(0, Math.Max(1, years / 10)).Select(k => rows.Sum(r => r.StarveByYear.Skip(k * 10).Take(10).Sum()).ToString())));
+        {
+            long dpd = rows.Sum(r => r.DroughtPD), npd = rows.Sum(r => r.NormalPD), ds = rows.Sum(r => r.DroughtStarve), ns = rows.Sum(r => r.NormalStarve);
+            double rate(long d, long pd) => pd == 0 ? double.NaN : d * GameTime.DaysPerYear * 1000.0 / pd;
+            sb.AppendLine($"- (T1) **가뭄 해(그해 · 지난해) vs 아닌 해**: 굶어 죽은 사람 {ds} vs {ns} · 사람 1,000명 · 1년당 {rate(ds, dpd):0.00} vs {rate(ns, npd):0.00} (사람 · 해 {dpd / GameTime.DaysPerYear:N0} vs {npd / GameTime.DaysPerYear:N0})");
+            long[] e = new long[6]; foreach (var r in rows) for (int i = 0; i < 6; i++) e[i] += r.St.Eaten[i];
+            long et = Math.Max(1, e.Sum());
+            var en = new[] { "들에서 바로 딴 열매 · 버섯 · 이끼", "들고 먹은 열매 · 버섯 · 이끼", "낟알 · 콩 · 덩이뿌리 · 도토리", "고기 · 물고기", "그 밖(끓인 음식)", "시신" };
+            sb.AppendLine($"- (T1) **먹은 것(배부름 몫)**: " + string.Join(" · ", Enumerable.Range(0, 6).Select(i => $"{en[i]} {e[i] * 100.0 / et:0.0}%")) + $" · 사람 하루당 먹은 양 {e.Sum() / 1000.0 / Math.Max(1, rows.Sum(r => r.PersonDays)):0.0}(필요 {PeopleSim.DailyNeed / 1000})");
+        }
         foreach (var item in new[] { "campfire", "pot", "cooked_meat", "roasted_grain", "cooked_beans", "roasted_tuber", "flour", "flatbread", "sown_patch", "field", "stone_hoe", "spear", "fur_coat" })
         {
             var ys = rows.Where(r => r.FirstYear.ContainsKey(item)).Select(r => (double)r.FirstYear[item]).ToList();

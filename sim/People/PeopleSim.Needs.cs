@@ -12,6 +12,12 @@ public sealed partial class PeopleSim
 
     private struct Rates { public int Food, Water, Rest, Joy, Social; }
 
+    /// <summary>
+    /// (T1) 젖은 어머니가 먹은 것에서 나온다: 젖 먹이는 어머니가 하루에 더 쓰는 배부름(1000 = 1) — 먹는 양(96)의 23%(현실 어림 하루 500kcal ÷ 2,200kcal).
+    /// 전에는 아기가 어머니의 배부름을 하나도 쓰지 않았다(젖이 공짜). 하루 경계에 한 번 뺀다(카드를 보느라 아기를 셈한 때와 상관없이 같게).
+    /// </summary>
+    public const int NursingFood = 21_600;
+
     private static NeedState Read(Person p) => new()
     {
         Food = p.Food, Water = p.Water, Rest = p.Rest, Joy = p.Joy, Social = p.Social,

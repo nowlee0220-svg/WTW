@@ -594,6 +594,7 @@ public sealed partial class PeopleSim
                         GainGather(p, got);
                         break;
                     }
+                    St.Eaten[0] += Math.Min((long)got * h.Nutrition, Person.Full - p.Food);
                     p.Food = Clamp(p.Food + (long)got * h.Nutrition);
                     p.Water = Clamp(p.Water + (long)got * h.Water);
                     GainGather(p, got);
@@ -627,7 +628,7 @@ public sealed partial class PeopleSim
                 break;
             }
             case Act.EatCorpse when done:
-                if (Here(p.Target, p) is { Dead: true, Eaten: false } body) { body.Eaten = true; p.Food = Person.Full; p.Malnutrition = Math.Max(0, p.Malnutrition - 30_000); }
+                if (Here(p.Target, p) is { Dead: true, Eaten: false } body) { body.Eaten = true; St.Eaten[5] += Person.Full - p.Food; p.Food = Person.Full; p.Malnutrition = Math.Max(0, p.Malnutrition - 30_000); }
                 break;
             case Act.Talk or Act.BreakArgue:
                 EndTalk(p);

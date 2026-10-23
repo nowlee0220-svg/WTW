@@ -51,6 +51,8 @@ public static class PeopleBench
             case "discover": DiscoverBench.Know = o.GetValueOrDefault("know") ?? ""; DiscoverBench.SaveTo = o.GetValueOrDefault("save"); DiscoverBench.Run(I("seeds", 20), I("people", 10), I("years", 200), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300)); break;
             case "thirst": ThirstBench.Run(I("seeds", 4), I("people", 9), I("years", 60), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), I("cap", 300), o.ContainsKey("nocap")); break;
             case "starve": StarveBench.Run(I("seeds", 4), I("people", 9), I("years", 130), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out"), Sx("cell", "home"), o.ContainsKey("nocap"), I("land", 0)); break;
+            case "ledger": LedgerBench.Run(I("seeds", 4), I("per", 6), o.GetValueOrDefault("out")); break;
+            case "clothes": ClothesBench.Run(I("seeds", 40), I("years", 14), o.GetValueOrDefault("out")); break;
             case "landinfo": LandInfo.Run(I("land", 1000), I("seeds", 4), (ulong)I("seed", 1)); break;
             case "firenight": FireNightBench.Run(I("seeds", 20), I("years", 5), (ulong)I("seed", 1), I("parallel", Environment.ProcessorCount), o.GetValueOrDefault("out")); break;
             case "acts": ActCountBench.Run(I("people", 300), I("years", 20), I("per", 15), (ulong)I("seed", 1)); break;

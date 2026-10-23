@@ -1664,6 +1664,7 @@ public sealed partial class PeopleSim
         int e = Prop(item, Craft.P_edible), poison = Prop(item, Craft.P_poison);
         int want = Math.Clamp((Person.Full - p.Food) / Math.Max(1, e * 5000), 1, Math.Min(4, p.CarryCount(item)));
         p.RemoveCarry(item, want);
+        St.Eaten[FoodKind(item)] += Math.Min((long)want * e * 5000, Person.Full - p.Food);
         p.Food = Clamp(p.Food + (long)want * e * 5000);
         p.Water = Clamp(p.Water + (long)want * (item == I_crackedCoconut ? 25_000 : 2_000));
         var rng = Rng(p.Cell);

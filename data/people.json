@@ -27,24 +27,24 @@
     { "id": "medicine",  "name": "치료" }
   ],
   "foods": [
-    { "object": "apple_tree", "item": "apple",        "stock": 5, "regrow_days": 6.0, "nutrition": 20, "water": 6 },
-    { "object": "berry_bush", "item": "berries",      "stock": 4, "regrow_days": 8.0, "nutrition": 14, "water": 4 },
-    { "object": "palm",       "item": "coconut",      "stock": 3, "regrow_days": 12.0, "nutrition": 6,  "water": 10 },
-    { "object": "banana",     "item": "banana",       "stock": 4, "regrow_days": 8.0, "nutrition": 22, "water": 5 },
-    { "object": "baobab",     "item": "baobab_fruit", "stock": 6, "regrow_days": 8.0, "nutrition": 22, "water": 4 },
-    { "object": "cactus",     "item": "cactus_fruit", "stock": 2, "regrow_days": 12.0, "nutrition": 12, "water": 15 },
-    { "object": "mushroom",   "item": "mushroom",     "stock": 2, "regrow_days": 10.0, "nutrition": 10, "water": 3 },
-    { "object": "lichen",     "item": "lichen",       "stock": 2, "regrow_days": 16.0, "nutrition": 6,  "water": 1 }
+    { "object": "apple_tree", "item": "apple",        "stock": 5, "regrow_days": 8.0, "nutrition": 20, "water": 6 },
+    { "object": "berry_bush", "item": "berries",      "stock": 1, "regrow_days": 40.0, "nutrition": 14, "water": 4 },
+    { "object": "palm",       "item": "coconut",      "stock": 3, "regrow_days": 13.3, "nutrition": 6,  "water": 10 },
+    { "object": "banana",     "item": "banana",       "stock": 1, "regrow_days": 40.0, "nutrition": 22, "water": 5 },
+    { "object": "baobab",     "item": "baobab_fruit", "stock": 6, "regrow_days": 6.7, "nutrition": 22, "water": 4 },
+    { "object": "cactus",     "item": "cactus_fruit", "stock": 2, "regrow_days": 20.0, "nutrition": 12, "water": 15 },
+    { "object": "mushroom",   "item": "mushroom",     "stock": 2, "regrow_days": 20.0, "nutrition": 10, "water": 3 },
+    { "object": "lichen",     "item": "lichen",       "stock": 2, "regrow_days": 20.0, "nutrition": 6,  "water": 1 }
   ],
   "carry": [
-    { "object": "oak",             "item": "acorn",    "stock": 4, "regrow_days": 3.0 },
+    { "object": "oak",             "item": "acorn",    "stock": 4, "regrow_days": 10.0 },
     { "object": "loose_stones",    "item": "stone",    "stock": 3, "regrow_days": 0 },
     { "object": "flint_nodules",   "item": "flint",    "stock": 3, "regrow_days": 0 },
     { "object": "quartz_pebbles",  "item": "quartz",   "stock": 2, "regrow_days": 0 },
     { "object": "obsidian_shards", "item": "obsidian", "stock": 3, "regrow_days": 0 },
       { "object": "wild_grain", "item": "grain", "stock": 4, "regrow_days": 10.0 },
-      { "object": "wild_beans", "item": "beans", "stock": 3, "regrow_days": 10.0 },
-      { "object": "wild_tuber", "item": "tuber", "stock": 2, "regrow_days": 14.0 }
+      { "object": "wild_beans", "item": "beans", "stock": 3, "regrow_days": 13.3 },
+      { "object": "wild_tuber", "item": "tuber", "stock": 2, "regrow_days": 20.0 }
 
   ],
   "traits": [

@@ -203,7 +203,7 @@ public class PeopleTests
         {
             w.AdvanceTo(t);
             foreach (var p in w.People.All)
-                if (!p.Dead && p.Act == Act.Drink && !p.Walking) { Assert.True(life.Drink[p.Tile(w.Now)]); drinks++; }
+                if (!p.Dead && p.Act == Act.Drink && !p.Walking) { Assert.True(w.People.Life(p.Cell).Drink[p.Tile(w.Now)]); drinks++; } // (T1) 이웃 지방으로 넘어가 마시는 사람은 그 지방의 물가
         }
         Assert.True(drinks > 0);
     }
