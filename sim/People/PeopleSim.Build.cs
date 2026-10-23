@@ -166,6 +166,7 @@ public sealed partial class PeopleSim
     private void BuildDaily(ProvinceLife life)
     {
         ProcessBuildings(life, Now);
+        PickFireKeeper(life);
         // 작업대를 쓰던 사람이 일을 마쳤으면 놓는다
         foreach (var (_, b) in life.Buildings) if (b.User >= 0 && b.UserUntil <= Now) b.User = -1;
     }
@@ -719,7 +720,7 @@ public sealed partial class PeopleSim
         if (life.Mean10 - life.Range10 / 2 >= 120) return int.MinValue;
         long tod = life.LocalTickOfDay(Now);
         if (tod < 16 * GameTime.TicksPerHour || tod >= 21 * GameTime.TicksPerHour || Now - p.LastEveningFire < 10 * GameTime.TicksPerHour) return int.MinValue;
-        if (FireTended(life, p)) return int.MinValue; // (E6 속도) 누가 이미 챙기는 중
+        if (FireTended(life, p) || !IsFireKeeper(life, p)) return int.MinValue; // (E6 속도) 누가 이미 챙기는 중 · 불 지킴이만
         return 18 + p.FireHabit / 4;
     }
 
@@ -766,6 +767,22 @@ public sealed partial class PeopleSim
         return TryLightKnownFire(p);
     }
 
+    /// <summary>
+    /// (E6) 불 지킴이: 추운 땅에서 불 버릇이 가장 굳은 어른 하나(같으면 번호가 작은 사람)가 저녁 불 · 불쏘시개 · 미리 넣기 · 불씨 담아 들기를 맡는다 —
+    /// 모두가 저마다 불을 챙겨 툰드라에서 마른 풀 만들기가 E5c 의 6배, 그만큼 가죽 손질 · 도구 만들기가 줄어 털옷을 못 지었고, 쌀쌀한 땅 계산도 1.44배가 되었다.
+    /// </summary>
+    private void PickFireKeeper(ProvinceLife life)
+    {
+        life.FireKeeper = -1;
+        if (life.Mean10 - life.Range10 / 2 >= 120) return;
+        int best = 24;
+        foreach (var q in life.People)
+            if (!q.Dead && q.Stage(Now) >= LifeStage.Adult && q.FireHabit > best) { best = q.FireHabit; life.FireKeeper = q.Id; }
+    }
+
+    /// <summary>불 일을 맡을 사람인가(지킴이가 아직 없는 날은 모두).</summary>
+    private static bool IsFireKeeper(ProvinceLife life, Person p) => life.FireKeeper < 0 || life.FireKeeper == p.Id;
+
     // ───────── (E6 툰드라) 불 피울 것 챙기기 · 불씨 담아 들기 · 기름 남기기 ─────────
 
     /// <summary>불쏘시개(잘 타는 마른 것 — 타는 정도 5)를 둘 넘게 들었나. 없으면 불버릇이 있는 사람은 낮에 챙긴다(풀을 말리거나 줍는다).</summary>
@@ -773,7 +790,8 @@ public sealed partial class PeopleSim
     {
         if (p.FireHabit < 25 || R_campfire is null || p.Stage(Now) < LifeStage.Child || !p.Knows(R_campfire.Index)) return int.MinValue;
         if (life.Mean10 - life.Range10 / 2 >= 120 || life.IsNight(Now) || Now - p.LastFireKit < 6 * GameTime.TicksPerHour) return int.MinValue;
-        if (TinderCount(p) >= 2) return int.MinValue;
+        if (TinderCount(p) >= 2 || !IsFireKeeper(life, p)) return int.MinValue;
+        if (ClothesFirst(p)) return int.MinValue; // (E6 툰드라) 옷이 닳아 가면 불쏘시개 챙기기는 미룬다 — 가죽 일 시간을 빼앗아 털옷을 못 지었다
         return 13 + p.FireHabit / 10;
     }
 
@@ -796,6 +814,8 @@ public sealed partial class PeopleSim
     /// <summary>땔감을 구하러: 오래 타는 것(무게 1 이상 — 나무 · 가지 · 기름)부터, 없으면 아무 타는 것.</summary>
     private bool FetchFuel(Person p, Why why)
     {
+        // (E6 툰드라) 밤에 추운데 땔감을 구하러 어둠 속을 나다니지 않는다 — 든 것으로만 지킨다(밤에 땔감을 찾다 얼어 죽었다)
+        if (Life(p.Cell).IsNight(Now) && FeltNow(p) < 100) return false;
         const long key = 0x7F_0000_0001L; // 무거운 땔감을 찾았는데 둘레에 없었다(같은 기억 칸 — 반나절은 다시 찾지 않는다)
         if (!(p.MissKey == key && Now - p.MissTick < MissMemory))
         {
@@ -836,7 +856,7 @@ public sealed partial class PeopleSim
     private void KeepEmberOnWake(Person p, ProvinceLife life, int tile)
     {
         if (p.FireHabit < 30 || R_campfire is null || !p.Knows(R_campfire.Index) || life.Mean10 - life.Range10 / 2 >= 120) return;
-        if (p.CarryCount(I_ember) > 0 || !KeptEmber(p) || life.NearestFire(tile % S, tile / S, Now, 4) < 0) return;
+        if (p.CarryCount(I_ember) > 0 || !KeptEmber(p) || !IsFireKeeper(life, p) || life.NearestFire(tile % S, tile / S, Now, 4) < 0) return;
         p.AddCarry(I_ember, 1); p.EmberTick = Now; St.EmbersKept++;
     }
 

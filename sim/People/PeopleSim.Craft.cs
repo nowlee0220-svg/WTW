@@ -688,7 +688,7 @@ public sealed partial class PeopleSim
         if (action == A_sew) return new[] { c.P_fibrous, c.P_toughness };
         if (action == A_boil) return new[] { c.P_holds, c.P_waterproof };
         if (action == A_burn) return new[] { c.P_warm };
-        if (action == A_raise) return wish == W_storage ? new[] { c.P_fibrous, c.P_toughness } : new[] { c.P_tears, c.P_bends, c.P_covers }; // (E6) 덮을 것(풀 · 잎 · 가죽) · 묶을 것
+        if (action == A_raise) return wish == W_storage ? new[] { c.P_fibrous, c.P_toughness } : new[] { c.P_tears, c.P_bends }; // (E6) 덮을 것 · 묶을 것 — (E6 고침) 가죽은 넣지 않는다: 머물 곳 실험에 무두질한 가죽을 써 버려 털옷을 못 지었다(천막은 들고 있던 가죽이 "덮을 것"으로 맞을 때 알아낸다)
         if (action == A_dig && wish == W_shelter) return new[] { c.P_tears, c.P_bends };
         return Array.Empty<int>();
     }
@@ -1448,7 +1448,7 @@ public sealed partial class PeopleSim
         // (E6 고침) 6시간은 저녁 · 밤에만(그 땅 15시 ~ 7시) — 낮에도 6시간을 채우려 땔감을 하나씩 끝없이 날랐다
         long tod = life.LocalTickOfDay(Now);
         bool evening = tod >= 15 * GameTime.TicksPerHour || tod < 7 * GameTime.TicksPerHour;
-        long keep = (p.FireHabit >= 30 && evening ? 6 : 3) * GameTime.TicksPerHour;
+        long keep = (p.FireHabit >= 30 && evening && !ClothesFirst(p) && IsFireKeeper(life, p) ? 6 : 3) * GameTime.TicksPerHour; // (E6 툰드라) 옷이 급하면 미리 넣기는 미룬다
         if (ft < 0 || life.Fires[ft].Remaining(Now) > keep) return false;
         int fuel = BestFuel(p);
         if (fuel < 0) return FetchFuel(p, Why.Fuel);
@@ -1679,7 +1679,7 @@ public sealed partial class PeopleSim
     {
         if (!KnowsAnyRoast(p)) return false;
         int raw = -1;
-        foreach (var c in p.Carry) if (Prop(c.Item, Craft.P_edible) > 0 && !IsMade(c.Item) && c.Item != I_coconut) { raw = c.Item; break; }
+        foreach (var c in p.Carry) if (Prop(c.Item, Craft.P_edible) > 0 && !IsMade(c.Item) && c.Item != I_coconut && Roastable(c.Item)) { raw = c.Item; break; }
         if (raw < 0) return false;
         var life = Life(p.Cell);
         int here = p.Tile(Now);
@@ -1692,6 +1692,18 @@ public sealed partial class PeopleSim
         SetWhy(p, Act.Cook, why, p.Food / 1000); p.Target = ft;
         return true;
     }
+
+    /// <summary>
+    /// (E6 고침 — 쌀쌀한 땅 굶주림) 불에 구워 먹을 수 있는 것인가(규칙 판정, 아이템마다 한 번). 구울 수 없는 날것(이끼 · 도토리 등)을 들고
+    /// "익히러 불가로 → 익지 않음 → 또 익히러"를 끝없이 하다 굶어 죽었다 — E4 부터 있던 구멍이 E6 에서 불이 늘어 드러났다(굶어 죽은 사람이 마지막 사흘의 66%를 이렇게 보냄).
+    /// </summary>
+    private bool Roastable(int item)
+    {
+        _roastable ??= new sbyte[Craft.Catalog.Items.Count];
+        if (_roastable[item] == 0) _roastable[item] = (sbyte)(Craft.Judge(A_roast, PropsOf(item), null, null, 3, 0, 0, 0) is { Success: true, Rule: not null } ? 1 : -1);
+        return _roastable[item] > 0;
+    }
+    private sbyte[]? _roastable;
 
     public bool KnowsAnyRoast(Person p) { foreach (var k in p.Known) if (Craft.Rules[k.Rule].Action == A_roast && Prop(Craft.Rules[k.Rule].Result, Craft.P_edible) > 0) return true; return false; }
 
@@ -1719,6 +1731,7 @@ public sealed partial class PeopleSim
             GainSkill(p, outcome.Rule.Skill, 4);
         }
         if (cooked >= 0) { p.PlanItem = cooked; FinishEatCarried(p); p.Wish[W_cooking] = Math.Max(0, p.Wish[W_cooking] - 20); }
+        else if (p.Food < UrgentFood && BestCarriedFood(p, desperate: true) is int any && any >= 0) { p.PlanItem = any; FinishEatCarried(p); } // (E6 고침) 익지 않았으면 아주 배고플 땐 그냥 먹는다
     }
 
     /// <summary>그릇이 있으면 물가에서 물을 담아 둔다.</summary>

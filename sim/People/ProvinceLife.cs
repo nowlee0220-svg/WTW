@@ -228,6 +228,8 @@ public sealed class ProvinceLife
     public readonly SortedSet<int> Cleared = new();
     /// <summary>(E6) 마지막으로 비가 온 날(하루 경계에 정한다 — 한데서 자면 젖는다). 저장한다(깨어 있는 지방만).</summary>
     public long RainDay = -1;
+    /// <summary>(E6) 이 땅의 불 지킴이(사람 번호, 없으면 −1) — 하루 경계에 정한다. 저장한다(깨어 있는 지방만).</summary>
+    public int FireKeeper = -1;
     /// <summary>(E6) 이 땅에 놓인 사연 있는 물건(번호 순 — 세계 목록으로 다시 만든다, 저장 안 함).</summary>
     public readonly SortedSet<int> NamedGround = new();
 

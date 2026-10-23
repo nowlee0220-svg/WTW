@@ -156,7 +156,7 @@ public static class SaveGame
                 WriteAnimals(bw, life.NextHerdId, life.FishStock, true, -1, life.Herds.Values);
                 WriteFarm(bw, life.Stash, life.FarmSince, life.FirstHarvest, life.SeedsEatenYear, life.YearHarvest, life.YearPotential, life.HarvestYear, life.Plots.Values);
                 WriteBuild(bw, life.NextBuildingId, life.Buildings.Values, life.Cleared);
-                bw.Write(life.RainDay);
+                bw.Write(life.RainDay); bw.Write(life.FireKeeper);
             }
             else
             {
@@ -431,7 +431,7 @@ public static class SaveGame
         var ps = w.People;
         int[] crossQueue = Array.Empty<int>(); long crossAt = long.MaxValue;
         var awake = new List<(int Cell, long EmptySince)>();
-        var rainDays = new SortedDictionary<int, long>();
+        var rainDays = new SortedDictionary<int, long>(); var fireKeepers = new SortedDictionary<int, int>();
         ps.NextEventSeq = br.ReadInt64();
         int ne = br.ReadInt32();
         for (int i = 0; i < ne; i++)
@@ -472,7 +472,7 @@ public static class SaveGame
                 dp = dp with { NextHerdId = an.NextId, FishStock = an.Fish, AnimalsReady = an.Ready, SleptAt = an.SleptAt, Herds = an.Herds };
             }
             if (version >= 12) dp = ReadFarm(br, dp);
-            if (version >= 13) { dp = ReadBuild(br, dp); if (awake.Count > 0 && awake[^1].Cell == cell) rainDays[cell] = br.ReadInt64(); }
+            if (version >= 13) { dp = ReadBuild(br, dp); if (awake.Count > 0 && awake[^1].Cell == cell) { rainDays[cell] = br.ReadInt64(); fireKeepers[cell] = br.ReadInt32(); } }
             ps.Dormant[cell] = dp;
         }
         if (version >= 7)
@@ -596,6 +596,7 @@ public static class SaveGame
         // (S1) 깨어 있던 지방은 깨어 있게(산 사람이 없어도 — 잠들기 전까지 불 · 들불이 계속된다)
         foreach (var (cell, since) in awake) ps.Life(cell).EmptySince = since;
         foreach (var (cell, rd) in rainDays) ps.Life(cell).RainDay = rd;
+        foreach (var (cell, fk) in fireKeepers) ps.Life(cell).FireKeeper = fk;
         // 넘겨주기 대기는 사람이 다 들어온 뒤 그 사람의 지방에
         ps.LoadCrossQueue(crossQueue, crossAt);
         if (version >= 9)
