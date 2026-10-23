@@ -1388,11 +1388,17 @@ public sealed partial class PeopleSim
                     if (t >= 0 && WalkTo(p, t)) { SetWhy(p, Act.TakeFire, Why.FireNear); p.Target = -1; return true; }
                 }
             }
+            // (E6 고침 — 툰드라) 불씨를 아껴 든 사람은 불씨를 또 얻으러 가지 않는다 — 위의 빈 칸에서 아래로 흘러 불씨를 다섯씩 모으고,
+            // 그것을 여기저기 피워 한 지방에 불이 서른까지 늘었다(땔감 나르기가 E5c 의 10배 — 가죽 손질 · 털옷 짓기를 밀어냈다)
+            if (p.CarryCount(I_ember) > 0) return false;
         }
         int fire = life.NearestFire(here % S, here / S, Now, SightTiles + 10);
         if (fire < 0) return false;
         bool wants = p.Wish[W_warmth] >= 25 || (FeltNow(p) < 110 && Cheb(fire, here) > 8);
         if (!wants) return false;
+        // (E6 고침 — 툰드라) 불 지킴이가 있는 추운 땅: 지킴이가 아닌 사람은 지금 춥지 않으면 불씨를 얻으러 가지 않는다 — 불이 피면 둘레의 따뜻함 바람이 커지고,
+        // 불씨를 얻어 다른 자리에 또 피우고, 그 불이 다시 바람을 키워 한 지방에 불 자리가 서른 넘게 생겼다(불씨 얻기가 E5c 의 9배)
+        if (FeltNow(p) >= 150 && !IsFireKeeper(life, p)) return false;
         // 이미 그 불 곁에 있으면 몸을 녹이는 것으로 충분
         if (Cheb(fire, here) <= 3) return false;
         if (BestCarried(p, Craft.P_burns, 3) < 0) return StartMaterialFor(p, Craft.P_burns, 3, Why.Fuel) || TryWarmByFire(p, Why.Cold); // 땔감부터(이번 판단에서 정말 나섰을 때만 true)
@@ -1438,6 +1444,9 @@ public sealed partial class PeopleSim
         // (E6 고침 — 속도) 이미 다른 사람이 땔감을 나르거나 넣는 중이면 맡긴다 — 버릇이 있는 사람 여럿이 땔감 하나씩 날라 넣기를 끝없이 되풀이했다
         // (쌀쌀한 땅에서 사람 하루당 계산이 E5c 의 3배)
         if (FireTended(life, p)) return false;
+        // (E6 고침 — 툰드라) 불 지킴이가 있는 추운 땅: 지킴이가 아닌 사람은 지금 추울 때만 불을 돌본다 — 버릇 있는 사람마다 땔감을 날라
+        // 땔감 줍기 · 넣기가 E5c 의 7 ~ 14배였다(그 시간에 가죽을 손질하지 못해 털옷이 모자랐다)
+        if (!IsFireKeeper(life, p) && FeltNow(p) >= 150) return false;
         // (E6) 버릇이 있으면 막 꺼진 불(재 속 불씨)도 되살린다
         if (ft < 0 && p.FireHabit >= 30 && EmberFire(life, here, 40) is int ef && ef >= 0)
         {
