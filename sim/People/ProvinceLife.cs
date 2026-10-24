@@ -221,6 +221,8 @@ public sealed class ProvinceLife
     private int[]? _buildingAt; // (E6 속도) 건물이 처음 설 때 만든다 — 지방마다 9만 바이트를 미리 잡지 않게
     public int BuildingAt(int tile) => _buildingAt is null ? 0 : _buildingAt[tile];
     public short[]? Warm;
+    /// <summary>(F1) Warm 을 셈한 시각 — 따뜻함은 그때의 낡음으로 정해지므로 저장한다(깨어 있는 지방만). 불러올 때 이 시각으로 다시 셈한다.</summary>
+    public long WarmAt = -1;
     /// <summary>(E6) 건물이 바뀔 때마다 오른다(건물 일 찾기의 기억 · 화면 — 저장 안 함).</summary>
     public int BuildVersion;
     public object? BuildCache;

@@ -40,7 +40,7 @@ public class SpeedSlowTests
         one.AdvanceTo(end); four.AdvanceTo(end); loaded.AdvanceTo(end);
         _out.WriteLine($"넘음 {one.People.Stats.Crossings} · 깨어남 {one.People.Stats.Wakes} · 사람 {one.People.AliveCount} · 예약 {one.EventsProcessed}");
         Assert.Equal(SaveGame.Fingerprint(one), SaveGame.Fingerprint(four));
-        Assert.Equal(SaveGame.Fingerprint(one), SaveGame.Fingerprint(loaded));
+        Assert.True(SaveGame.Fingerprint(one) == SaveGame.Fingerprint(loaded), "불러온 세계가 다른 갈래: " + string.Join(", ", SaveGame.DiffSections(one, loaded).Take(20))); // (F1) 어느 갈래인지
         Assert.True(one.People.Stats.Crossings > 100 && one.People.Stats.Wakes > 10);
     }
 }

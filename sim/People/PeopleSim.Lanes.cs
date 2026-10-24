@@ -149,13 +149,17 @@ public sealed partial class PeopleSim
     private readonly List<PendingOp> _loadedOps = new();
     internal void LoadPendingOps(List<PendingOp> ops) { _loadedOps.Clear(); _loadedOps.AddRange(ops); }
 
-    /// <summary>저장용: 다음 맞추는 시각에 적용할 미룬 일(ApplyOps 가 모으는 차례 그대로).</summary>
+    /// <summary>저장용: 다음 맞추는 시각에 적용할 미룬 일(ApplyOps 가 적용할 차례 그대로).
+    /// (F1) 적용할 차례로 정렬해 쓴다 — 모으는 차례(불러온 것 먼저, 그다음 지방마다)로 쓰면 불러온 세계와 이어 간 세계의 저장 바이트가 맞추는 시각 전까지 달랐다.</summary>
     internal List<PendingOp> PendingOpsForSave()
     {
         var all = new List<PendingOp>(_loadedOps);
         foreach (var (_, life) in Provinces) all.AddRange(life.Ops);
-        return all;
+        return SortOps(all).ToList();
     }
+
+    private static IEnumerable<PendingOp> SortOps(List<PendingOp> all) =>
+        all.Select((op, i) => (op, i)).OrderBy(x => x.op.Tick).ThenBy(x => x.op.Cell).ThenBy(x => x.i).Select(x => x.op);
 
     /// <summary>맞추는 시각: 지방 계산 중에 미뤄 둔 일을 (시각, 칸, 차례) 순으로 적용한다.</summary>
     internal void ApplyOps()
@@ -169,8 +173,7 @@ public sealed partial class PeopleSim
             life.Ops.Clear();
         }
         if (all is null) return;
-        var sorted = all.Select((op, i) => (op, i)).OrderBy(x => x.op.Tick).ThenBy(x => x.op.Cell).ThenBy(x => x.i).Select(x => x.op);
-        foreach (var op in sorted) Apply(op);
+        foreach (var op in SortOps(all)) Apply(op);
     }
 
     private void Apply(PendingOp op)
