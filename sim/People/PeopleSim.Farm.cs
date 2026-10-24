@@ -93,16 +93,6 @@ public sealed partial class PeopleSim
     /// <summary>씨를 묻고 익을 때까지 날 수(자라기 좋은 정도 g — 15 아래면 자라지 않는다): 100 이면 16일, 50 이면 32일, 60일까지.</summary>
     public static int GrowDays(int g) => g < 15 ? 0 : Math.Clamp(1600 / g, 16, 60);
 
-    /// <summary>
-    /// 그 해 그 땅의 비 · 날씨(보이지 않는 작은 계절 — 기획서 5-2): 70~115%, 열 해에 한 번꼴로 가뭄 35%, 일곱 해에 한 번꼴로 모자란 해 50~69%. 시드 · 칸 · 해로만 정해진다.
-    /// (T1) 전에는 가뭄만 열두 해에 한 번(8%) — 옛 농사에서 "모자란 해"는 네댓 해에 한 번, 크게 망치는 해는 열 해에 한 번꼴이었다(Halstead &amp; O'Shea, Bad Year Economics, 1989 — 그리스 · 지중해 밀 · 보리).
-    /// </summary>
-    public int YearLuck(int cell, long year)
-    {
-        ulong h = StableHash.Combine(_w.Seed, (ulong)cell, (ulong)year) % 1000;
-        return h < 100 ? 35 : h < 250 ? 50 + (int)(h % 20) : 70 + (int)(h % 46);
-    }
-
     /// <summary>잡풀(0~100): 마지막으로 김을 맨 때부터 하루 2씩. 그냥 묻은 자리 · 저절로 난 싹은 50 에서 시작.</summary>
     public int WeedsOf(Plot p, long now) => (int)Math.Min(100, (p.Tilled ? 0 : 50) + Math.Max(0, now - p.LastTend) / GameTime.TicksPerDay * 2);
 

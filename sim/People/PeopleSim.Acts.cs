@@ -153,7 +153,9 @@ public sealed partial class PeopleSim
         var opts = L.Opts;
         opts.Clear();
         void Opt(int code, int score) => opts.Add((score + rng.NextInt(12), code));
-        if (p.Food < 55_000) Opt(1, (55_000 - p.Food) / 500 + 20);
+        // (E6b) 야위면 배가 더 일찍 고프다(몸이 먹을 것을 찾는다 — 조금 야윔부터 70% 아래면)
+        int hungerLine = ThinStage(p) >= 1 ? 70_000 : 55_000;
+        if (p.Food < hungerLine) Opt(1, (hungerLine - p.Food) / 500 + 20);
         if (p.Water < 50_000) Opt(2, (50_000 - p.Water) / 500 + 25);
         if (p.Social < 60_000) Opt(3, (60_000 - p.Social) / 600 + (p.HasTrait(T_eloquent) ? 8 : 0) + (p.HasTrait(T_blunt) ? -5 : 0));
         if (p.Joy < 45_000) Opt(4, (45_000 - p.Joy) / 600 + (p.HasTrait(T_lazy) ? 10 : 0));
@@ -628,7 +630,7 @@ public sealed partial class PeopleSim
                 break;
             }
             case Act.EatCorpse when done:
-                if (Here(p.Target, p) is { Dead: true, Eaten: false } body) { body.Eaten = true; St.Eaten[5] += Person.Full - p.Food; p.Food = Person.Full; p.Malnutrition = Math.Max(0, p.Malnutrition - 30_000); }
+                if (Here(p.Target, p) is { Dead: true, Eaten: false } body) { body.Eaten = true; St.Eaten[5] += Person.Full - p.Food; p.Food = Person.Full; }
                 break;
             case Act.Talk or Act.BreakArgue:
                 EndTalk(p);

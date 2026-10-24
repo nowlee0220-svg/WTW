@@ -17,6 +17,8 @@ namespace Wtw.Sim.People;
 public sealed partial class PeopleSim
 {
     public const int ScarcityToMove = 6;
+    /// <summary>(E6b) 먹을 것을 찾아 옮겨 간 뒤 다시 그 까닭으로 떠나기까지 쉬는 날.</summary>
+    public const int ScarceMoveRest = 10;
 
     /// <summary>하루 경계: 떠나고 싶은 까닭을 정한다(사람 번호 순으로 불린다).</summary>
     private void MoveIntent(Person p, Core.Pcg32 rng)
@@ -39,7 +41,13 @@ public sealed partial class PeopleSim
         bool farm = FarmTies(p, life);
         // (E6) 모아 둔 먹을 것(씨 말고)이 사람 수만큼 있으면 떠나지 않고 그것을 꺼내 먹으며 버틴다
         if (p.Scarcity >= ScarcityToMove && StashFoodFor(life) >= Math.Max(3, AliveIn(life))) p.Scarcity = ScarcityToMove - 1;
-        if (p.Scarcity >= ScarcityToMove * (farm ? 3 : 1))
+        // (E6b) 몸에 쌓인 것으로 저울질: 몸이 넉넉하면(50% 넘게) 모자란 날을 더 견딘다(다시 열릴 때까지 버틸 수 있다) ·
+        // 자기나 함께 갈 집안(짝 · 아이)이 몹시 야위었으면 먼 길을 떠나지 못한다(떠나는 길도 힘이 든다)
+        int need = ScarcityToMove * (farm ? 3 : 1) * (p.Body >= 50_000_000 ? 3 : 2) / 2;
+        if (p.Scarcity >= need && TooWeakToTravel(p, life)) { if (p.MoveWhy == Why.Scarce) p.MoveWhy = Why.None; St.TooWeakToLeave++; return; }
+        // (E6b) 먹을 것을 찾아 막 옮겨 온 집은 새 땅을 열흘쯤 둘러본 뒤에야 또 떠난다 — 땅이 다 찬 세계에서 이웃 땅도 모자라 날마다 옮겨 다녔다(머문 날 1일)
+        if (p.Scarcity >= need && Now - p.LastMove < ScarceMoveRest * GameTime.TicksPerDay) { if (p.MoveWhy == Why.Scarce) p.MoveWhy = Why.None; St.JustMovedStay++; return; }
+        if (p.Scarcity >= need)
         {
             if (p.MoveWhy != Why.Scarce && GameScarce(life)) St.LeftForGame++; // (E5b) 측정: 짐승도 줄어 있었다
             p.MoveWhy = Why.Scarce; p.MoveTo = -1; return;
@@ -56,6 +64,15 @@ public sealed partial class PeopleSim
         if (p.Partner < 0 && age is >= 17 and <= 45 && here > 20 * GameTime.TicksPerDay && !HasMateCandidate(p, life) && rng.NextInt(1000) < 15)
         { p.MoveWhy = Why.SeekMate; p.MoveTo = -1; return; }
         if (p.HasTrait(T_curious) && rng.NextInt(1000) < (farm ? 1 : 5) && !HasLittleChild(p)) { p.MoveWhy = Why.Explore; p.MoveTo = -1; return; }
+    }
+
+    /// <summary>(E6b) 자기나 함께 갈 집안(같은 지방의 짝 · 걷는 아이)이 몹시 야위었나 — 먼 길을 떠날 힘이 없다.</summary>
+    private bool TooWeakToTravel(Person p, ProvinceLife life)
+    {
+        if (ThinStage(p) >= 3) return true;
+        if (Get(p.Partner) is { Dead: false } m && m.Cell == p.Cell && ThinStage(m) >= 3) return true;
+        foreach (int c in p.Children) if (Get(c) is { Dead: false } k && k.Cell == p.Cell && k.Stage(Now) == LifeStage.Child && ThinStage(k) >= 3) return true;
+        return false;
     }
 
     /// <summary>(E6) 모아 둔 자리의 먹을 것(씨는 남겨 둘 만큼 빼고).</summary>

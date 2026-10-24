@@ -357,7 +357,7 @@ public partial class ProvinceView
         bool moving = v.Walking && (dx != 0 || dy != 0) && !v.Dead;
         bool lying = v.Dead || (v.Asleep && v.Carrier < 0);
         bool sitting = !moving && !lying && v.Act is Act.Rest or Act.Warm or Act.Follow;
-        var tex = Art.Person(v.Look, v.Female, v.Stage, lying ? Art.Facing.Front : node.Facing, Art.ClothOf(v.Worn, v.WornFeet, v.Injured && !v.Dead));
+        var tex = Art.Person(v.Look, v.Female, v.Stage, lying ? Art.Facing.Front : node.Facing, Art.ClothOf(v.Worn, v.WornFeet, v.Injured && !v.Dead, v.Dead ? 0 : v.Thin));
         float scale = Art.PersonTiles * TilePx / Art.PersonH;
         var body = node.Body;
         body.Texture = tex;

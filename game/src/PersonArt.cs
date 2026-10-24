@@ -18,12 +18,12 @@ public static partial class Art
 
     private static readonly Dictionary<(Appearance, bool, LifeStage, Facing, byte), ImageTexture> PersonCache = new();
 
-    /// <summary>(E5b) 입은 것의 그림 번호: 0 기본(허리 두름) · 1 가죽을 걸침(날가죽 · 마른 가죽 · 무두질한 가죽) · 2 털가죽 옷. + 4 = 털가죽 신. + 8 = 다침(감은 끈).</summary>
-    public static byte ClothOf(int worn, int feet, bool injured)
+    /// <summary>(E5b) 입은 것의 그림 번호: 0 기본(허리 두름) · 1 가죽을 걸침(날가죽 · 마른 가죽 · 무두질한 가죽) · 2 털가죽 옷. + 4 = 털가죽 신. + 8 = 다침(감은 끈). (E6b) + 16 × 야윔 단계(0~3).</summary>
+    public static byte ClothOf(int worn, int feet, bool injured, int thin = 0)
     {
         var cat = Wtw.Sim.Data.CraftData.Default;
         int body = worn < 0 ? 0 : cat.Prop(worn, cat.P_covers) >= 5 ? 2 : 1;
-        return (byte)(body | (feet >= 0 ? 4 : 0) | (injured ? 8 : 0));
+        return (byte)(body | (feet >= 0 ? 4 : 0) | (injured ? 8 : 0) | (Math.Clamp(thin, 0, 3) << 4));
     }
     private static ImageTexture? _shadow, _zzz, _talk, _cloud, _bones;
 
@@ -97,9 +97,11 @@ public static partial class Art
     private static void PaintPerson(Sketch s, Appearance look, bool female, LifeStage stage, Facing f, byte cloth = 0)
     {
         int body = cloth & 3; bool boots = (cloth & 4) != 0, hurt = (cloth & 8) != 0;
+        int thin = (cloth >> 4) & 3; // (E6b) 야윔: 몸 · 팔다리가 가늘어지고 낯빛이 흐려진다
         var skin = SkinColor(look.Skin);
+        if (thin >= 2) skin = skin.Lerp(new Color(0.62f, 0.60f, 0.55f), thin == 3 ? 0.30f : 0.15f);
         var hair = HairColor(look.Hair, stage);
-        float build = 0.85f + 0.3f * look.Build / 255f;           // 체형(마름 ~ 통통)
+        float build = (0.85f + 0.3f * look.Build / 255f) * (thin switch { 1 => 0.92f, 2 => 0.78f, 3 => 0.64f, _ => 1f }); // 체형(마름 ~ 통통)
         float height = 0.92f + 0.16f * look.Height / 255f;         // 키
         float scale = stage switch { LifeStage.Baby => 0.42f, LifeStage.Child => 0.66f, _ => 1f } * height;
         float headR = stage switch { LifeStage.Baby => 30f, LifeStage.Child => 24f, _ => 21f } * (stage == LifeStage.Baby ? 1f : height);

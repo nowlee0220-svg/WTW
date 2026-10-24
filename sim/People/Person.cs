@@ -109,6 +109,8 @@ public enum BioKind : byte
     SawSprouts, Sowed, Harvested, FieldEaten, AteSeeds, FirstField,
     // (E6) Other = 건물 종류(또는 사람 · 물건 번호), Param = 품질 · 건물 번호
     Built, Repaired, Buried, BuriedSomeone, LeftBody, NamedThing, Inherited, LostThing, FoundThing, MadeFine,
+    // (E6b) Other = 아기 아버지(또는 −1)
+    LostBaby,
 }
 
 /// <summary>(E5) 어떻게 알게 되었나. 값은 저장 파일에 남는다.</summary>
@@ -209,6 +211,11 @@ public sealed class Person
     // 욕구 · 몸
     public int Food = Full, Water = Full, Rest = Full, Joy = Full, Social = Full;
     public int Malnutrition, Dehydration, Hypothermia, Heatstroke;
+    /// <summary>
+    /// (E6b) 몸에 쌓인 것(지방 · 살 — 0 ~ 100,000,000 = 0 ~ 100%, 보통 60%). 배부름(끼니)이 바닥난 채 몸이 쓰는 몫은 여기서 빠지고,
+    /// 배부르면 천천히 다시 찬다(몇 주 · 몇 달). 0 이 되면 굶어 죽는다. Malnutrition 은 이제 이것에서 셈한다(몹시 야윈 정도).
+    /// </summary>
+    public int Body = 60_000_000;
     public int Health = Full;
     public long IllUntil;
     public int IllDamage; // 하루에 깎이는 건강

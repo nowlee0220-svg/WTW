@@ -32,7 +32,15 @@ public static class FarmBench
         public double LedgerPeopleEnd; public long DroughtPD, NormalPD, DroughtStarve, NormalStarve;
         public List<double> PerCellByYear = new();
         public List<int> StarveByYear = new();
+        /// <summary>(E6b) 해마다: 사람 하루 · 가뭄(그해 날씨 50% 아래) 땅의 사람 하루 · 굶어 죽음 · 태어남 · 배 속의 아기를 잃음 · 먹을 것이 모자라 떠남 · 짐승 마릿수(사는 지방 평균).</summary>
+        public List<long> YPD = new(), YDroughtPD = new(), YStarve = new(), YBirth = new(), YMisc = new(), YLeave = new();
+        public List<double> YGame = new();
+        /// <summary>(E6b) 굶어 죽은 사람: [0 젖먹이 · 1 아이 · 2 어른 · 3 늙은이] · 그중 젖 먹이던 어머니 · 아이 밴 사람 · 병든 사람. 뿌린 가족 수.</summary>
+        public long[] StarveStage = new long[4]; public long StarveNursing, StarvePregnant, StarveIll; public int Families;
     }
+
+    /// <summary>(E6b) --wide N: 처음에 작은 행성의 사람이 살 만한 칸(마실 물 · 딸 것이 있고 연평균 0°C 이상) N 칸마다 한 가족을 뿌린다(땅이 일찍 차게).</summary>
+    public static int Wide;
 
     public static string Know = "";
     public static bool NoCap;
@@ -50,6 +58,21 @@ public static class FarmBench
         row.FoodStart = life.DailyFoodSupply() / 1000.0; row.GameStart = w.People.AnimalCounts(life).Sum();
         foreach (var (x, y) in PeopleSamples.SpawnSpots(life, Math.Max(1, people / 3)))
             w.Apply(new Intervention(0, Intervention.Kinds.SpawnFamily, new long[] { cell, x, y }));
+        row.Families = Math.Max(1, people / 3);
+        if (Wide > 0)
+        {
+            int k = 0;
+            for (int c = 0; c < p.CellCount; c++)
+            {
+                if (c == cell || !p.IsLand(c) || p.Temp10[c] < 0) continue;
+                var cl = w.People.Life(c);
+                if (cl.DrinkTiles == 0 || cl.FoodTiles < 20) continue;
+                if (k++ % Wide != 0) continue;
+                foreach (var (x, y) in PeopleSamples.SpawnSpots(cl, 1))
+                    w.Apply(new Intervention(0, Intervention.Kinds.SpawnFamily, new long[] { c, x, y }));
+                row.Families++;
+            }
+        }
         if (Know is "sow" or "field") { w.AdvanceTo(1); Teach(w, Know); }
         var sw = Stopwatch.StartNew();
         long end = years * GameTime.TicksPerYear;
@@ -71,6 +94,20 @@ public static class FarmBench
                     if (w.People.YearLuck(pc, yr) < 50 || (yr > 0 && w.People.YearLuck(pc, yr - 1) < 50)) row.DroughtPD += n; else row.NormalPD += n;
                 }
                 if (alive > row.Peak) { row.Peak = alive; row.PeakYear = (int)(day / GameTime.DaysPerYear); }
+                {
+                    // (E6b) 해마다 셈
+                    while (row.YPD.Count <= yr) { row.YPD.Add(0); row.YDroughtPD.Add(0); }
+                    row.YPD[(int)yr] += alive;
+                    foreach (var (pc, pl) in w.People.Provinces) { if (w.People.YearLuck(pc, yr) >= 50) continue; foreach (var q in pl.People) if (!q.Dead) row.YDroughtPD[(int)yr]++; }
+                    if (day % GameTime.DaysPerYear == GameTime.DaysPerYear - 1)
+                    {
+                        var st = w.People.Stats;
+                        row.YStarve.Add(st.Deaths[1] - row.YStarve.Sum()); row.YBirth.Add(st.Births - row.YBirth.Sum()); row.YMisc.Add(st.Miscarriages - row.YMisc.Sum());
+                        row.YLeave.Add(st.MoveWhy[(int)Why.Scarce] - row.YLeave.Sum());
+                        int gc = 0; double gs = 0; foreach (var (_, pl) in w.People.Provinces) if (pl.People.Any(q => !q.Dead)) { gc++; gs += w.People.AnimalCounts(pl).Sum(); }
+                        row.YGame.Add(gc == 0 ? 0 : gs / gc);
+                    }
+                }
                 if (day % GameTime.DaysPerYear == 0)
                 {
                     row.PopByYear.Add(alive);
@@ -134,6 +171,9 @@ public static class FarmBench
         foreach (var q in ps.All)
         {
             if (!q.Dead || q.Cause != DeathCause.Starvation) continue;
+            row.StarveStage[(int)q.Stage(q.DeathTick)]++;
+            if (q.Female && q.Children.Any(c => ps.Get(c) is { } k && k.BirthTick <= q.DeathTick && q.DeathTick - k.BirthTick < 3 * GameTime.TicksPerYear && (!k.Dead || k.DeathTick >= q.DeathTick))) row.StarveNursing++;
+            if (q.Bio.Count > 0 && q.Bio.Any(b => b.Kind == BioKind.Ill && q.DeathTick - b.Tick < 10 * GameTime.TicksPerDay)) row.StarveIll++;
             long y = q.DeathTick / GameTime.TicksPerYear;
             if (y < ys) row.StarveByYear[(int)y]++;
             if (ps.YearLuck(q.Cell, y) < 50 || (y > 0 && ps.YearLuck(q.Cell, y - 1) < 50)) row.DroughtStarve++; else row.NormalStarve++;
@@ -198,6 +238,30 @@ public static class FarmBench
             long et = Math.Max(1, e.Sum());
             var en = new[] { "들에서 바로 딴 열매 · 버섯 · 이끼", "들고 먹은 열매 · 버섯 · 이끼", "낟알 · 콩 · 덩이뿌리 · 도토리", "고기 · 물고기", "그 밖(끓인 음식)", "시신" };
             sb.AppendLine($"- (T1) **먹은 것(배부름 몫)**: " + string.Join(" · ", Enumerable.Range(0, 6).Select(i => $"{en[i]} {e[i] * 100.0 / et:0.0}%")) + $" · 사람 하루당 먹은 양 {e.Sum() / 1000.0 / Math.Max(1, rows.Sum(r => r.PersonDays)):0.0}(필요 {PeopleSim.DailyNeed / 1000})");
+        }
+        {
+            // (E6b) 몸 · 흉년
+            long[] td = new long[4]; foreach (var r in rows) for (int i = 0; i < 4; i++) td[i] += r.St.ThinDays[i];
+            long tt = Math.Max(1, td.Sum());
+            sb.AppendLine($"- (E6b) **야윔 단계별 사람-날**: 보통 {td[0] * 100.0 / tt:0.0}% · 조금 야윔 {td[1] * 100.0 / tt:0.0}% · 야윔 {td[2] * 100.0 / tt:0.0}% · 몹시 야윔 {td[3] * 100.0 / tt:0.0}%");
+            sb.AppendLine($"- (E6b) 몸에 쌓인 것에서 쓴 배부름 · 다시 쌓은 배부름(사람 하루당): {rows.Sum(r => r.St.BodyDrawn) / 1000.0 / Math.Max(1, rows.Sum(r => r.PersonDays)):0.00} · {rows.Sum(r => r.St.BodyRefilled) / 1000.0 / Math.Max(1, rows.Sum(r => r.PersonDays)):0.00} · **배 속의 아기를 잃음 {rows.Sum(r => r.St.Miscarriages)}**(합) · 너무 야위어 떠나지 못함(사람-날) {rows.Sum(r => r.St.TooWeakToLeave)}");
+            long[] ss = new long[4]; foreach (var r in rows) for (int i = 0; i < 4; i++) ss[i] += r.StarveStage[i];
+            sb.AppendLine($"- (E6b) **누가 굶어 죽나**(합 {ss.Sum()}): 젖먹이 {ss[0]} · 아이 {ss[1]} · 어른 {ss[2]} · 늙은이 {ss[3]} — 그중 젖 먹이던 어머니 {rows.Sum(r => r.StarveNursing)} · 죽기 열흘 안에 병든 사람 {rows.Sum(r => r.StarveIll)}");
+            sb.AppendLine($"- (E6b) 짐승이 먹은 들의 먹을 것 / 먹으려던 것(합): {rows.Sum(r => r.St.AnimalForage):N0} / {rows.Sum(r => r.St.AnimalForageWant):N0} ({rows.Sum(r => r.St.AnimalForage) * 100.0 / Math.Max(1, rows.Sum(r => r.St.AnimalForageWant)):0}%)");
+            // 흉년 해 vs 아닌 해: 해마다 그해 가뭄 땅에 산 사람 몫으로 나눈다(절반 넘게 = 흉년 해, 10% 아래 = 보통 해)
+            long[] a = new long[10];
+            foreach (var r in rows)
+                for (int y = 0; y < r.YStarve.Count && y < r.YPD.Count; y++)
+                {
+                    double share = r.YPD[y] == 0 ? 0 : r.YDroughtPD[y] / (double)r.YPD[y];
+                    int k = share >= 0.5 ? 0 : share < 0.1 ? 5 : -1;
+                    if (k < 0) continue;
+                    a[k] += r.YPD[y]; a[k + 1] += r.YStarve[y]; a[k + 2] += r.YBirth[y]; a[k + 3] += r.YMisc[y]; a[k + 4] += r.YLeave[y];
+                }
+            double per(long n, long pd) => pd == 0 ? double.NaN : n * GameTime.DaysPerYear * 1000.0 / pd;
+            sb.AppendLine($"- (E6b) **흉년 해 vs 보통 해**(사람의 절반 넘게 가뭄 땅 · 10% 아래, 사람 1,000명 · 1년당): 굶어 죽음 {per(a[1], a[0]):0.0} vs {per(a[6], a[5]):0.0} · 태어남 {per(a[2], a[0]):0.0} vs {per(a[7], a[5]):0.0} · 아기를 잃음 {per(a[3], a[0]):0.0} vs {per(a[8], a[5]):0.0} · 먹을 것이 모자라 떠남 {per(a[4], a[0]):0.0} vs {per(a[9], a[5]):0.0} (사람 · 해 {a[0] / GameTime.DaysPerYear:N0} vs {a[5] / GameTime.DaysPerYear:N0})");
+            sb.AppendLine($"- (E6b) 짐승 마릿수(사는 지방 평균, 10년마다 중앙값): " + string.Join(" · ", Enumerable.Range(0, years / 10).Select(k => Med(rows.Select(r => k * 10 < r.YGame.Count ? r.YGame[k * 10] : 0)).ToString("0"))));
+            sb.AppendLine($"- (E6b) 굶주림 · 태어남(10년마다, 모든 시드 합): " + string.Join(" · ", Enumerable.Range(0, Math.Max(1, years / 10)).Select(k => $"{rows.Sum(r => r.YStarve.Skip(k * 10).Take(10).Sum())}/{rows.Sum(r => r.YBirth.Skip(k * 10).Take(10).Sum())}")));
         }
         foreach (var item in new[] { "campfire", "pot", "cooked_meat", "roasted_grain", "cooked_beans", "roasted_tuber", "flour", "flatbread", "sown_patch", "field", "stone_hoe", "spear", "fur_coat" })
         {

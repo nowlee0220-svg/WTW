@@ -18,6 +18,8 @@ public sealed record HarvestDef(int Object, string ObjectName, string Item, stri
 {
     /// <summary>아이템 목록(items.json) 번호.</summary>
     public int ItemIndex { get; init; }
+    /// <summary>(E6b) 그해 날씨를 따르는 갈래: 0 따르지 않음(다시 나지 않는 돌) · 1 그해 날씨 · 2 날씨 × 해거리(참나무 — people.json "mast").</summary>
+    public int GrowClass { get; init; }
 }
 
 /// <summary>data/people.json — 사람에 관한 숫자 · 이름표 · 특성 · 생각 · 먹을 것.</summary>
@@ -106,7 +108,8 @@ public sealed class PeopleData
                 if (it is null) { problems.Add($"{File}: 아이템 '{item}' 이 items.json 에 없습니다."); continue; }
                 double days = Num(e, "regrow_days");
                 harvest[def.Index] = new HarvestDef(def.Index, def.Name, item, it.Name, (int)Num(e, "stock"), (long)Math.Round(days * Time.GameTime.TicksPerDay),
-                    food ? (int)Num(e, "nutrition") * 1000 : 0, food ? (int)Num(e, "water") * 1000 : 0, food) { ItemIndex = cat.Items.ToList().IndexOf(it) };
+                    food ? (int)Num(e, "nutrition") * 1000 : 0, food ? (int)Num(e, "water") * 1000 : 0, food)
+                { ItemIndex = cat.Items.ToList().IndexOf(it), GrowClass = days <= 0 ? 0 : e.TryGetProperty("mast", out var m) && m.ValueKind == System.Text.Json.JsonValueKind.True ? 2 : 1 };
             }
         }
         ReadHarvest("foods", true);

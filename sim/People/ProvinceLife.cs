@@ -693,26 +693,84 @@ public sealed class ProvinceLife
     }
     public HarvestDef? HarvestAt(int tile) => (uint)tile < HexFrame.TileCount ? _harvest[tile] : null;
 
+    // ── (E6b) 그해 날씨: 다시 나는 몫은 "자라는 시계"(PeopleSim.GrowClock)로 센다 — Stocks 의 Stamp 는 그 시계의 값이다 ──
+
+    /// <summary>자라는 시계 · 그해 몫을 셈하는 쪽(없으면 늘 보통 해 — 시험용 지방).</summary>
+    internal PeopleSim? Sim;
+    /// <summary>(E6b) 짐승이 올해 먹은 들의 먹을 것(배부름 — 지방 정보에 보이기만, 저장 안 함) · 그 해.</summary>
+    public long AnimalAteYear, AnimalYear = -1;
+    private int[]? _forageTiles;
+    /// <summary>(E6b) PeopleSim.ForageSupply 의 기억(지도로만 정해진다 — 저장 안 함).</summary>
+    public long ForageSupplyCache = -1;
+    private long _forageDay = -1; private (int, int) _forageNow;
+    /// <summary>(E6b — 화면용) 다시 나는 먹을 것이 지금 달린 몫 / 보통 해에 다 열린 몫(하루에 한 번만 다시 셈한다).</summary>
+    public (int Now, int Full) ForageNow(long now)
+    {
+        long d = now / GameTime.TicksPerDay;
+        if (d == _forageDay) return _forageNow;
+        int a = 0, b = 0;
+        foreach (int t in ForageTiles()) { a += StockAt(t, now); b += _harvest[t]!.Stock; }
+        _forageDay = d; return _forageNow = (a, b);
+    }
+    /// <summary>(E6b) 다시 나는 먹을 것이 있는 타일(번호 순 — 지도로만 정해진다).</summary>
+    public int[] ForageTiles()
+    {
+        if (_forageTiles is not null) return _forageTiles;
+        var l = new List<int>();
+        for (int i = 0; i < HexFrame.TileCount; i++) if (_harvest[i] is { GrowClass: > 0 } h && (h.Food || Sim is null || Sim.CarriedNutrition(h.ItemIndex) > 0)) l.Add(i);
+        return _forageTiles = l.ToArray();
+    }
+    /// <summary>갈래마다 해가 시작될 때의 자라는 시계(다시 셈할 수 있어 저장하지 않는다).</summary>
+    internal readonly List<long>?[] GrowPrefix = new List<long>?[3];
+    private long _pctYear = -1;
+    private int _pct1 = 100, _pct2 = 100;
+
+    /// <summary>그해 열리는 몫(100 분의, 갈래마다).</summary>
+    public int GrowPctNow(int cls, long now) => GrowPctYear(cls, now / GameTime.TicksPerYear);
+
+    /// <summary>해 y 에 열리는 몫(100 분의) — 한 해를 기억해 둔다(날씨 조각을 셈하는 것이 무거워서 · 결과는 같다).</summary>
+    public int GrowPctYear(int cls, long y)
+    {
+        if (cls == 0 || Sim is null) return 100;
+        if (y != _pctYear) { _pct1 = Sim.GrowPct(Cell, 1, y); _pct2 = Sim.GrowPct(Cell, 2, y); _pctYear = y; }
+        return cls == 2 ? _pct2 : _pct1;
+    }
+
+    /// <summary>그해 한 그루(포기)에 열리는 몫: 보통 몫 × 그해 날씨(반올림, 두 배까지).</summary>
+    public int CapAt(HarvestDef h, long now) => h.GrowClass == 0 ? h.Stock : Math.Clamp((h.Stock * GrowPctNow(h.GrowClass, now) + 50) / 100, 0, h.Stock * 2);
+
+    private long Clock(HarvestDef h, long t)
+    {
+        if (Sim is null || h.GrowClass == 0) return t;
+        // 같은 시각에 여러 타일을 셈하므로(주변 찾기) 시각마다 한 번만 — 결과는 같다
+        if (t != _clockT) { _clockT = t; _clock1 = _clock2 = long.MinValue; }
+        ref long c = ref (h.GrowClass == 2 ? ref _clock2 : ref _clock1);
+        if (c == long.MinValue) c = Sim.GrowClock(this, h.GrowClass, t);
+        return c;
+    }
+    private long _clockT = long.MinValue, _clock1, _clock2;
+
     public int StockAt(int tile, long now)
     {
         var h = HarvestAt(tile);
         if (h is null) return 0;
-        if (!Stocks.TryGetValue(tile, out var s)) return h.Stock;
+        if (!Stocks.TryGetValue(tile, out var s)) return CapAt(h, now);
         if (h.RegrowTicks <= 0) return s.Stock;
-        long grown = Math.Max(0, (now - s.Stamp) / h.RegrowTicks);
-        return (int)Math.Clamp(s.Stock + grown, 0, h.Stock);
+        long grown = Math.Max(0, (Clock(h, now) - s.Stamp) / h.RegrowTicks);
+        return (int)Math.Clamp(s.Stock + grown, 0, CapAt(h, now));
     }
 
-    /// <summary>묶음에서 가장 먼저 다시 열리는 시각(모두 비어 있을 때).</summary>
+    /// <summary>묶음에서 가장 먼저 다시 열리는 시각(모두 비어 있을 때). (E6b) 해가 바뀌면 그해 몫이 달라지므로 다음 해의 시작보다 늦지 않게.</summary>
     private long NextReady(List<int> tiles, long now)
     {
-        long best = long.MaxValue;
+        long best = (now / GameTime.TicksPerYear + 1) * GameTime.TicksPerYear;
         foreach (int t in tiles)
         {
             var h = _harvest[t]!;
             if (!Stocks.TryGetValue(t, out var st) || h.RegrowTicks <= 0) continue;
-            long grown = (now - st.Stamp) / h.RegrowTicks;
-            best = Math.Min(best, st.Stamp + (grown + 1) * h.RegrowTicks);
+            long grown = Math.Max(0, (Clock(h, now) - st.Stamp) / h.RegrowTicks);
+            long g = st.Stamp + (grown + 1) * h.RegrowTicks;
+            best = Math.Min(best, Sim is null || h.GrowClass == 0 ? g : Sim.GrowClockInverse(this, h.GrowClass, g, now));
         }
         return best;
     }
@@ -725,9 +783,9 @@ public sealed class ProvinceLife
         int have = StockAt(tile, now);
         int got = Math.Min(have, want);
         if (got <= 0) return 0;
-        long stamp = now;
-        if (Stocks.TryGetValue(tile, out var s) && h.RegrowTicks > 0 && s.Stock + (now - s.Stamp) / h.RegrowTicks < h.Stock)
-            stamp = s.Stamp + (now - s.Stamp) / h.RegrowTicks * h.RegrowTicks; // 자라던 몫의 시계를 이어 간다
+        long clock = Clock(h, now), stamp = clock;
+        if (Stocks.TryGetValue(tile, out var s) && h.RegrowTicks > 0 && s.Stock + (clock - s.Stamp) / h.RegrowTicks < CapAt(h, now))
+            stamp = s.Stamp + Math.Max(0, clock - s.Stamp) / h.RegrowTicks * h.RegrowTicks; // 자라던 몫의 시계를 이어 간다
         Stocks[tile] = new TileStock { Stock = have - got, Stamp = stamp };
         return got;
     }

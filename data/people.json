@@ -2,7 +2,7 @@
   "_설명": [
     "사람 (E3). 기획서 7절. 숫자는 사람이 읽고 고칠 수 있게 여기에 모았다(코드는 이 값을 읽기만 한다).",
     "foods: 맨손으로 따 먹을 수 있는 오브젝트. stock = 한 번에 열려 있는 몫, regrow_days = 한 몫이 다시 열리는 데 걸리는 날, nutrition = 한 몫의 배부름(한 끼 ≈ 33), water = 한 몫의 물기. (E4 굶주린 세계: 다시 열리는 날을 늘려 지방 하나가 먹여 살리는 사람을 줄였다 — 야자는 깨야 제대로 먹는다.)",
-    "carry: 주울 수 있는 것(돌 · 도토리 — 몫이 있다). stock · regrow_days 는 foods 와 같다(regrow_days 0 = 다시 나지 않음). (E4) 그 밖의 재료(나무 · 풀 · 갈대 · 껍질 · 큰 잎 · 진흙)는 objects.json 의 다루는 법(uses)에서 바로 얻는다 — 몫 없이, 베기는 날카로운 도구가 있어야.",
+    "carry: 주울 수 있는 것(돌 · 도토리 — 몫이 있다). stock · regrow_days 는 foods 와 같다(regrow_days 0 = 다시 나지 않음). (E6b) mast = 해거리(참나무 — 넓은 땅이 함께 몇 해에 한 번 크게 연다). 다시 나는 것은 모두 그해 날씨(가뭄 · 모자란 해)만큼 덜 열린다. (E4) 그 밖의 재료(나무 · 풀 · 갈대 · 껍질 · 큰 잎 · 진흙)는 objects.json 의 다루는 법(uses)에서 바로 얻는다 — 몫 없이, 베기는 날카로운 도구가 있어야.",
     "traits: 기획서 7-2 의 22개 그대로. abilities = 타고난 능력에 더하는 값(str 힘 · dex 손재주 · int 영리함 · soc 말재주 · nerve 담력). opposite = 같이 가질 수 없는 특성.",
     "thoughts: 생각(기분 조각). mood = 기분에 더하는 값, hours = 남아 있는 시간(0 = 지금 상태로만 정해지는 생각), stack = 같은 생각이 겹치는 최대 수.",
     "이름은 이 파일이 아니라 사람들의 말(data/language.json)에서 나온다."
@@ -37,7 +37,7 @@
     { "object": "lichen",     "item": "lichen",       "stock": 2, "regrow_days": 20.0, "nutrition": 6,  "water": 1 }
   ],
   "carry": [
-    { "object": "oak",             "item": "acorn",    "stock": 4, "regrow_days": 10.0 },
+    { "object": "oak",             "item": "acorn",    "stock": 4, "regrow_days": 10.0, "mast": true },
     { "object": "loose_stones",    "item": "stone",    "stock": 3, "regrow_days": 0 },
     { "object": "flint_nodules",   "item": "flint",    "stock": 3, "regrow_days": 0 },
     { "object": "quartz_pebbles",  "item": "quartz",   "stock": 2, "regrow_days": 0 },
@@ -124,6 +124,8 @@
     { "id": "remembered",   "name": "무덤 곁에서 그 사람을 떠올림", "mood": -2, "hours": 12, "stack": 1 },
     { "id": "left_body",    "name": "가까운 이를 그대로 두고 옴", "mood": -4, "hours": 48, "stack": 1 },
     { "id": "built_home",   "name": "제 손으로 지은 것이 섰음", "mood": 5,   "hours": 48,  "stack": 1 },
-    { "id": "fine_thing",   "name": "훌륭한 물건을 만듦",   "mood": 4,   "hours": 24,  "stack": 1 }
+    { "id": "fine_thing",   "name": "훌륭한 물건을 만듦",   "mood": 4,   "hours": 24,  "stack": 1 },
+    { "id": "always_hungry", "name": "요즘 늘 배가 고프다", "mood": -6,  "hours": 0 },
+    { "id": "lost_baby",    "name": "배 속의 아기를 잃음",  "mood": -18, "hours": 240, "stack": 1 }
   ]
 }

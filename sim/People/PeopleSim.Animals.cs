@@ -497,7 +497,8 @@ public sealed partial class PeopleSim
     {
         if (life.AnimalCap.Length == 0) ComputeCaps(life);
         var rng = ARng(life);
-        PopulationDay(life, rng, catchUp: false);
+        int fed = AnimalsForage(life, rng); // (E6b) 풀 먹는 짐승이 들의 열매 · 도토리를 먹는다
+        PopulationDay(life, rng, catchUp: false, fed);
         foreach (var (_, h) in life.Herds)
         {
             if (!h.Tame) continue;
@@ -507,13 +508,14 @@ public sealed partial class PeopleSim
     }
 
     /// <summary>하루치: 종마다 늘고 줄기(살 수 있는 수에 가까울수록 덜 는다), 한 종이 다 사라졌으면 가끔 이웃에서 들어온다, 굶은 포식자는 준다 · 물고기.</summary>
-    internal void PopulationDay(ProvinceLife life, Pcg32 rng, bool catchUp)
+    internal void PopulationDay(ProvinceLife life, Pcg32 rng, bool catchUp, int fed1000 = 1000)
     {
         var tmp = new List<Herd>();
         for (int s = 0; s < Fauna.Animals.Count; s++)
         {
             var a = Fauna.Animals[s];
-            int k = life.AnimalCap[s];
+            // (E6b) 먹이 가운데 들의 열매 · 도토리 몫이 모자라면 그만큼 살 수 있는 수가 준다(흉년엔 짐승도 준다)
+            int k = (int)((long)life.AnimalCap[s] * (1000 - (long)a.ForageShare1000 * (1000 - fed1000) / 1000) / 1000);
             tmp.Clear();
             int n = 0;
             foreach (var (_, h) in life.Herds) if (h.Species == s && !h.Tame) { tmp.Add(h); n += h.Count; }
@@ -636,7 +638,12 @@ public sealed partial class PeopleSim
         if (d.SleptAt < 0) return; // 저장할 때 깨어 있던 지방 — 예약이 그대로 있다
         var rng = ARng(life);
         long days = Math.Max(0, (Now - d.SleptAt) / GameTime.TicksPerDay);
-        for (long i = 0; i < Math.Min(days, 1_500); i++) PopulationDay(life, rng, catchUp: true);
+        // (E6b) 잠든 동안은 사람이 따지 않아 짐승이 그해 열린 만큼 먹었다고 본다
+        for (long i = 0; i < Math.Min(days, 1_500); i++)
+        {
+            long y = (Now - (Math.Min(days, 1_500) - i) * GameTime.TicksPerDay) / GameTime.TicksPerYear;
+            PopulationDay(life, rng, catchUp: true, Math.Min(1000, YearLuck(life.Cell, Math.Max(0, y)) * 10));
+        }
         foreach (var (_, h) in life.Herds)
         {
             var a = Fauna.Animals[h.Species];

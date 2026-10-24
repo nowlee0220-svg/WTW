@@ -166,7 +166,7 @@ public partial class Main : Node
         _newWorld.Open(false, File.Exists(SavePath) || LoadPanel.Scenes().Count > 0);
 
         _auto.Start(this);
-        if (_auto.Scene is string scene) LoadFrom("res://scenes/" + scene);
+        if (_auto.Scene is string scene) LoadFrom(scene.Contains('/') ? scene : "res://scenes/" + scene); // (E6b) 시험용: 파일 경로도 받는다(편집기 실행에서 res:// 장면을 못 읽는 일이 있다)
         else if (_auto.Seed is ulong s0 && !_auto.StayOnNewWorld)
         {
             var cfg = new WorldConfig { DotCount = _auto.Dots ?? 0, LandCells = _auto.Land ?? 16_000, Climate = _auto.Climate ?? ClimateBias.Normal };
@@ -374,6 +374,17 @@ public partial class Main : Node
                 "지금 마릿수 / 이 땅의 먹이로 살 수 있는 수. 생물군계와 행성의 '사냥감' 자원으로 정해진다. 많이 잡으면 줄어 사람이 떠나야 할 까닭이 되고, 잡지 않으면 다시 는다(한 종이 다 사라져도 가끔 이웃 땅에서 들어온다)."));
             list.Add(new ProvinceFact("물고기", land.FishCap <= 0 ? "없음(민물에 물고기가 없다)" : $"{land.Fish}/{land.FishCap} 몫",
                 "강 · 호수 · 늪의 물고기(행성의 '물고기' 자원). 손 · 뾰족한 막대 · 돌창으로 잡는다. 잡으면 줄고, 다시 는다."));
+            facts = list;
+        }
+        // (E6b) 들의 열매 · 도토리: 그해 날씨 · 해거리 · 지금 달린 몫 · 짐승이 먹은 것
+        if (_snap is not null && _snap.Forage.TryGetValue(m.Cell, out var fo))
+        {
+            var list = facts.ToList();
+            string luck = fo.Luck < 50 ? $"가뭄 ({fo.Luck}%)" : fo.Luck < 70 ? $"모자란 해 ({fo.Luck}%)" : fo.Luck >= 100 ? $"좋은 해 ({fo.Luck}%)" : $"보통 해 ({fo.Luck}%)";
+            list.Add(new ProvinceFact("올해 날씨", luck + (fo.Mast >= 200 ? " · 참나무 큰 해(도토리 두 배)" : " · 참나무 작은 해"),
+                "그해의 비 · 날씨. 밭과 들의 열매 · 도토리 · 낟알 풀 · 덩이뿌리가 모두 이만큼 열린다(보통 해 70~115%). 열 해에 한 번꼴 가뭄(35%), 일곱 해에 한 번꼴 모자란 해(50~69%). 가뭄은 둘레 지방(지름 700km 안팎)이 함께 겪는다 — 흩어져도 이웃 땅도 모자라다. 참나무는 넓은 땅이 함께 네 해에 한 번꼴 크게 열고(두 배) 다른 해는 적게(⅔) 연다(해거리)."));
+            list.Add(new ProvinceFact("들의 열매", $"지금 달린 것 {fo.Now}/{fo.Full} 몫 · 짐승이 올해 먹은 것 {fo.AnimalAte} (배부름)",
+                "따 먹는 열매 · 버섯 · 이끼와 주워 드는 도토리 · 낟알 · 콩 · 덩이뿌리가 지금 달린 몫 / 보통 해에 다 열린 몫. 사람이 따고 풀 먹는 짐승(사슴 · 멧돼지 · 들새 · 곰 …)도 먹는다. 짐승도 먹을 것이 모자라면 줄어든다."));
             facts = list;
         }
         // (E5c) 밭 · 모아 둔 것
@@ -1125,4 +1136,5 @@ public partial class Main : Node
     internal void LoadForTest() => LoadFrom(null);
     internal void LoadPanelForTest() => Load();
     internal void LoadSceneForTest(string file) => LoadFrom("res://scenes/" + file);
+    internal ProvinceInfoPanel InfoForTest => _info;
 }

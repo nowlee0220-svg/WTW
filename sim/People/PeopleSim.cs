@@ -76,6 +76,13 @@ public sealed class PeopleStats
         Q0, Q1, Q2, Q3;
     /// <summary>(T1 측정) 먹은 배부름(1000 = 1)을 갈래마다: [0 들에서 바로 딴 열매 · 버섯 · 이끼, 1 들고 먹은 열매 · 버섯 · 이끼, 2 낟알 · 콩 · 덩이뿌리 · 도토리(익힌 것 포함), 3 고기 · 물고기(익힌 것 포함), 4 그 밖, 5 시신].</summary>
     public readonly long[] Eaten = new long[6];
+    /// <summary>(E6b 측정) 몸: 배 속의 아기를 잃음 · 몸에 쌓인 것에서 빠진 배부름 합(1000 = 1) · 다시 쌓은 배부름 합 · 야윔 단계별 사람-날(하루 경계마다 [0 보통 … 3 몹시]).</summary>
+    public long Miscarriages, BodyDrawn, BodyRefilled;
+    /// <summary>(E6b 측정) 짐승이 먹은 들의 먹을 것 · 먹으려던 것(배부름).</summary>
+    public long AnimalForage, AnimalForageWant;
+    /// <summary>(E6b 측정) 먹을 것이 모자라 떠나려 했지만 너무 야위어 떠나지 못한 번(하루 경계마다).</summary>
+    public long TooWeakToLeave, JustMovedStay;
+    public readonly long[] ThinDays = new long[4];
     /// <summary>(E5c 측정) 계획 · 재료 구하기를 바람마다(바람 × 2 + 아는 법이면 1).</summary>
     public readonly long[] PlanByWish = new long[32], MatByWish = new long[32], PlanKnownRule = new long[64];
 }
@@ -162,6 +169,7 @@ public sealed partial class PeopleSim
         InitCraft();
         InitKnowledge();
         InitHunt();
+        InitBody();
         InitFarm();
         InitBuild();
     }
@@ -196,7 +204,7 @@ public sealed partial class PeopleSim
         }
         if (!Provinces.TryGetValue(cell, out var life))
         {
-            life = new ProvinceLife(_w.Planet, _w.Province(cell), Data) { Perish = PerishItems };
+            life = new ProvinceLife(_w.Planet, _w.Province(cell), Data) { Perish = PerishItems, Sim = this };
             Provinces.Add(cell, life);
             _livesDirty = true;
             if (Dormant.Remove(cell, out var d))
@@ -254,6 +262,10 @@ public sealed partial class PeopleSim
         else if (st == LifeStage.Elder && a is PeopleData.Str or PeopleData.Dex) v -= 2;
         if (p.IllUntil > Now) v -= 1;
         if (p.Injury > 40_000 && a is PeopleData.Str or PeopleData.Dex) v -= 2; // (E5b) 크게 다쳤다
+        // (E6b) 야위면 힘 · 손이 떨어진다(야윔 −1 · 몹시 −2), 몹시 야위면 머리도 흐리다(−1)
+        int thin = ThinStage(p);
+        if (thin >= 2 && a is PeopleData.Str or PeopleData.Dex) v -= thin - 1;
+        else if (thin == 3) v -= 1;
         return Math.Clamp(v, 1, 10);
     }
 
@@ -264,7 +276,9 @@ public sealed partial class PeopleSim
         if (st == LifeStage.Child) t += p.AgeYears(Now) < 8 ? 5 : 2;
         else if (st == LifeStage.Elder) t += 4;
         if (p.IllUntil > Now) t += 5;
-        if (p.Malnutrition > 50_000) t += 4;
+        // (E6b) 야위면 걸음이 느려진다(야윔 +2 · 몹시 +4 — 15~30%)
+        int thin = ThinStage(p);
+        if (thin == 2) t += 2; else if (thin == 3) t += 4;
         if (p.Hypothermia > 50_000) t += 3;
         if (p.Injury > 30_000) t += 5; // (E5b) 다쳐서 절뚝인다
         return t;
@@ -279,6 +293,9 @@ public sealed partial class PeopleSim
         pct += (5 - Ability(p, PeopleData.Dex)) * 5;
         pct -= p.SkillLevel(PeopleData.Gathering) * 4;
         if (p.Injury > 30_000) pct += 25;
+        // (E6b) 야위면 일이 느려진다(야윔 +15% · 몹시 +30% — BMI 17 아래에서 일하는 힘이 준다, FAO 어림)
+        int thin = ThinStage(p);
+        if (thin == 2) pct += 15; else if (thin == 3) pct += 30;
         return Math.Clamp(pct, 40, 200);
     }
 
@@ -303,6 +320,7 @@ public sealed partial class PeopleSim
     {
         if (p.Dead || p.Stage(Now) == LifeStage.Baby) return;
         if (p.Malnutrition > 0 || p.Food <= 0) into.Add(H_starving); else if (p.Food < 25_000) into.Add(H_hungry);
+        if (ThinStage(p) >= 2 && p.Malnutrition == 0) into.Add(H_thin); // (E6b) 야윔 — 요즘 늘 배가 고프다
         if (p.Water < 25_000) into.Add(H_thirsty);
         int felt = FeltNow(p);
         if (felt < 40) into.Add(H_freezing); else if (felt < 110) into.Add(H_cold); else if (felt > 330) into.Add(H_hot);

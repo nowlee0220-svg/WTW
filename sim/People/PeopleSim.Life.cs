@@ -162,10 +162,19 @@ public sealed partial class PeopleSim
             Integrate(p, Now);
             if (CheckDeath(p)) continue;
             // (T1) 안긴 아기가 젖을 먹었으면 어머니(안은 사람)가 그 몫을 더 쓴다
+            // (E6b) 젖이 줄면 그만큼만 — 배부름이 모자라면 어머니 몸에 쌓인 것에서 나온다
             if (p.Carrier >= 0 && Get(p.Carrier) is { Dead: false } nurse && nurse.Cell == p.Cell)
             {
                 Integrate(nurse, Now);
-                if (nurse.Malnutrition < 20_000) nurse.Food = Math.Max(0, nurse.Food - NursingFood);
+                int milk = MilkOf(nurse);
+                if (milk > 0)
+                {
+                    int need = NursingFood * milk / 100, fromFood = Math.Min(need, nurse.Food);
+                    nurse.Food -= fromFood;
+                    if (need > fromFood) { nurse.Body = Math.Max(0, nurse.Body - (int)((long)(need - fromFood) * 1_000_000 / BodyScale(nurse.Stage(Now)))); St.BodyDrawn += need - fromFood; }
+                    nurse.Malnutrition = MalOf(nurse.Body);
+                    CheckDeath(nurse);
+                }
             }
             long age = p.AgeTicks(Now);
             // 아기가 자라 혼자 걷는다
@@ -187,7 +196,9 @@ public sealed partial class PeopleSim
                 int ch = 12; // 10,000 분의 (하루) — 1년에 약 5%
                 if (p.HasTrait(T_frail)) ch *= 2;
                 if (p.HasTrait(T_tough)) ch /= 2;
-                if (p.Malnutrition > 30_000) ch *= 3;
+                // (E6b) 야위면 병에 약하다(조금 1.5배 · 야윔 2배 · 몹시 3배)
+                int thin = ThinStage(p);
+                if (thin == 1) ch = ch * 3 / 2; else if (thin == 2) ch *= 2; else if (thin == 3) ch *= 3;
                 if (p.Hypothermia > 30_000) ch *= 2;
                 var st = p.Stage(Now);
                 if (st <= LifeStage.Child) ch = ch * 3 / 2; else if (st == LifeStage.Elder) ch *= 2;
@@ -205,6 +216,8 @@ public sealed partial class PeopleSim
             if (oldCh > 0 && rng.NextInt(10_000) < oldCh) { Kill(p, DeathCause.OldAge); continue; }
             // 출산
             if (p.Conceived >= 0 && Now - p.Conceived >= PregnancyTicks) GiveBirth(p, rng);
+            else BodyMiscarry(p, rng); // (E6b) 몹시 야위면 배 속의 아기를 잃기도 한다
+            St.ThinDays[ThinStage(p)]++; // (E6b 측정)
             // 원한은 천천히 풀린다 · 솜씨는 안 쓰면 아주 천천히 무뎌진다
             for (int k = 0; k < p.Relations.Count; k++)
             {
@@ -241,11 +254,13 @@ public sealed partial class PeopleSim
         int wa = woman.AgeYears(Now), ma = man.AgeYears(Now);
         if (wa < 16 || wa > 45 || ma < 16 || woman.IllUntil > Now) return;
         if (CapUsed(woman) >= _w.Config.PeopleCap) return; // 상한(안전장치)
-        if (woman.Malnutrition > 20_000) { St.ConceiveHungry++; return; }
         int ch = 50; // 1,000 분의 (한 밤)
         foreach (int cid in woman.Children)
             if (Get(cid) is { } c && c.Cell == woman.Cell && c.AgeTicks(Now) < GameTime.TicksPerYear * 3 / 2 && !c.Dead) { ch /= 3; break; } // (S1) 젖먹이는 늘 같은 지방에 안겨 있다
-        if (Rng(woman.Cell).NextInt(1_000) >= ch) return;
+        int roll = Rng(woman.Cell).NextInt(1_000);
+        if (roll >= ch) return;
+        // (E6b) 야위면 아이가 덜 생긴다(배란이 줄거나 멎는다)
+        if (roll >= ch * Fertility(woman.Body) / 1000) { St.ConceiveHungry++; return; }
         woman.Conceived = Now;
         if (InProvince) L.PregnantDelta++; else _pregnant++;
         woman.ChildFather = man.Id;

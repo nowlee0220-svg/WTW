@@ -73,6 +73,8 @@ public sealed class WorldSnapshot
     public Dictionary<int, AnimalView[]> Animals = new();
     /// <summary>깨어 있는 지방마다 종별로 살 수 있는 마릿수 · 물고기 몫 · 물고기 한도.</summary>
     public Dictionary<int, (int[] Caps, int Fish, int FishCap)> AnimalLand = new();
+    /// <summary>(E6b) 깨어 있는 지방의 들의 먹을 것: 그해 날씨 · 도토리 해거리(100 분의) · 지금 달린 몫 / 보통 해에 다 열린 몫 · 짐승이 올해 먹은 배부름.</summary>
+    public Dictionary<int, (int Luck, int Mast, int Now, int Full, long AnimalAte)> Forage = new();
     // ── (E5c) 농사 ──
     /// <summary>깨어 있는 지방의 밭 · 심은 자리(칸 → 밭들, 타일 순) · 모아 둔 자리(칸 → 타일). 밭이 바뀌거나 한 시간이 지나면 새로.</summary>
     public Dictionary<int, PlotView[]> Plots = new();
@@ -251,7 +253,7 @@ public sealed class WorldSnapshot
         var ps = w.People;
         List<int>? gone = null;
         foreach (var (cell, _) in Animals) if (!ps.Provinces.ContainsKey(cell)) (gone ??= new()).Add(cell);
-        if (gone is not null) foreach (int c in gone) { Animals.Remove(c); AnimalLand.Remove(c); }
+        if (gone is not null) foreach (int c in gone) { Animals.Remove(c); AnimalLand.Remove(c); Forage.Remove(c); }
         foreach (var (cell, life) in ps.Provinces)
         {
             int n = life.Herds.Count;
@@ -264,6 +266,9 @@ public sealed class WorldSnapshot
             int k = 0;
             foreach (var (_, h) in life.Herds) arr[k++].Fill(h);
             if (!AnimalLand.TryGetValue(cell, out var land) || land.Caps != life.AnimalCap || land.Fish != life.FishStock) AnimalLand[cell] = (life.AnimalCap, life.FishStock, life.FishCap);
+            var (fnow, ffull) = life.ForageNow(w.Now);
+            long y = w.Now / Time.GameTime.TicksPerYear;
+            Forage[cell] = (ps.YearLuck(cell, y), ps.MastPct(cell, y), fnow, ffull, life.AnimalYear == y ? life.AnimalAteYear : 0);
         }
     }
 
@@ -533,6 +538,8 @@ public sealed class PersonView
     /// <summary>(E5b) 입은 것(몸 · 발, 아이템 번호 −1 = 없음) · 다쳤나 · 하는 일의 대상(사냥이면 무리 번호).</summary>
     public int Worn = -1, WornFeet = -1, Target = -1;
     public bool Injured;
+    /// <summary>(E6b) 야윔 단계(0 보통 ~ 3 몹시 야윔 — 몸 그림이 가늘어진다).</summary>
+    public int Thin;
     /// <summary>(E6) 묻혔나(무덤 · 돌무더기 — 시신을 그리지 않는다) · 지닌 사연 있는 물건(번호).</summary>
     public bool Buried;
     public int[] NamedHeld = Array.Empty<int>();
@@ -585,6 +592,7 @@ public sealed class PersonView
         Painting = !p.Walking && p.Act is Act.Experiment or Act.Craft && p.PlanAction == Data.CraftData.Default.ActionIndex("draw");
         Nickname = p.Nickname;
         Worn = p.Worn; WornFeet = p.WornFeet; Injured = p.Injury > 15_000; Target = p.Target;
+        Thin = PeopleSim.ThinStage(p);
         Buried = p.Burial == 1;
         if (p.NamedHeld.Count != NamedHeld.Length || (p.NamedHeld.Count > 0 && !p.NamedHeld.SequenceEqual(NamedHeld))) NamedHeld = p.NamedHeld.ToArray();
     }

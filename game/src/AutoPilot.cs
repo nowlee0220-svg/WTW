@@ -54,6 +54,9 @@ public sealed class AutoPilot
     public int PreFamilies = 3, PreHomes = 1;
     private bool _waitCross, _crossNoFollow;
     private int? _existingCard;
+    private bool _thinFirst; // (E6b) --existingcard 로 고를 때 가장 야윈 사람부터
+    private string? _infoOpen; // (E6b) 지방 정보 칸을 펼친다(bottom = 맨 아래로)
+    private bool _infoDone;
     private bool _existingDone;
     private int _crossTarget = -1, _crossFrom = -1;
     private double _sinceCross = -1;
@@ -130,6 +133,8 @@ public sealed class AutoPilot
                 case "--prehomes": PreHomes = int.Parse(v); break;
                 case "--waitcross": _waitCross = true; break;
                 case "--existingcard": _existingCard = int.Parse(v); break;
+                case "--thinfirst": _thinFirst = true; break;
+                case "--infoopen": _infoOpen = v; break;
                 case "--crossnofollow": _waitCross = true; _crossNoFollow = true; break;
                 case "--livebake": ProvinceView.BakeGround = v != "0"; break;
                 case "--look": _look = v; break;
@@ -262,15 +267,22 @@ public sealed class AutoPilot
             if (Look(snap) || _lookWait > (_look is "painting" or "fieldherd" or "stash" or "ripe" or "harvest" ? 1500 : 300)) { _lookDone = true; _sinceProvince = 0; }
             return;
         }
+        else if (_infoOpen is not null && _provinceReady && !_infoDone && _sinceProvince > 1)
+        {
+            _infoDone = true;
+            _main.InfoForTest.OpenForTest(_infoOpen == "bottom");
+        }
         else if (_existingCard is int ec && _provinceReady && snap is not null && !_existingDone)
         {
             // 이미 사는 사람(미리 돌린 세계)의 큰 카드: 가운데 지방에서 옮겨 온 적이 많은 어른 — 화면은 이야기를 볼 수 있게
             _existingDone = true;
             var pv = _main.Province;
             int target = -1;
-            for (int i = 0; i < snap.PeopleCount && target < 0; i++)
+            int bestThin = -1;
+            for (int i = 0; i < snap.PeopleCount && (target < 0 || _thinFirst); i++)
             {
                 var v = snap.People[i];
+                if (_thinFirst) { if (!v.Dead && v.Cell == pv.Center && v.Stage >= Wtw.Sim.People.LifeStage.Child && v.Carrier < 0 && v.Thin > bestThin) { bestThin = v.Thin; target = v.Id; } continue; }
                 if (!v.Dead && v.Cell == pv.Center && v.Stage >= Wtw.Sim.People.LifeStage.Adult && v.Carrier < 0 && v.Named) target = v.Id;
             }
             if (target >= 0) { _main.OpenCardForTest(target); _main.CardPanel.SetTab(ec); }

@@ -10,10 +10,17 @@ using Wtw.Sim.World;
 /// </summary>
 public static class SceneBench
 {
-    public static void Run(string outDir, ulong seed, bool onlyArtisan = false, bool onlyCopper = false, bool onlyTundra = false, bool onlyFarm = false, bool onlyBuild = false)
+    public static void Run(string outDir, ulong seed, bool onlyArtisan = false, bool onlyCopper = false, bool onlyTundra = false, bool onlyFarm = false, bool onlyBuild = false, bool onlyFamine = false)
     {
         Directory.CreateDirectory(outDir);
         var index = new List<string>();
+        if (onlyFamine)
+        {
+            index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("famine-year")));
+            FamineScene(outDir, seed, index);
+            File.WriteAllLines(Path.Combine(outDir, "index.txt"), index);
+            return;
+        }
         if (onlyBuild)
         {
             index.AddRange(File.ReadAllLines(Path.Combine(outDir, "index.txt")).Where(l => !l.StartsWith("hut-village")));
@@ -135,6 +142,39 @@ public static class SceneBench
         bool boreal = false; foreach (int n in pl.Grid.Neighbors(c)) if (pl.Biome[n] == Wtw.Sim.Planet.Biome.Boreal) boreal = true;
         return boreal ? 100 - Math.Abs(pl.Temp10[c] + 50) / 10 + (pl.RiverSize[c] > 0 ? 15 : 0) : int.MinValue;
     }).FirstOrDefault(-1);
+
+    /// <summary>
+    /// (E6b) 흉년 든 땅: 따뜻한 숲의 세 가족을 흘려 보내다, 사람이 사는 땅에 가뭄(그해 날씨 50% 아래)이 든 해에 야윈 사람이 둘 넘게 생긴 날을 저장한다.
+    /// </summary>
+    private static void FamineScene(string outDir, ulong seed, List<string> index)
+    {
+        var w = GameWorld.Create(seed, new WorldConfig { DotCount = 0 });
+        int home = PeopleSamples.Home(w.Planet);
+        foreach (var (x, y) in PeopleSamples.SpawnSpots(w.People.Life(home), 3))
+            w.Apply(new Intervention(0, Intervention.Kinds.SpawnFamily, new long[] { home, x, y }));
+        var ps = w.People;
+        for (long t = GameTime.TicksPerDay; t < 120 * GameTime.TicksPerYear; t += GameTime.TicksPerDay)
+        {
+            w.AdvanceTo(t);
+            if (ps.AliveCount == 0) break;
+            long y = t / GameTime.TicksPerYear;
+            if (y < 5) continue;
+            foreach (var (cell, life) in ps.Provinces)
+            {
+                if (ps.YearLuck(cell, y) >= 50) continue;
+                var here = life.People.Where(q => !q.Dead).ToList();
+                if (here.Count < 6 || here.Count(q => PeopleSim.ThinStage(q) >= 2) < 2) continue;
+                string file = "famine-year.wtw";
+                SaveGame.SaveFile(w, Path.Combine(outDir, file));
+                string land = Wtw.Sim.Planet.PlanetNames.Of(w.Planet.Biome[cell]);
+                int thin = here.Count(q => PeopleSim.ThinStage(q) >= 1);
+                index.Add($"{file}|흉년 든 땅|{land}(칸 {cell})에 가뭄이 든 해 — 그해 열매 · 도토리 · 낟알이 {ps.YearLuck(cell, y)}%만 열렸다(둘레 땅도 함께). 이 땅 사람 {here.Count}명 가운데 {thin}명이 야위었다. 사람 카드의 [몸]에서 '몸에 쌓인 것 · 야윔'을, 지방 정보에서 '올해 날씨 · 들의 열매'를 보세요. 몇 해 넘겨 누가 굶어 죽고 아이가 덜 태어나는지 ({GameTime.Format(w.Now)} · 사람 {ps.AliveCount}명)");
+                Console.WriteLine($"{file}: 칸 {cell}({land}) · {GameTime.Format(w.Now)} · 그 땅 사람 {here.Count} · 야윔 {thin}");
+                return;
+            }
+        }
+        Console.WriteLine("흉년 든 땅: 120년 안에 맞는 때가 없음");
+    }
 
     private static void TundraScene(string outDir, ulong seed, List<string> index)
     {

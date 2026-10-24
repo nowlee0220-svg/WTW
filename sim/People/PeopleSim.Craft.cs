@@ -516,7 +516,7 @@ public sealed partial class PeopleSim
     }
 
     /// <summary>짐이 무거우면 덜 쓸모 있는 것(만든 것이 아니고, 지금 찾는 속성이 낮고, 무거운 것)을 그 자리에 내려놓는다.</summary>
-    private void MakeRoom(Person p, int wantProp, int need)
+    private void MakeRoom(Person p, int wantProp, int need, Func<int, bool>? keep = null)
     {
         var life = Life(p.Cell);
         int here = p.Tile(Now);
@@ -526,6 +526,7 @@ public sealed partial class PeopleSim
             foreach (var c in p.Carry)
             {
                 if (c.Item == I_ember) continue;
+                if (keep is not null && keep(c.Item)) continue; // (E6b 고침) 지금 모으는 재료는 내려놓지 않는다
                 // (E5b 고침) 그릇 · 바구니(담는 것)는 마지막까지 든다 — 뼈 · 힘줄 · 기름에 밀려 바구니를 내려놓고 다시 엮기를 끝없이 되풀이했다
                 // (E5c 고침) 단단한 날붙이(갈아 만든 돌날 등)도 끝까지 든다 — 바구니 재료를 들려고 돌날을 내려놓고, 돌날이 없어 다시 그것을 주우러 가기를 되풀이했다
                 int sc = (IsNamedHeld(p, c.Item) ? 500 : 0) + (c.Item == p.LastPickItem && Now - p.LastPickTick < 6 * GameTime.TicksPerHour || c.Item == p.PrevPickItem && Now - p.PrevPickTick < 6 * GameTime.TicksPerHour ? 300 : 0) + (IsMade(c.Item) ? 40 : Craft.IsAnimal(c.Item) ? 10 : 0) + (Prop(c.Item, Craft.P_holds) > 0 ? 60 : 0) + (IsMade(c.Item) && Prop(c.Item, Craft.P_hardness) >= 4 && Prop(c.Item, Craft.P_sharp) >= 2 ? 50 : 0) + Prop(c.Item, wantProp) * 10 + Prop(c.Item, Craft.P_edible) * 6 - Prop(c.Item, Craft.P_weight) * 3 - (c.Count > 2 ? 15 : 0);
@@ -795,7 +796,9 @@ public sealed partial class PeopleSim
         int have = 0, haveW = 0;
         foreach (var c in p.Carry) if (itemOk(c.Item)) { have += c.Count; haveW += Math.Max(1, Prop(c.Item, Craft.P_weight)) * c.Count; }
         if (have >= 5 || (have > 0 && haveW * 2 > CarryCapOf(p))) return false;
-        if (CarryWeight(p) + 3 > CarryCapOf(p)) { AddWish(p, W_carry, 8); MakeRoom(p, prop, 3); if (CarryWeight(p) + 1 > CarryCapOf(p)) return false; }
+        // (E6b 고침 — 되풀이 감시 "줍고 버리기") 짐이 찼으면 덜 쓸 것만 내려놓고(지금 모으는 재료는 두고), 그래도 주울 자리(3)가 없으면 이 법을 미룬다 —
+        // 전에는 한 자리만 비워 두고 주우러 가서, 주운 뒤 짐이 넘쳐 막 주운 것을 내려놓고 다시 주우러 가기를 하루 백 번 넘게 되풀이했다(T1 따뜻한 땅)
+        if (CarryWeight(p) + 3 > CarryCapOf(p)) { AddWish(p, W_carry, 8); MakeRoom(p, prop, 3, itemOk); if (CarryWeight(p) + 3 > CarryCapOf(p)) return false; }
         p.Position(Now, out int px, out int py);
         int hx = px / 1000, hy = py / 1000;
         // 1) 땅에 놓인 물건(죽은 사람이 남긴 것 등) 바로 곁 — 타일 번호 순으로 처음 맞는 것
