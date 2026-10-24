@@ -11,6 +11,8 @@ public sealed class AnimalDef
     public int Size, Walk, Run, GroupMin, GroupMax, Fear, Fierce, Capacity, HuntDays, PreySize;
     /// <summary>한 해에 늘어나는 빠르기(×1000).</summary>
     public int Growth1000;
+    /// <summary>(E6b) 하루에 먹는 사람도 먹을 수 있는 것(열매 · 도토리 · 낟알 · 덩이뿌리 · 이끼, 배부름 — 한 끼 ≈ 33) · 그것이 먹이의 몇 %인가(×1000).</summary>
+    public int Forage, ForageShare1000;
     public bool Predator, Flies, Tame;
     /// <summary>[Biome 값] 무게(×1000).</summary>
     public int[] Biome1000 = new int[16];
@@ -56,6 +58,8 @@ public sealed class AnimalData
                 a.Size = Int(e, "size", 1); a.Walk = Int(e, "walk", 20); a.Run = Int(e, "run", 8); a.Fear = Int(e, "fear", 8); a.Fierce = Int(e, "fierce");
                 a.Capacity = Int(e, "capacity"); a.HuntDays = Int(e, "hunt_days", 3); a.PreySize = Int(e, "prey_size", 2);
                 a.Growth1000 = e.TryGetProperty("growth", out var g) ? (int)Math.Round(g.GetDouble() * 1000) : 300;
+                a.Forage = Int(e, "forage", 0);
+                a.ForageShare1000 = e.TryGetProperty("forage_share", out var fs) ? (int)Math.Round(fs.GetDouble() * 1000) : 0;
                 a.Predator = Bool(e, "predator"); a.Flies = Bool(e, "flies"); a.Tame = Bool(e, "tame");
                 if (a.Size is < 1 or > 3) problems.Add($"{where}: size 는 1~3 이어야 합니다.");
                 if (a.Fierce is < 0 or > 5) problems.Add($"{where}: fierce 는 0~5 여야 합니다.");

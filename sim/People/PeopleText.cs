@@ -439,6 +439,8 @@ public sealed partial class PeopleSim
             if (c.Stage == LifeStage.Child) notes.Add("아이라서 −");
             if (c.Stage == LifeStage.Elder && a is PeopleData.Str or PeopleData.Dex) notes.Add("늙어서 −2");
             if (p.IllUntil > Now) notes.Add("아파서 −1");
+            int thin = ThinStage(p);
+            if (thin >= 2 && a is PeopleData.Str or PeopleData.Dex) notes.Add($"야위어서 −{thin - 1}"); else if (thin == 3) notes.Add("몹시 야위어서 −1");
             c.Abilities.Add((Data.Abilities[a].Name, Ability(p, a), $"타고남 {p.BaseAbility[a]}" + (notes.Count > 0 ? " · " + string.Join(" · ", notes) : "")));
         }
         for (int s = 0; s < PeopleData.SkillCount; s++)
@@ -456,7 +458,9 @@ public sealed partial class PeopleSim
         c.Needs.Add(("어울림", p.Social / 1000, p.Social < 20_000 ? "외로움" : ""));
         if (!p.Dead) c.Needs.Add(("따뜻함", Math.Clamp((felt - 0) / 3, 0, 100), $"느끼는 기온 {felt / 10.0:0.0}°C (바깥 {Life(p.Cell).OutsideTemp10(Now) / 10.0:0.0}°C · {ProvinceLife.ShelterName(Life(p.Cell).Shelter[p.Tile(Now)])}{(p.Asleep && p.Huddle ? " · 곁에 사람" : "")})"));
         c.Body.Add($"건강 {p.Health / 1000}%" + (p.IllUntil > Now ? $" — 병 (하루에 −{p.IllDamage / 1000}%, {PeopleText.Date(p.IllUntil)}까지)" : ""));
-        if (p.Malnutrition > 0) c.Body.Add($"영양실조 {p.Malnutrition / 1000}% (100% 가 되면 죽는다)");
+        // (E6b) 몸에 쌓인 것 · 야윔 단계
+        if (!p.Dead) c.Body.Add($"몸에 쌓인 것 {p.Body / 1_000_000}% — {ThinName(ThinStage(p))}" + (ThinStage(p) >= 2 ? $" (일 · 걸음이 느리고 병 · 추위에 약하다{(p.Female ? " · 아이가 잘 생기지 않는다" : "")})" : ThinStage(p) == 1 ? " (보통은 60% 안팎)" : ""));
+        if (p.Malnutrition > 0) c.Body.Add($"영양실조 {p.Malnutrition / 1000}% (몸에 쌓인 것이 바닥나면 굶어 죽는다)");
         if (p.Dehydration > 0) c.Body.Add($"탈수 {p.Dehydration / 1000}%");
         if (p.Hypothermia > 0) c.Body.Add($"몸이 식음(저체온) {p.Hypothermia / 1000}%");
         if (p.Heatstroke > 0) c.Body.Add($"더위 먹음 {p.Heatstroke / 1000}%");
@@ -600,6 +604,7 @@ public sealed partial class PeopleSim
         BioKind.Inherited => Named.TryGetValue(b.Other, out var ni) ? $"{NameOf(b.Param)}의 '{ni.Name}'({NamedMeaning(ni)})을 물려받았다" : "물건을 물려받았다",
         BioKind.FoundThing => Named.TryGetValue(b.Other, out var nf) ? $"잃어버렸던 '{nf.Name}'({NamedMeaning(nf)})을 찾아 들었다" : "잃어버린 물건을 찾았다",
         BioKind.MadeFine => $"훌륭한 {Hangul.Eul(ItemName(b.Param))} 만들었다",
+        BioKind.LostBaby => "몹시 야윈 채 배 속의 아기를 잃었다",
         _ => "",
     };
 

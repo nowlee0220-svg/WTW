@@ -36,7 +36,7 @@ namespace Wtw.Sim.Persistence;
 /// </summary>
 public static class SaveGame
 {
-    public const int Version = 14;
+    public const int Version = 15;
     private static readonly byte[] Magic = "WTWS"u8.ToArray();
 
     public static byte[] ToBytes(GameWorld w)
@@ -491,6 +491,8 @@ public static class SaveGame
         bw.Write(p.Quality.Count); foreach (var (it, q) in p.Quality) { bw.Write(it); bw.Write(q); }
         bw.Write(p.NamedHeld.Count); foreach (int id in p.NamedHeld) bw.Write(id);
         bw.Write(p.LastPickItem); bw.Write(p.LastPickTick); bw.Write(p.PrevPickItem); bw.Write(p.PrevPickTick);
+        // (E6b)
+        bw.Write(p.Body);
     }
 
     private static void ReadPeople(BinaryReader br, GameWorld w, int version)
@@ -511,6 +513,8 @@ public static class SaveGame
             int ns = br.ReadInt32();
             var stocks = new (int, TileStock)[ns];
             for (int k = 0; k < ns; k++) stocks[k] = (br.ReadInt32(), new TileStock { Stock = br.ReadInt32(), Stamp = br.ReadInt64() });
+            // (E6b) 옛 파일의 딴 시각은 세계 시각 — 자라는 시계(그해 날씨 갈래)로 바꾼다(도토리도 같은 갈래로 셈 — 조금 다를 수 있다)
+            if (version < 15) for (int k = 0; k < ns; k++) stocks[k].Item2.Stamp = ps.GrowClockAt(cell, 1, stocks[k].Item2.Stamp);
             int nr = br.ReadInt32();
             var rev = new int[nr];
             for (int k = 0; k < nr; k++) rev[k] = br.ReadInt32();
@@ -776,6 +780,13 @@ public static class SaveGame
         }
         else
             for (int i = 0; i < p.Known.Count; i++) { var k = p.Known[i]; k.Via = k.LearnedFrom < 0 ? Via.Self : Via.Watch; k.Level = PeopleSim.StartLevel(k.Via); k.LastUse = k.Tick; p.Known[i] = k; }
+        // (E6b) 몸에 쌓인 것 — 옛 파일은 영양실조(옛 셈)에서 정한다: 없으면 보통, 있으면 몹시 야윈 문턱 아래로(결정론적인 기본값)
+        if (version >= 15) p.Body = br.ReadInt32();
+        else
+        {
+            p.Body = p.Malnutrition > 0 ? Math.Max(1_000_000, PeopleSim.BodyThin3 - (int)((long)p.Malnutrition * PeopleSim.BodyThin3 / Person.Full)) : PeopleSim.BodyNormal;
+            p.Malnutrition = PeopleSim.MalOf(p.Body);
+        }
         return p;
     }
 
