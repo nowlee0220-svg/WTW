@@ -726,10 +726,12 @@ public sealed class ProvinceLife
     private int _pct1 = 100, _pct2 = 100;
 
     /// <summary>그해 열리는 몫(100 분의, 갈래마다).</summary>
-    public int GrowPctNow(int cls, long now)
+    public int GrowPctNow(int cls, long now) => GrowPctYear(cls, now / GameTime.TicksPerYear);
+
+    /// <summary>해 y 에 열리는 몫(100 분의) — 한 해를 기억해 둔다(날씨 조각을 셈하는 것이 무거워서 · 결과는 같다).</summary>
+    public int GrowPctYear(int cls, long y)
     {
         if (cls == 0 || Sim is null) return 100;
-        long y = now / GameTime.TicksPerYear;
         if (y != _pctYear) { _pct1 = Sim.GrowPct(Cell, 1, y); _pct2 = Sim.GrowPct(Cell, 2, y); _pctYear = y; }
         return cls == 2 ? _pct2 : _pct1;
     }
@@ -737,7 +739,16 @@ public sealed class ProvinceLife
     /// <summary>그해 한 그루(포기)에 열리는 몫: 보통 몫 × 그해 날씨(반올림, 두 배까지).</summary>
     public int CapAt(HarvestDef h, long now) => h.GrowClass == 0 ? h.Stock : Math.Clamp((h.Stock * GrowPctNow(h.GrowClass, now) + 50) / 100, 0, h.Stock * 2);
 
-    private long Clock(HarvestDef h, long t) => Sim is null || h.GrowClass == 0 ? t : Sim.GrowClock(this, h.GrowClass, t);
+    private long Clock(HarvestDef h, long t)
+    {
+        if (Sim is null || h.GrowClass == 0) return t;
+        // 같은 시각에 여러 타일을 셈하므로(주변 찾기) 시각마다 한 번만 — 결과는 같다
+        if (t != _clockT) { _clockT = t; _clock1 = _clock2 = long.MinValue; }
+        ref long c = ref (h.GrowClass == 2 ? ref _clock2 : ref _clock1);
+        if (c == long.MinValue) c = Sim.GrowClock(this, h.GrowClass, t);
+        return c;
+    }
+    private long _clockT = long.MinValue, _clock1, _clock2;
 
     public int StockAt(int tile, long now)
     {

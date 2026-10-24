@@ -20,6 +20,9 @@ public partial class ProvinceInfoPanel : PanelContainer
     private bool _collapsed = true; // 처음엔 접어 둔다(제목만) — 지도를 넓게
 
     public bool Collapsed => _collapsed;
+    /// <summary>(E6b 시험용) 펼친 채 · 맨 아래까지 내린다(새 줄 — 올해 날씨 · 들의 열매 — 을 스크린샷에 담으려고).</summary>
+    public void OpenForTest(bool bottom) { _collapsed = false; Relayout(); if (bottom) CallDeferred(nameof(ScrollBottom)); }
+    private void ScrollBottom() => _scroll.ScrollVertical = 100_000;
 
     public override void _Ready()
     {

@@ -84,7 +84,7 @@ public sealed partial class PeopleSim
         if (cls == 0) return t;
         long year = Math.Max(0, t / GameTime.TicksPerYear);
         long start = year * GameTime.TicksPerYear;
-        return GrowPrefix(life, cls, year) + GrowPct(life.Cell, cls, year) * (t - start) / 100;
+        return GrowPrefix(life, cls, year) + life.GrowPctYear(cls, year) * (t - start) / 100;
     }
 
     /// <summary>지방 기억 없이 자라는 시계(옛 저장 파일을 바꿀 때).</summary>
@@ -118,7 +118,7 @@ public sealed partial class PeopleSim
         {
             long next = GrowPrefix(life, cls, year + 1);
             if (next < g) continue;
-            long pct = GrowPct(life.Cell, cls, year);
+            long pct = (next - GrowPrefix(life, cls, year)) * 100 / GameTime.TicksPerYear; // 그해 몫(누적의 차 — 날씨 조각을 다시 셈하지 않는다)
             if (pct <= 0) continue;
             long need = g - GrowPrefix(life, cls, year);
             return year * GameTime.TicksPerYear + (need * 100 + pct - 1) / pct;

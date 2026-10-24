@@ -166,7 +166,7 @@ public partial class Main : Node
         _newWorld.Open(false, File.Exists(SavePath) || LoadPanel.Scenes().Count > 0);
 
         _auto.Start(this);
-        if (_auto.Scene is string scene) LoadFrom("res://scenes/" + scene);
+        if (_auto.Scene is string scene) LoadFrom(scene.Contains('/') ? scene : "res://scenes/" + scene); // (E6b) 시험용: 파일 경로도 받는다(편집기 실행에서 res:// 장면을 못 읽는 일이 있다)
         else if (_auto.Seed is ulong s0 && !_auto.StayOnNewWorld)
         {
             var cfg = new WorldConfig { DotCount = _auto.Dots ?? 0, LandCells = _auto.Land ?? 16_000, Climate = _auto.Climate ?? ClimateBias.Normal };
@@ -1136,4 +1136,5 @@ public partial class Main : Node
     internal void LoadForTest() => LoadFrom(null);
     internal void LoadPanelForTest() => Load();
     internal void LoadSceneForTest(string file) => LoadFrom("res://scenes/" + file);
+    internal ProvinceInfoPanel InfoForTest => _info;
 }
