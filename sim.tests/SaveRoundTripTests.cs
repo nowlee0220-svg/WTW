@@ -24,8 +24,9 @@ public class SaveRoundTripTests
         var w = BuildTests.BuildFamilies(2, 3, 3);
         // 무덤이 생기게 — 어른 하나가 죽는다(가족이 묻는다)
         var ps = w.People;
-        var dead = ps.All.First(q => !q.Dead && q.Stage(w.Now) >= LifeStage.Adult && q.Partner >= 0);
-        ps.Kill(dead, DeathCause.OldAge);
+        // (E6b) 먹을 것이 모자라 무리가 떠나 버려 묻히지 않기도 해서 — 지방마다 한 사람씩
+        foreach (var cell in ps.All.Where(q => !q.Dead).Select(q => q.Cell).Distinct().ToList())
+            if (ps.All.FirstOrDefault(q => !q.Dead && q.Cell == cell && q.Stage(w.Now) >= LifeStage.Adult && q.Partner >= 0) is { } dead) ps.Kill(dead, DeathCause.OldAge);
         w.AdvanceTo(days * GameTime.TicksPerDay + 777);
         return w;
     }
