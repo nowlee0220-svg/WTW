@@ -136,8 +136,18 @@ public sealed partial class PeopleSim
     }
 
     /// <summary>타일마다 건물이 주는 따뜻함(움집 안 · 바람막이 곁). 건물이 바뀔 때만 다시 셈한다.</summary>
-    private void RecomputeWarm(ProvinceLife life)
+    private void RecomputeWarm(ProvinceLife life) => RecomputeWarm(life, Now);
+
+    /// <summary>(F1) 불러오기: 저장할 때 셈해 둔 시각(WarmAt)으로 따뜻함을 다시 셈한다 — 불러온 시각의 낡음으로 셈하면 결과가 달라진다.</summary>
+    internal void RestoreWarm(ProvinceLife life, long at)
     {
+        if (at >= 0) { RecomputeWarm(life, at); return; }
+        life.Warm = null; life.WarmAt = -1; // 한 번도 셈하지 않았다(따뜻한 건물이 다 지어진 적 없음)
+    }
+
+    private void RecomputeWarm(ProvinceLife life, long at)
+    {
+        life.WarmAt = at;
         short[]? warm = null;
         foreach (var (_, b) in life.Buildings)
         {
@@ -145,7 +155,7 @@ public sealed partial class PeopleSim
             var d = BDef(b);
             if (d.WarmIn <= 0 && d.WarmNear <= 0) continue;
             warm ??= life.Warm is { } old ? Clear(old) : new short[HexFrame.TileCount];
-            int pct = QualityPct(b.Quality) * (Condition(b, Now) < WornCond ? 70 : 100) / 100;
+            int pct = QualityPct(b.Quality) * (Condition(b, at) < WornCond ? 70 : 100) / 100;
             int bx = b.Tile % S, by = b.Tile / S;
             for (int y = by - 1; y <= by + d.H; y++)
                 for (int x = bx - 1; x <= bx + d.W; x++)
@@ -270,6 +280,24 @@ public sealed partial class PeopleSim
         }
         foreach (var q in life.People) if (q.Dead && q.Burial == 0 && !q.Eaten) v.Bodies.Add(q);
         return v;
+    }
+
+    /// <summary>(F1) 저장용: 지금 맞는 건물 모습의 낡은 것 · 묻지 않은 시신(번호, 목록 차례 그대로) — 맞는 모습이 없으면 null.
+    /// 이 둘은 모습을 만든 때의 낡음 · 시신 상태로 정해지고 건물이 바뀔 때까지 그대로 쓰이므로(시각 · 역사에 기대는 기억) 저장한다.</summary>
+    internal (int[] Worn, int[] Bodies)? BuildViewForSave(ProvinceLife life)
+    {
+        if (life.BuildCache is not BuildView v || v.Version != life.BuildVersion) return null;
+        return (v.Worn.Select(b => b.Id).ToArray(), v.Bodies.Select(q => q.Id).ToArray());
+    }
+
+    /// <summary>(F1) 불러오기: 저장할 때의 건물 모습을 되살린다(나머지는 건물로 다시 셈하고 낡은 것 · 시신은 저장한 그대로).</summary>
+    internal void RestoreBuildView(ProvinceLife life, (int[] Worn, int[] Bodies)? saved)
+    {
+        life.BuildCache = null;
+        if (saved is not { } s) return;
+        var v = BViewOf(life);
+        v.Worn.Clear(); foreach (int id in s.Worn) if (life.Buildings.TryGetValue(id, out var b)) v.Worn.Add(b);
+        v.Bodies.Clear(); foreach (int id in s.Bodies) if (Get(id) is { } q) v.Bodies.Add(q);
     }
 
     /// <summary>재료 하나가 그 몫(part)에 맞나 — 사연 있는 물건 · 불씨는 쓰지 않는다.</summary>

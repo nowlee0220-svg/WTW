@@ -30,11 +30,13 @@ namespace Wtw.Sim.Persistence;
 /// 버전 12(E5c): 지방마다 밭 · 모아 둔 자리 · 처음 밭 · 올해 거둔 양, 사람마다 싹을 본 횟수 · 거둔 수 · 처음 심은 때. 버전 11 파일은 밭 없이 읽는다.
 /// 버전 13(E6): 지방마다 건물(짓는 중 · 다 지음) · 다음 건물 번호 · 걷은 덤불, 사연 있는 물건, 무리마다 묻는 버릇, 사람마다 바람 16칸 · 불 버릇 · 묻힘 · 든 것의 품질 · 지닌 사연 있는 물건.
 ///   버전 12 파일은 건물 없이 읽는다(바람은 앞 12칸만).
+/// 버전 14(F1): 깨어 있는 지방마다 건물의 따뜻함을 셈한 시각(그때의 낡음으로 다시 셈한다) · 건물 모습의 낡은 것 · 묻지 않은 시신, 미룬 일은 적용할 차례로.
+///   버전 13 파일은 따뜻함을 불러온 시각으로 셈한다(그 파일에서 이어 가면 저장 안 한 세계와 조금 달라질 수 있다).
 /// 버전 1(E0) · 2(E1) · 3(E2) 파일도 읽는다(행성 설정은 기본값, 사람 없음).
 /// </summary>
 public static class SaveGame
 {
-    public const int Version = 13;
+    public const int Version = 14;
     private static readonly byte[] Magic = "WTWS"u8.ToArray();
 
     public static byte[] ToBytes(GameWorld w)
@@ -68,8 +70,41 @@ public static class SaveGame
         return h;
     }
 
-    private static void Write(BinaryWriter bw, GameWorld w)
+    /// <summary>(F1) 갈래별 지문 — 저장 바이트를 갈래(세계 · 난수 · 예약표 · 지방마다 · 사람마다 …)로 나눠 따로 해시한다.
+    /// 두 세계를 견줘 어느 갈래가 다른지 바로 보이게(새 상태를 더하고 저장을 잊으면 여기서 잡힌다).</summary>
+    public static List<(string Name, ulong Hash)> Sections(GameWorld w)
     {
+        using var ms = new MemoryStream();
+        var marks = new List<(string Name, long At)>();
+        using (var bw = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true))
+            Write(bw, w, name => { bw.Flush(); marks.Add((name, ms.Position)); });
+        var bytes = ms.ToArray();
+        var list = new List<(string, ulong)>(marks.Count);
+        for (int i = 0; i < marks.Count; i++)
+        {
+            long from = marks[i].At, to = i + 1 < marks.Count ? marks[i + 1].At : bytes.Length;
+            ulong h = 0;
+            for (long k = from; k < to; k++) h = StableHash.Combine(h, bytes[k]);
+            list.Add((marks[i].Name, h));
+        }
+        return list;
+    }
+
+    /// <summary>(F1) 두 세계의 갈래별 지문을 견줘 다른 갈래의 이름을 낸다(한쪽에만 있는 갈래도).</summary>
+    public static List<string> DiffSections(GameWorld a, GameWorld b)
+    {
+        var sa = Sections(a); var sb = Sections(b);
+        var hb = new Dictionary<string, ulong>(); foreach (var (n, h) in sb) hb[n] = h;
+        var seen = new HashSet<string>();
+        var diff = new List<string>();
+        foreach (var (n, h) in sa) { seen.Add(n); if (!hb.TryGetValue(n, out var o)) diff.Add(n + " (뒤에 없음)"); else if (o != h) diff.Add(n); }
+        foreach (var (n, _) in sb) if (!seen.Contains(n)) diff.Add(n + " (앞에 없음)");
+        return diff;
+    }
+
+    private static void Write(BinaryWriter bw, GameWorld w, Action<string>? mark = null)
+    {
+        mark?.Invoke("세계");
         bw.Write(Magic);
         bw.Write(Version);
         bw.Write(w.Seed);
@@ -90,16 +125,19 @@ public static class SaveGame
         bw.Write(w.Provinces.Count);
         foreach (var p in w.Provinces) { bw.Write(p.Id); bw.Write(p.Name); }
 
+        mark?.Invoke("난수 흐름");
         var streams = w.Rng.Export();
         bw.Write(streams.Count);
         foreach (var s in streams) { bw.Write(s.Name); bw.Write(s.Province); bw.Write(s.State); bw.Write(s.Increment); }
 
+        mark?.Invoke("세계 예약표");
         var events = w.Scheduler.ExportSorted();
         bw.Write(w.Scheduler.NextHandle);
         bw.Write(w.Scheduler.NextOrder);
         bw.Write(events.Length);
         foreach (var e in events) { bw.Write(e.Handle); bw.Write(e.Order); bw.Write(e.Tick); bw.Write(e.Target); bw.Write(e.Kind); }
 
+        mark?.Invoke("점");
         var dots = w.Dots.Dots;
         bw.Write(dots.Count);
         foreach (var d in dots)
@@ -115,18 +153,20 @@ public static class SaveGame
             }
         }
 
+        mark?.Invoke("개입 기록");
         bw.Write(w.Interventions.Count);
         foreach (var iv in w.Interventions)
         {
             bw.Write(iv.Tick); bw.Write(iv.Kind); bw.Write(iv.Values.Length);
             foreach (var v in iv.Values) bw.Write(v);
         }
-        WritePeople(bw, w);
+        WritePeople(bw, w, mark);
     }
 
-    private static void WritePeople(BinaryWriter bw, GameWorld w)
+    private static void WritePeople(BinaryWriter bw, GameWorld w, Action<string>? mark)
     {
         var ps = w.People;
+        mark?.Invoke("알림");
         bw.Write(ps.NextEventSeq);
         bw.Write(ps.Events.Count);
         foreach (var e in ps.Events) { bw.Write(e.Seq); bw.Write(e.Tick); bw.Write((byte)e.Kind); bw.Write(e.Person); bw.Write(e.Other); bw.Write(e.Cell); bw.Write(e.Text); }
@@ -135,6 +175,7 @@ public static class SaveGame
         bw.Write(cells.Count);
         foreach (int cell in cells)
         {
+            mark?.Invoke($"지방 {cell}");
             bw.Write(cell);
             if (ps.Provinces.TryGetValue(cell, out var life))
             {
@@ -149,14 +190,21 @@ public static class SaveGame
                 foreach (var (t, l) in life.Items) foreach (var (item, n) in l) { bw.Write(t); bw.Write(item); bw.Write(n); }
                 bw.Write(life.Dug.Count);
                 foreach (int t in life.Dug) bw.Write(t);
+                mark?.Invoke($"지방 {cell} 예약표");
                 var evs = life.Sched.ExportSorted();
                 bw.Write(life.Sched.NextHandle); bw.Write(life.Sched.NextOrder); bw.Write(evs.Length);
                 foreach (var e in evs) { bw.Write(e.Handle); bw.Write(e.Order); bw.Write(e.Tick); bw.Write(e.Target); bw.Write(e.Kind); }
                 bw.Write(true); bw.Write(life.EmptySince); // (S1) 깨어 있었나 — 사람이 다 죽은 뒤 잠들기 전(불은 계속 탄다)도 그대로
+                mark?.Invoke($"지방 {cell} 짐승");
                 WriteAnimals(bw, life.NextHerdId, life.FishStock, true, -1, life.Herds.Values);
+                mark?.Invoke($"지방 {cell} 밭");
                 WriteFarm(bw, life.Stash, life.FarmSince, life.FirstHarvest, life.SeedsEatenYear, life.YearHarvest, life.YearPotential, life.HarvestYear, life.Plots.Values);
+                mark?.Invoke($"지방 {cell} 건물");
                 WriteBuild(bw, life.NextBuildingId, life.Buildings.Values, life.Cleared);
-                bw.Write(life.RainDay); bw.Write(life.FireKeeper);
+                bw.Write(life.RainDay); bw.Write(life.FireKeeper); bw.Write(life.WarmAt);
+                var view = ps.BuildViewForSave(life);
+                bw.Write(view.HasValue);
+                if (view is { } vw) { bw.Write(vw.Worn.Length); foreach (int id in vw.Worn) bw.Write(id); bw.Write(vw.Bodies.Length); foreach (int id in vw.Bodies) bw.Write(id); }
             }
             else
             {
@@ -171,14 +219,19 @@ public static class SaveGame
                 foreach (var (t, item, n) in d.Ground) { bw.Write(t); bw.Write(item); bw.Write(n); }
                 bw.Write(d.Dug.Length);
                 foreach (int t in d.Dug) bw.Write(t);
+                mark?.Invoke($"지방 {cell} 예약표");
                 bw.Write(d.SchedHandle); bw.Write(d.SchedOrder); bw.Write(d.Events.Length);
                 foreach (var e in d.Events) { bw.Write(e.Handle); bw.Write(e.Order); bw.Write(e.Tick); bw.Write(e.Target); bw.Write(e.Kind); }
                 bw.Write(false);
+                mark?.Invoke($"지방 {cell} 짐승");
                 WriteAnimals(bw, d.NextHerdId, d.FishStock, d.AnimalsReady, d.SleptAt, d.Herds);
+                mark?.Invoke($"지방 {cell} 밭");
                 WriteFarm(bw, d.Stash, d.FarmSince, d.FirstHarvest, d.SeedsEatenYear, d.YearHarvest, d.YearPotential, d.HarvestYear, d.Plots);
+                mark?.Invoke($"지방 {cell} 건물");
                 WriteBuild(bw, d.NextBuildingId, d.Buildings, d.Cleared);
             }
         }
+        mark?.Invoke("발견");
         // (E4) 발견 목록 · 부분 성공 · 무리마다 처음
         bw.Write(ps.Discoveries.Count);
         foreach (var (rule, d) in ps.Discoveries)
@@ -191,11 +244,13 @@ public static class SaveGame
         foreach (var (rule, pr) in ps.Partials) { bw.Write(rule); bw.Write(pr.Count); bw.Write(pr.Texts.Count); foreach (var t in pr.Texts) bw.Write(t); }
         bw.Write(ps.GroupFirst.Count);
         foreach (var (k, v) in ps.GroupFirst) { bw.Write(k); bw.Write(v); }
+        mark?.Invoke("처음 잡은 짐승");
         // (E5b) 세계에서 처음 잡은 짐승 · 무리마다 처음
         bw.Write(ps.HuntFirsts.Count);
         foreach (var (s, f) in ps.HuntFirsts) { bw.Write(s); bw.Write(f.Tick); bw.Write(f.Person); bw.Write(f.Cell); bw.Write(f.Helpers); }
         bw.Write(ps.GroupHunts.Count);
         foreach (var (k, v) in ps.GroupHunts) { bw.Write(k); bw.Write(v); }
+        mark?.Invoke("사연 있는 물건 · 묻는 버릇");
         // (E6) 사연 있는 물건 · 무리마다 묻는 버릇
         bw.Write(ps.NextNamedId); bw.Write(ps.Named.Count);
         foreach (var (_, n) in ps.Named)
@@ -206,6 +261,7 @@ public static class SaveGame
         }
         bw.Write(ps.BurialWays.Count);
         foreach (var (k, v) in ps.BurialWays) { bw.Write(k); bw.Write(v[0]); bw.Write(v[1]); bw.Write(v[2]); }
+        mark?.Invoke("그림 · 무리 지식");
         // (E5) 그림 · 무리마다 아는 법 · 지식의 역사
         bw.Write(ps.NextPaintingId);
         bw.Write(ps.Paintings.Count);
@@ -223,6 +279,7 @@ public static class SaveGame
             bw.Write(rule); bw.Write(list.Count);
             foreach (var e in list) { bw.Write(e.Tick); bw.Write(e.Kind); bw.Write(e.Cell); bw.Write(e.Text); }
         }
+        mark?.Invoke("넘겨주기 대기 · 땅 이름");
         var (queue, at) = ps.CrossQueueForSave();
         bw.Write(at); bw.Write(queue.Length); foreach (int id in queue) bw.Write(id);
         bw.Write(ps.LandNames.Count);
@@ -235,6 +292,7 @@ public static class SaveGame
                 bw.Write(n.Tick); bw.Write(n.Namer); bw.Write(n.Reason);
             }
         }
+        mark?.Invoke("말");
         bw.Write(ps.NextLanguageId);
         bw.Write(ps.Languages.Count);
         foreach (var (_, l) in ps.Languages)
@@ -248,7 +306,8 @@ public static class SaveGame
             bw.Write(l.Loans.Count); foreach (var (k, v) in l.Loans) { bw.Write(k); bw.Write(v); }
         }
         bw.Write(ps.All.Count);
-        foreach (var p in ps.All) WritePerson(bw, p);
+        foreach (var p in ps.All) { mark?.Invoke($"사람 {p.Id}"); WritePerson(bw, p); }
+        mark?.Invoke("미룬 일 · 상한");
         // (S1) 맞추는 시각까지 미뤄 둔 세계의 일(적용할 차례대로) · 상한 셈 기준
         var ops = ps.PendingOpsForSave();
         bw.Write(ops.Count);
@@ -360,6 +419,14 @@ public static class SaveGame
         return dp with { NextBuildingId = nextId, Buildings = list, Cleared = cl };
     }
 
+    private static (int[] Worn, int[] Bodies)? ReadBuildView(BinaryReader br)
+    {
+        if (!br.ReadBoolean()) return null;
+        var worn = new int[br.ReadInt32()]; for (int k = 0; k < worn.Length; k++) worn[k] = br.ReadInt32();
+        var bodies = new int[br.ReadInt32()]; for (int k = 0; k < bodies.Length; k++) bodies[k] = br.ReadInt32();
+        return (worn, bodies);
+    }
+
     private static void WriteFire(BinaryWriter bw, int tile, Fire f) { bw.Write(tile); bw.Write(f.Kind); bw.Write(f.Stamp); bw.Write(f.Fuel); bw.Write(f.Charcoal); bw.Write(f.Lighter); }
     private static (int, Fire) ReadFire(BinaryReader br) => (br.ReadInt32(), new Fire { Kind = br.ReadByte(), Stamp = br.ReadInt64(), Fuel = br.ReadInt64(), Charcoal = br.ReadBoolean(), Lighter = br.ReadInt32() });
 
@@ -431,7 +498,7 @@ public static class SaveGame
         var ps = w.People;
         int[] crossQueue = Array.Empty<int>(); long crossAt = long.MaxValue;
         var awake = new List<(int Cell, long EmptySince)>();
-        var rainDays = new SortedDictionary<int, long>(); var fireKeepers = new SortedDictionary<int, int>();
+        var rainDays = new SortedDictionary<int, long>(); var fireKeepers = new SortedDictionary<int, int>(); var warmAts = new SortedDictionary<int, long>(); var views = new SortedDictionary<int, (int[] Worn, int[] Bodies)?>();
         ps.NextEventSeq = br.ReadInt64();
         int ne = br.ReadInt32();
         for (int i = 0; i < ne; i++)
@@ -472,7 +539,7 @@ public static class SaveGame
                 dp = dp with { NextHerdId = an.NextId, FishStock = an.Fish, AnimalsReady = an.Ready, SleptAt = an.SleptAt, Herds = an.Herds };
             }
             if (version >= 12) dp = ReadFarm(br, dp);
-            if (version >= 13) { dp = ReadBuild(br, dp); if (awake.Count > 0 && awake[^1].Cell == cell) { rainDays[cell] = br.ReadInt64(); fireKeepers[cell] = br.ReadInt32(); } }
+            if (version >= 13) { dp = ReadBuild(br, dp); if (awake.Count > 0 && awake[^1].Cell == cell) { rainDays[cell] = br.ReadInt64(); fireKeepers[cell] = br.ReadInt32(); if (version >= 14) { warmAts[cell] = br.ReadInt64(); views[cell] = ReadBuildView(br); } } }
             ps.Dormant[cell] = dp;
         }
         if (version >= 7)
@@ -597,6 +664,7 @@ public static class SaveGame
         foreach (var (cell, since) in awake) ps.Life(cell).EmptySince = since;
         foreach (var (cell, rd) in rainDays) ps.Life(cell).RainDay = rd;
         foreach (var (cell, fk) in fireKeepers) ps.Life(cell).FireKeeper = fk;
+        foreach (var (cell, at) in warmAts) ps.RestoreWarm(ps.Life(cell), at); // (F1) 버전 13 파일은 불러온 시각으로 셈한 그대로
         // 넘겨주기 대기는 사람이 다 들어온 뒤 그 사람의 지방에
         ps.LoadCrossQueue(crossQueue, crossAt);
         if (version >= 9)
@@ -615,6 +683,7 @@ public static class SaveGame
             ps.TakePersonEvents(w.Scheduler);
             ps.AfterSync();
         }
+        foreach (var (cell, v) in views) ps.RestoreBuildView(ps.Life(cell), v); // (F1) 맨 끝에 — 사람 · 건물이 다 들어온 뒤
     }
 
     private static Person ReadPerson(BinaryReader br, int version)
